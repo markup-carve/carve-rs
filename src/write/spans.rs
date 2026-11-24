@@ -277,9 +277,10 @@ fn table_needs_marks(table: V<'_>) -> bool {
     !unspelled.is_empty()
 }
 
-/// The tree with the marks of C2-W-145, or `None` where no count lacks them.
-pub fn add(doc: V<'_>) -> Option<Spans> {
-    if !has_any_counts(doc) || !needs_marks(doc) {
+/// The tree with the marks of C2-W-145, or `None` where no count lacks them. `counts` is
+/// [`has_any_counts`] of `doc` where the caller already knows it.
+pub fn add(doc: V<'_>, counts: Option<bool>) -> Option<Spans> {
+    if !counts.unwrap_or_else(|| has_any_counts(doc)) || !needs_marks(doc) {
         return None;
     }
     let mut copy = doc.to_value();
@@ -331,7 +332,7 @@ fn has_any_counts(node: V<'_>) -> bool {
 }
 
 /// [`has_any_counts`] of a JSON value, walked without the view.
-fn json_has_counts(value: &Value) -> bool {
+pub(super) fn json_has_counts(value: &Value) -> bool {
     crate::view::json_any(
         value,
         &|(cell, counted): &mut (bool, bool), key, v| match key {

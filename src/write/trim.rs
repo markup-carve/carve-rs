@@ -28,8 +28,18 @@ pub struct Trimmed {
 /// The copy without line-end spaces and tabs of text, or `None` where the tree has none.
 /// `delimited` says whether the table at a pointer is written in a delimited form, where a cell
 /// keeps them as data (C2-W-066) while its caption is still trimmed.
+#[cfg(test)]
 pub fn trim(doc: &Value, delimited: &dyn Fn(&Value, &str) -> bool) -> Option<Trimmed> {
-    if !has_spaced_text(doc) || !has_trim_target(doc) {
+    trim_with(doc, delimited, None)
+}
+
+/// [`trim`] with [`has_spaced_text`] of `doc` where the caller already knows it.
+pub fn trim_with(
+    doc: &Value,
+    delimited: &dyn Fn(&Value, &str) -> bool,
+    spaced: Option<bool>,
+) -> Option<Trimmed> {
+    if !spaced.unwrap_or_else(|| has_spaced_text(doc)) || !has_trim_target(doc) {
         return None;
     }
     let mut copy = doc.clone();
@@ -58,7 +68,7 @@ fn len_at(doc: &Value, pointer: &str) -> usize {
 }
 
 /// Whether a text node below `value` ends in a space or tab, which every trim target does.
-fn has_spaced_text(value: &Value) -> bool {
+pub(super) fn has_spaced_text(value: &Value) -> bool {
     crate::view::json_any_text(value, &|t| t.ends_with([' ', '\t']))
 }
 

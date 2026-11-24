@@ -711,8 +711,6 @@ impl Carve {
         Ok(parsed)
     }
 
-    /// Whether the tree holds a node of a type an enabled claim reads, so the
-    /// JSON pass of the claims can change it.
     /// Whether no matcher of the host can claim a node of any tree.
     fn claims_nothing(&self) -> bool {
         !(self.standard.tabs || self.matchers.has_form(extensions::Form::Div))
@@ -726,14 +724,81 @@ impl Carve {
                 .is_none()
     }
 
+    /// Whether the tree holds a node of a type an enabled claim reads, so the
+    /// JSON pass of the claims can change it.
     fn may_claim(&self, tree: &Tree) -> bool {
+        #[derive(PartialEq)]
+        enum Seen {
+            Nothing,
+            Claimable,
+            FreeJson,
+        }
+        fn walk(
+            node: &crate::ast::owned::Node,
+            hit: &dyn Fn(&crate::ast::owned::Node) -> bool,
+            seen: &mut Seen,
+            depth: usize,
+        ) {
+            if *seen != Seen::Nothing {
+                return;
+            }
+            if depth > crate::resolve::WALK_CAP || node.has_json() {
+                *seen = Seen::FreeJson;
+            } else if hit(node) {
+                *seen = Seen::Claimable;
+            } else {
+                node.for_each_child(&mut |child| walk(child, hit, seen, depth + 1));
+            }
+        }
         if self.claims_nothing() {
             return false;
         }
         let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
         let inline = !self.standard.inline_matchers().is_empty()
             || self.matchers.has_form(extensions::Form::Inline);
-        let json = tree.json();
+        let fences = self.standard.fence_matchers();
+        let fence = |name: &str| {
+            fences.iter().any(|(n, _)| *n == name)
+                || self
+                    .matchers
+                    .names(extensions::Form::Fence)
+                    .any(|n| n == name)
+        };
+        let hit = |node: &crate::ast::owned::Node| match node {
+            crate::ast::owned::Node::Div(_) => div,
+            crate::ast::owned::Node::InlineExtension(_) => inline,
+            crate::ast::owned::Node::CodeBlock(c) => {
+                c.syntax.as_ref().is_some_and(|s| fence(s.as_str()))
+            }
+            _ => false,
+        };
+        // The claims also walk free JSON values, which only the wire form shows.
+        let doc = tree.document();
+        let mut seen = if doc.data.is_some()
+            || doc.metadata.is_some()
+            || doc.extensions.is_some()
+            || doc.resources.is_some()
+        {
+            Seen::FreeJson
+        } else {
+            Seen::Nothing
+        };
+        for node in &doc.children {
+            walk(node, &hit, &mut seen, 1);
+        }
+        match seen {
+            Seen::Nothing => return false,
+            Seen::Claimable => return true,
+            Seen::FreeJson => {}
+        }
+        self.claimable_in_json(tree.json())
+    }
+
+    /// [`Self::may_claim`] read from the wire form of the tree.
+    fn claimable_in_json(&self, json: &str) -> bool {
+        let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
+        let inline = !self.standard.inline_matchers().is_empty()
+            || self.matchers.has_form(extensions::Form::Inline);
         // A fence is claimed by its language, the `syntax` of the code block.
         let syntax = |name: &str| json.contains(&format!(r#""syntax":{}"#, Value::from(name)));
         let fence = self
@@ -1657,4 +1722,84 @@ pub fn validate_layout(layout: &Value) -> Result<(), Error> {
 /// As [`migrate_tree_with`].
 pub fn migrate_tree(json: &Value) -> Result<Tree, Error> {
     migrate_tree_with(json, &MigrateOptions::default()).map(|m| m.tree)
+}
+
+#[cfg(test)]
+mod may_claim_tests {
+    use super::{Carve, Options, parse};
+    use serde_json::Value;
+
+    fn inputs() -> Vec<String> {
+        let mut out = Vec::new();
+        for (text, list) in [
+            (
+                include_str!("../../spec-conformance/clause-cases.json"),
+                "cases",
+            ),
+            (
+                include_str!("../../spec-conformance/examples.json"),
+                "examples",
+            ),
+            (
+                include_str!("../../spec-conformance/extensions.json"),
+                "cases",
+            ),
+        ] {
+            let mut de = serde_json::Deserializer::from_str(text);
+            de.disable_recursion_limit();
+            let v: Value = serde::Deserialize::deserialize(&mut de).unwrap_or_default();
+            for case in v.get(list).and_then(Value::as_array).into_iter().flatten() {
+                if let Some(input) = case.get("input").and_then(Value::as_str) {
+                    out.push(input.to_string());
+                }
+            }
+        }
+        out
+    }
+
+    fn hosts() -> Vec<Carve> {
+        let all = [
+            "carve.cite",
+            "carve.codeGroup",
+            "carve.details",
+            "carve.fencedRender.mermaid",
+            "carve.imgFence.image",
+            "carve.imgFence.img",
+            "carve.mathBlock",
+            "carve.spoiler",
+            "carve.spoilerBlock",
+            "carve.tabs",
+            "carve.wiki",
+        ];
+        let mut hosts = vec![Carve::new()];
+        let mut every = Carve::new();
+        for name in all {
+            let _ = every.enable_standard(name, name != "carve.cite");
+        }
+        hosts.push(every);
+        for name in all {
+            let mut one = Carve::new();
+            if one.enable_standard(name, false).is_ok() {
+                hosts.push(one);
+            }
+        }
+        hosts
+    }
+
+    #[test]
+    fn the_tree_walk_agrees_with_the_wire_form_scan() {
+        let hosts = hosts();
+        let mut checked = 0;
+        for input in inputs() {
+            let Ok(tree) = parse(input.as_str(), &Options::default()) else {
+                continue;
+            };
+            for host in &hosts {
+                let scan = !host.claims_nothing() && host.claimable_in_json(tree.json());
+                assert_eq!(host.may_claim(&tree), scan, "{input:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked > 1000, "{checked}");
+    }
 }
