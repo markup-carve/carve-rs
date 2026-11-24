@@ -21,6 +21,48 @@ pub(crate) fn json_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     found.map(|(_, v)| v)
 }
 
+/// Whether an object at or below `value` satisfies `hit`. One pass over each
+/// object's entries feeds `read` and descends; scalars are not visited.
+pub(crate) fn json_any<'a, S: Default>(
+    value: &'a Value,
+    read: &impl Fn(&mut S, &str, &'a Value),
+    hit: &impl Fn(&S) -> bool,
+) -> bool {
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .any(|v| holds_objects(v) && json_any(v, read, hit)),
+        Value::Object(map) => {
+            let mut state = S::default();
+            for (key, v) in map {
+                read(&mut state, key, v);
+                if holds_objects(v) && json_any(v, read, hit) {
+                    return true;
+                }
+            }
+            hit(&state)
+        }
+        _ => false,
+    }
+}
+
+const fn holds_objects(value: &Value) -> bool {
+    matches!(value, Value::Array(_) | Value::Object(_))
+}
+
+/// Whether the `value` of a `text` object at or below `value` satisfies `hit`.
+pub(crate) fn json_any_text(value: &Value, hit: &impl Fn(&str) -> bool) -> bool {
+    json_any(
+        value,
+        &|(text, found): &mut (bool, Option<&str>), key, v| match key {
+            "type" => *text = v.as_str() == Some("text"),
+            "value" => *found = v.as_str(),
+            _ => {}
+        },
+        &|(text, found)| *text && found.is_some_and(hit),
+    )
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum V<'a> {
     Null,
@@ -530,7 +572,19 @@ impl ExactSizeIterator for ArrIter<'_> {}
 #[cfg(test)]
 mod tests {
     use super::V;
-    use serde_json::{Map, Value};
+    use serde_json::{Map, Value, json};
+
+    #[test]
+    fn json_any_text_reads_text_values_at_any_depth() {
+        let tree = json!({"type": "doc", "children": [
+            {"type": "para", "children": [{"type": "code", "value": "c "}]},
+            {"type": "para", "children": [[{"type": "text", "value": "a "}]]},
+        ]});
+        assert!(super::json_any_text(&tree, &|t| t.ends_with(' ')));
+        assert!(!super::json_any_text(&tree, &|t| t.starts_with('c')));
+        let nested = json!({"type": "note", "value": {"type": "text", "value": "x"}});
+        assert!(super::json_any_text(&nested, &|t| t == "x"));
+    }
 
     fn to_json(value: V<'_>) -> Value {
         if let Some(items) = value.as_array() {

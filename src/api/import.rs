@@ -369,17 +369,23 @@ fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<Strin
     }
 }
 
+/// The parsed depth up to which [`run`] builds without its own thread. Up to
+/// it the build needs no more stack than the writer that runs on the caller anyway.
+const INLINE_DEPTH: usize = 64;
+
 fn run(
     html: &str,
     raw_html: bool,
     adapter: ImportAdapter,
 ) -> Result<crate::import::Imported, Error> {
-    let import = || {
-        crate::import::import_html(html, raw_html, adapter.runs_note_pass())
-            .map_err(|r| Error::ImportInput { message: r.0 })
-    };
-    // wasm32 targets have no threads; the default stack of the host applies.
-    if cfg!(target_family = "wasm") {
+    let refused = |r: crate::import::Refused| Error::ImportInput { message: r.0 };
+    let parsed = crate::import::parse_html(html).map_err(refused)?;
+    // A shallow tree builds on the caller's stack: the thread costs a fresh
+    // stack mapping per call. wasm32 targets have no threads at all.
+    let inline = parsed.depth <= INLINE_DEPTH || cfg!(target_family = "wasm");
+    let import =
+        || crate::import::build(html, parsed, raw_html, adapter.runs_note_pass()).map_err(refused);
+    if inline {
         return import();
     }
     std::thread::scope(|scope| {
@@ -567,6 +573,26 @@ mod imported_wire_test {
             crate::api::render_tree(&imported.tree, &opts).map_err(|error| error.to_string())?,
             crate::api::render_tree(&eager, &opts).map_err(|error| error.to_string())?
         );
+        Ok(())
+    }
+
+    /// Trees up to `INLINE_DEPTH` build on the caller, deeper ones on their own thread; both read alike.
+    #[test]
+    fn trees_on_both_sides_of_the_inline_depth_import_alike() -> Result<(), String> {
+        for n in super::INLINE_DEPTH - 4..super::INLINE_DEPTH + 4 {
+            let html = format!(
+                "{}<p>a <em>b</em></p>{}",
+                "<blockquote>".repeat(n),
+                "</blockquote>".repeat(n)
+            );
+            let imported = import_document(&html, &ImportOptions::default())
+                .map_err(|error| error.to_string())?;
+            assert_eq!(
+                imported.source.trim_end(),
+                format!("{}a /b/", "> ".repeat(n)),
+                "{n}"
+            );
+        }
         Ok(())
     }
 }

@@ -385,7 +385,7 @@ fn kind_of(h: &Handle) -> Kind {
             Kind::Comment(contents.to_string())
         }
         Rc5::Element { name, attrs, .. } => Kind::Element {
-            name: name.local.to_string(),
+            name: name.local.clone(),
             html: name.ns == ns!(html),
             attrs: attrs
                 .borrow()
@@ -421,7 +421,7 @@ fn convert(root: &Handle, children: &[Handle], spans: &AddrMap<usize, (usize, us
     while let Some((h, parent, is_content)) = pending.pop() {
         let id = dom.push(NodeData {
             kind: kind_of(&h),
-            children: Vec::new(),
+            children: Vec::with_capacity(h.children.borrow().len()),
             parent: Some(parent),
             content: None,
             span: spans.get(&key(&h)).copied(),

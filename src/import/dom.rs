@@ -1,6 +1,7 @@
 //! The parsed HTML as an arena of nodes, with the source span of each node the
 //! parser located.
 
+use html5ever::LocalName;
 use std::fmt::Write as _;
 
 pub(crate) type Id = usize;
@@ -12,7 +13,7 @@ pub(crate) enum Kind {
     Text(String),
     Comment(String),
     Element {
-        name: String,
+        name: LocalName,
         html: bool,
         attrs: Vec<(String, String)>,
     },
@@ -80,6 +81,14 @@ impl Dom {
         match &self.node(id).kind {
             Kind::Element { name, .. } => Some(name),
             _ => None,
+        }
+    }
+
+    /// [`Dom::tag`] as an owned name, empty for any other node; cloning it copies no text.
+    pub fn tag_name(&self, id: Id) -> LocalName {
+        match &self.node(id).kind {
+            Kind::Element { name, .. } => name.clone(),
+            _ => LocalName::default(),
         }
     }
 
@@ -218,9 +227,7 @@ impl Dom {
     fn in_raw_text(&self, n: Id) -> bool {
         self.parent(n)
             .and_then(|p| match &self.node(p).kind {
-                Kind::Element { name, html, .. } => {
-                    Some(*html && RAW_TEXT.contains(&name.as_str()))
-                }
+                Kind::Element { name, html, .. } => Some(*html && RAW_TEXT.contains(&&**name)),
                 _ => None,
             })
             .unwrap_or(false)
@@ -229,7 +236,7 @@ impl Dom {
     fn serialize(&self, id: Id, skip: Option<&dyn Fn(&str) -> bool>, out: &mut String) {
         enum Step {
             Open(Id, bool),
-            Close(String),
+            Close(LocalName),
         }
         let mut pending = vec![Step::Open(id, true)];
         while let Some(step) = pending.pop() {
@@ -258,12 +265,12 @@ impl Dom {
                 }
                 Kind::Element { name, html, attrs } => {
                     start_tag(name, attrs, skip.filter(|_| top), out);
-                    if *html && VOID.contains(&name.as_str()) {
+                    if *html && VOID.contains(&&**name) {
                         continue;
                     }
                     pending.push(Step::Close(name.clone()));
                     let node = self.node(n);
-                    let inner = if *html && name == "template" {
+                    let inner = if *html && &**name == "template" {
                         node.content.map_or(&[][..], |c| self.children(c))
                     } else {
                         &node.children

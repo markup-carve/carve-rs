@@ -229,7 +229,7 @@ fn write_element(dom: &Dom, id: Id, root: bool, depth: usize, out: &mut String) 
     let Kind::Element { name, html, attrs } = &dom.node(id).kind else {
         return Some(());
     };
-    if *html || !ELEMENTS.contains(&name.as_str()) {
+    if *html || !ELEMENTS.contains(&&**name) {
         return Some(());
     }
     let _ = write!(out, "<{name}");

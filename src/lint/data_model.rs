@@ -643,7 +643,7 @@ fn add_raw_html_ids<'a>(
     for node in dom.nodes {
         if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
             for (key, value) in attrs {
-                if key == "id" || (name == "a" && key == "name") {
+                if key == "id" || (&*name == "a" && key == "name") {
                     push_id(
                         ids,
                         seen,

@@ -92,7 +92,7 @@ impl Cx {
     /// C2-M-081: the lower-case tag name, or `#comment`, `#text` or `#doctype`.
     fn foreign_type(&self, id: Id) -> String {
         match &self.dom.node(id).kind {
-            dom::Kind::Element { name, .. } => name.to_ascii_lowercase(),
+            dom::Kind::Element { name, .. } => str::to_ascii_lowercase(name),
             dom::Kind::Text(_) => "#text".into(),
             dom::Kind::Comment(_) => "#comment".into(),
             _ => "#doctype".into(),
@@ -178,15 +178,26 @@ fn nesting_exceeded(root: &Value) -> bool {
     let mut pending = vec![(root, 0usize, 0usize)];
     while let Some((value, blocks, inlines)) = pending.pop() {
         match value {
-            Value::Array(items) => pending.extend(items.iter().map(|v| (v, blocks, inlines))),
+            Value::Array(items) => pending.extend(
+                items
+                    .iter()
+                    .filter(|v| v.is_array() || v.is_object())
+                    .map(|v| (v, blocks, inlines)),
+            ),
             Value::Object(map) => {
-                let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
+                let kind = crate::view::json_field(value, "type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 let blocks = blocks + usize::from(attrs::is_nesting_block(kind));
                 let inlines = inlines + usize::from(attrs::is_nesting_inline(kind));
                 if blocks > MAX_NESTING || inlines > MAX_NESTING {
                     return true;
                 }
-                pending.extend(map.values().map(|v| (v, blocks, inlines)));
+                pending.extend(
+                    map.values()
+                        .filter(|v| v.is_array() || v.is_object())
+                        .map(|v| (v, blocks, inlines)),
+                );
             }
             _ => {}
         }
@@ -195,22 +206,48 @@ fn nesting_exceeded(root: &Value) -> bool {
 }
 
 /// `importDocument` for HTML (C2-M-001): the tree as JSON and the record.
+#[cfg(test)]
 pub(crate) fn import_html(
     input: &str,
     raw_html: bool,
     note_pass: bool,
 ) -> Result<Imported, Refused> {
+    build(input, parse_html(input)?, raw_html, note_pass)
+}
+
+/// The parsed input of [`build`]. Parsing does not recurse, so it runs on any stack.
+pub(crate) struct Parsed {
+    dom: Dom,
+    full: bool,
+    /// The deepest node of the parsed tree, which bounds the recursion of [`build`].
+    pub depth: usize,
+}
+
+/// The parse half of [`import_html`].
+pub(crate) fn parse_html(input: &str) -> Result<Parsed, Refused> {
     let full = is_full_document(input);
-    let mut dom = if full {
+    let dom = if full {
         parse::document(input)
     } else {
         parse::fragment(input)
     };
-    if dom.depth(dom.root) > MAX_FOREIGN_DEPTH {
+    let depth = dom.depth(dom.root);
+    if depth > MAX_FOREIGN_DEPTH {
         return Err(Refused(format!(
             "Foreign input exceeds the engine tree depth limit of {MAX_FOREIGN_DEPTH}"
         )));
     }
+    Ok(Parsed { dom, full, depth })
+}
+
+/// The tree half of [`import_html`], recursing once per level of `parsed`.
+pub(crate) fn build(
+    input: &str,
+    parsed: Parsed,
+    raw_html: bool,
+    note_pass: bool,
+) -> Result<Imported, Refused> {
+    let Parsed { mut dom, full, .. } = parsed;
     if note_pass {
         adapter::note_pass(&mut dom);
     }
