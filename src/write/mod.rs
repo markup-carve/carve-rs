@@ -2075,8 +2075,7 @@ fn settle<'t>(
 ) -> bool {
     let mut c = compare_with_link_fallback(w, doc, group, first, initial, round);
     check::drop_early_trials(&mut c);
-    let read = round.source.zip(round.last);
-    if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
+    if drop_trials(w, &mut c, group, first, round) && c.changes() == 0 {
         return true;
     }
     if w.kind_escapes {
@@ -2341,6 +2340,118 @@ fn drop_asked_trials<'t>(
         dropped = true;
     }
     dropped
+}
+
+/// The trials of a round that take no escape: a lone one the test does not ask for, and one a sibling covers.
+fn drop_trials<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &Round<'_>,
+) -> bool {
+    let read = round.source.zip(round.last);
+    let asked = drop_asked_trials(w, c, group, first, read);
+    drop_idle_trials(w, c, group, first, round.last) || asked
+}
+
+const MAX_RETESTED_TRIALS: usize = 8;
+
+/// C2-W-125: a round can place trials for several nodes of one stretch, where the first one already forms the
+/// others (the brace before the tag of `x{#a\_--}` forms the dash behind it). A trial that changes nothing beside
+/// the other escapes of the round is no backslash of a case and is taken out. Only where the parse reads no
+/// construct: one it reads reports its kind (C2-W-088), and the rounds after it decide those trials.
+fn drop_idle_trials<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: Arr<'t>,
+    first: bool,
+    parsed: Option<V<'_>>,
+) -> bool {
+    if !(2..=MAX_RETESTED_TRIALS).contains(&c.trials.len()) || !parsed.is_some_and(reads_only_text)
+    {
+        return false;
+    }
+    // The round's escapes are placed in the document's own list and taken out again; a copy of that list
+    // per trial would cost the size of the document.
+    let mut added = Vec::new();
+    for &(n, at) in &c.escapes {
+        if !w.escapes_of(n).contains(&at) {
+            w.add_escape(n, at);
+            added.push((id(n), at));
+        }
+    }
+    let mut removed = Vec::new();
+    for &(n, at) in &c.retracted {
+        if remove_escape(w, id(n), at) {
+            removed.push((n, at));
+        }
+    }
+    let lines = w.lines.clone();
+    let lead = w.lead.clone();
+    let lead_skip = w.lead_skip;
+    let starts = (w.starts.clone(), w.start_index.clone());
+    let mut dropped = false;
+    // The later trial goes first, so the earlier one, which the rounds of C2-W-088 reach first, is kept.
+    for (n, at) in c.trials.clone().into_iter().rev() {
+        let key = (id(n), at);
+        if !added.contains(&key) {
+            continue;
+        }
+        let with = written_chunk(w, group, first);
+        remove_escape(w, key.0, at);
+        let without = written_chunk(w, group, first);
+        if !node::trees_equal(without.parse(w), with.parse(w)) {
+            w.add_escape(n, at);
+            continue;
+        }
+        added.retain(|&k| k != key);
+        c.escapes.retain(|&(m, a)| (id(m), a) != key);
+        c.trials.retain(|&(m, a)| (id(m), a) != key);
+        if let Some(marks) = c.marks.get_mut(&key.0) {
+            marks.remove(&at);
+        }
+        dropped = true;
+    }
+    for (n, at) in added {
+        remove_escape(w, n, at);
+    }
+    for (n, at) in removed {
+        w.add_escape(n, at);
+    }
+    w.lines = lines;
+    w.lead = lead;
+    w.lead_skip = lead_skip;
+    w.starts = starts.0;
+    w.start_index = starts.1;
+    dropped
+}
+
+fn remove_escape(w: &mut Writer<'_>, node: usize, at: usize) -> bool {
+    let Some(list) = w.sp.escapes.get_mut(&node) else {
+        return false;
+    };
+    let Ok(place) = list.binary_search(&at) else {
+        return false;
+    };
+    list.remove(place);
+    if list.is_empty() {
+        w.sp.escapes.remove(&node);
+    }
+    true
+}
+
+/// Whether the inline content of every leaf block of `parsed` is text and line breaks only.
+fn reads_only_text(parsed: V<'_>) -> bool {
+    children(parsed).iter().all(|n| {
+        if node::is_inline_parent(n) {
+            children(n)
+                .iter()
+                .all(|k| ty(k) == "text" || node::is_break(Some(k)))
+        } else {
+            reads_only_text(n)
+        }
+    })
 }
 
 /// The text nodes below `nodes` in the order they are written: a title before the children.

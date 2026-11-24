@@ -443,10 +443,23 @@ fn closing_mark(t: &str) -> Option<u8> {
 }
 
 fn escape_end<'t>(w: &Writer<'t>, c: &mut Check<'t>, t: Option<N<'t>>, braces: bool) -> bool {
+    escape_end_before(w, c, t, braces, false)
+}
+
+/// `escape_end` for the last text of a node whose closer follows it. No closer starts with a bracket or a
+/// backtick, so there only a backslash or a backtick reads on into it: `!`, `^` and `$` stay text.
+fn escape_end_before<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    t: Option<N<'t>>,
+    braces: bool,
+    closer: bool,
+) -> bool {
     let Some(t) = t else { return false };
     let value = text(t);
     if let Some(&last) = value.as_bytes().last() {
-        if JOINING.contains(&last) && escape_at(w, c, t, value.len() - 1) {
+        let joins = !closer || matches!(last, b'\\' | b'`');
+        if JOINING.contains(&last) && joins && escape_at(w, c, t, value.len() - 1) {
             return true;
         }
     }
@@ -570,7 +583,8 @@ fn escape_inside<'t>(w: &Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) 
         .copied()
         .filter(|e| has(e, "children"))
         .and_then(|e| last_text(Some(e)));
-    escape_end(w, c, t, true)
+    let closer = es.get(i).is_some_and(|&e| closing_mark(ty(e)).is_some());
+    escape_end_before(w, c, t, true, closer)
 }
 
 fn escape_closer_before_brace<'t>(
@@ -591,7 +605,7 @@ fn escape_closer_before_brace<'t>(
     escape_in_content(w, c, e)
 }
 
-const RESPELL_STEPS: usize = 18;
+const RESPELL_STEPS: usize = 19;
 const CONTENT_OPENER_STEP: usize = 4;
 
 fn respell_step<'t>(
@@ -618,6 +632,7 @@ fn respell_step<'t>(
                 || escape_after(w, c, es, i)
         }
         9 => escape_content_line(w, c, e),
+        18 => escape_attribute_key(w, c, es.get(i..).unwrap_or(&[])),
         _ => late_respell_step(w, c, es.get(..i).unwrap_or(&[]), e, step, attempt),
     }
 }
@@ -649,6 +664,26 @@ fn late_respell_step<'t>(
         17 => escape_key_caret(w, c, e),
         _ => false,
     }
+}
+
+/// C2-W-125 case nine: the braced opener of `es[0]` reads as the key of a valid attribute block (C2-I-043). A key
+/// that starts with `_` is valid only with a value (C2-I-031), so the `=` behind the key characters of the content
+/// takes the backslash: an underline of `=.` is `{_\=._}`, of `a-b=c` is `{_a-b\=c_}`.
+fn escape_attribute_key<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>]) -> bool {
+    let Some(first) = es
+        .first()
+        .and_then(|e| children(e).first())
+        .filter(|f| ty(f) == "text")
+    else {
+        return false;
+    };
+    let spelled = write_inlines(w, es, c.flags);
+    if !spelled.starts_with('{') || crate::attr::parse_block(&spelled, 0).is_none() {
+        return false;
+    }
+    let b = text(first).as_bytes();
+    let equals = b.iter().position(|&x| !crate::attr::name_char(x));
+    equals.is_some_and(|at| b.get(at) == Some(&b'=') && escape_at(w, c, first, at))
 }
 
 fn take_attempt<'t>(w: &mut Writer<'t>, n: usize) -> Attempt<'t> {
@@ -2299,6 +2334,15 @@ fn escape_reading_brace<'t>(w: &Writer<'t>, c: &mut Check<'t>, owner: N<'t>) -> 
     true
 }
 
+/// C2-W-125 case one, C2-W-088: the brace ending the content of `owner` reads with its closing mark as a braced
+/// opener, so `owner` reads on. That repairs the tree's own node and gives no kind.
+fn reads_into_closer(owner: V<'_>, n: V<'_>, at: usize) -> bool {
+    text(n).as_bytes().get(at) == Some(&b'{')
+        && at + 1 == text(n).len()
+        && last_text(Some(owner)).is_some_and(|t| id(t) == id(n))
+        && closing_mark(ty(owner)).is_some_and(|m| m != b']')
+}
+
 /// A note or extension that a lone bracket of its content keeps from forming reads as text.
 fn reads_as_text(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
     matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
@@ -2429,7 +2473,19 @@ fn skip_construct<'t>(
     if quoted {
         escape_at(w, c, e, at.vi + 1);
     } else {
+        let placed = c.escapes.len();
         escape_opener(w, c, e, es, at.i, at.vi, a);
+        let read_on: Vec<(usize, usize)> = c
+            .escapes
+            .get(placed..)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|&&(n, k)| reads_into_closer(owner, n, k))
+            .map(|&(n, k)| (id(n), k))
+            .collect();
+        // As in `escape_reading_brace`, the parse behind the read-on content is not compared.
+        c.cut |= !read_on.is_empty();
+        c.closers.extend(read_on);
     }
     let Some((start, end)) = span(a) else {
         return false;
@@ -2552,7 +2608,7 @@ fn reads_neighbor<'t>(
             return escape_at(w, c, n, 0);
         }
         if reads_on(e, n) && differing_field(w, c, e, a).is_some() {
-            return escape_at(w, c, n, 0);
+            return escape_lengthener(w, c, n);
         }
     }
     if ty(e) != "smart_punctuation"
@@ -2568,6 +2624,15 @@ fn reads_neighbor<'t>(
     }
     let before = i.checked_sub(1).and_then(|p| text_at(es, p));
     before.is_some_and(|b| escape_at(w, c, b, text(b).len().saturating_sub(1)))
+}
+
+/// C2-W-125 case six: the backslash of a character that lengthens the node before it gives no kind (C2-W-088).
+fn escape_lengthener<'t>(w: &Writer<'t>, c: &mut Check<'t>, n: N<'t>) -> bool {
+    let placed = escape_at(w, c, n, 0);
+    if placed {
+        c.own_escapes.insert((id(n), 0));
+    }
+    placed
 }
 
 fn is_lost_code(w: &Writer<'_>, node: Option<V<'_>>) -> bool {
