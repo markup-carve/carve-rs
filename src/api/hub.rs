@@ -124,6 +124,7 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
     let comrak_display = matches!(flow, Flow::Comrak);
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, input, &options);
+    let later_content = content_after_lines(input);
     let mut tight = Vec::new();
     let mut loose = std::collections::HashSet::new();
     let nodes: Vec<_> = root.descendants().collect();
@@ -148,7 +149,7 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
             NodeValue::CodeBlock(code)
                 if code.fence_char == b'`' && code.fence_length >= math_fence =>
             {
-                display_math(node, &code.literal, &mut loose);
+                display_math_code(node, &code, &later_content, &mut loose);
             }
             NodeValue::List(list) => tight.push((std::ptr::from_ref(node), list.tight)),
             NodeValue::BlockQuote if gfm => alert(&arena, node),
@@ -164,6 +165,30 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
         .map(|(list, tight)| tight && !loose.contains(&list))
         .collect();
     Ok(mark_tight(&out, &tight))
+}
+
+/// Whether nonblank input follows each 1-based source line.
+fn content_after_lines(input: &str) -> Vec<bool> {
+    let mut later: Vec<bool> = input.lines().map(|line| !line.trim().is_empty()).collect();
+    let mut present = false;
+    for line in later.iter_mut().rev() {
+        present |= *line;
+        *line = present;
+    }
+    later
+}
+
+fn display_math_code<'a>(
+    node: &'a comrak::nodes::AstNode<'a>,
+    code: &comrak::nodes::NodeCodeBlock,
+    later_content: &[bool],
+    loose: &mut std::collections::HashSet<*const comrak::nodes::AstNode<'a>>,
+) {
+    let after = later_content
+        .get(node.data.borrow().sourcepos.end.line)
+        .copied()
+        .unwrap_or(false);
+    display_math(node, &code.literal, !code.closed && after, loose);
 }
 
 /// How the hub reads `$$`.
@@ -421,10 +446,22 @@ fn lf_endings(input: &str) -> std::borrow::Cow<'_, str> {
 fn display_math<'a>(
     node: &'a comrak::nodes::AstNode<'a>,
     literal: &str,
+    trim_boundary: bool,
     loose: &mut std::collections::HashSet<*const comrak::nodes::AstNode<'a>>,
 ) {
     use comrak::nodes::{NodeHtmlBlock, NodeValue};
     let literal = literal.strip_suffix('\n').unwrap_or(literal);
+    // Comrak includes the boundary line of an unclosed fence before following
+    // content. A prefixed blank at the document end remains formula content.
+    let literal = if trim_boundary
+        && node
+            .parent()
+            .is_some_and(|parent| !matches!(parent.data.borrow().value, NodeValue::Document))
+    {
+        literal.strip_suffix('\n').unwrap_or(literal)
+    } else {
+        literal
+    };
     let span = format!(
         r#"<span class="math display">\[{}\]</span>"#,
         escape(literal)
