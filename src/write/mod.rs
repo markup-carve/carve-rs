@@ -1396,7 +1396,8 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
 /// of many groups stays linear.
 struct SavedGroup<'t> {
     lines: Vec<String>,
-    ids: Vec<usize>,
+    /// `None` where no entry or stand-in existed to save: `restore` reads the group itself.
+    ids: Option<Vec<usize>>,
     escapes: Vec<(usize, Vec<usize>)>,
     attempts: Vec<(usize, state::Attempt<'t>)>,
     lost: Vec<usize>,
@@ -1437,9 +1438,19 @@ fn json_node_ids(value: &Value, out: &mut Vec<usize>) {
 
 impl<'t> SavedGroup<'t> {
     fn new(w: &Writer<'t>, group: Arr<'_>) -> Self {
+        let nothing_saved = w.stand_ins.is_empty()
+            && w.sp.escapes.is_empty()
+            && w.sp.attempts.is_empty()
+            && w.sp.lost.is_empty()
+            && w.sp.lost_keys.is_empty()
+            && w.forms.is_empty()
+            && w.round_forms.is_empty()
+            && w.glued.is_empty();
         let mut ids = Vec::new();
-        for node in group {
-            node_ids(node, &mut ids);
+        if !nothing_saved {
+            for node in group {
+                node_ids(node, &mut ids);
+            }
         }
         let stand_ins: Vec<usize> = ids
             .iter()
@@ -1484,17 +1495,17 @@ impl<'t> SavedGroup<'t> {
                 .filter(|n| w.glued.contains(n))
                 .collect(),
             blank_first: w.blank_first,
-            ids,
+            ids: (!nothing_saved).then_some(ids),
         }
     }
 
     fn restore(self, w: &mut Writer<'t>, losses: usize, group: Arr<'_>) {
         // Stand-ins made during the rounds belong to the group too.
-        let mut ids = self.ids;
         let mut fresh = Vec::new();
         for node in group {
             node_ids(node, &mut fresh);
         }
+        let mut ids = self.ids.unwrap_or_else(|| fresh.clone());
         let stand_ins: Vec<usize> = fresh
             .iter()
             .filter_map(|n| w.stand_ins.get(n))
@@ -1600,7 +1611,8 @@ fn repair_rounds<'t>(
         w.round_forms.remove(n);
         w.glued.remove(n);
     }
-    for n in &saved.ids {
+    // With no saved ids both maps were empty.
+    for n in saved.ids.iter().flatten() {
         w.sp.escapes.remove(n);
         w.sp.attempts.remove(n);
     }
