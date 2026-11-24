@@ -8,7 +8,6 @@ pub(super) struct Line {
     /// when that differs from `text`.
     pub(super) escaped: Option<String>,
     pub(super) start: usize,
-    pub(super) path: String,
     /// Where the tree places this line's text: its first leaf, or the end of the break before it.
     pub(super) content: Option<usize>,
 }
@@ -28,16 +27,11 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     let lines = starts.iter().zip(raws).zip(facts);
     for ((&start, raw), fact) in lines {
         let bytes = masked(raw, start, &fact);
-        let path = fact
-            .paragraph
-            .or(fact.line_block)
-            .map_or_else(String::new, |r| r.path.text());
         let opaque = fact.flags & (FRONTMATTER | OPAQUE) != 0;
         out.push(Line {
             escaped: (!opaque).then(|| escape_masked(raw, &bytes)).flatten(),
             text: String::from_utf8_lossy(&bytes).into_owned(),
             start,
-            path,
             content: fact
                 .content
                 .filter(|at| *at >= start && *at <= start + raw.len())
@@ -49,7 +43,6 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
             text: String::new(),
             escaped: None,
             start: source.len(),
-            path: String::new(),
             content: None,
         });
     }
@@ -63,26 +56,13 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> V
     for range in ranges {
         let kind = range.kind;
         mark_content(&mut facts, range);
-        let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
-        if paragraph_like || flags != 0 || matches!(kind, "line_block" | "block_quote") {
+        if flags != 0 || kind == "block_quote" {
             let first = range.start_line.max(1) - 1;
             let covered = facts.get_mut(first..range.end_line.min(count));
             for fact in covered.into_iter().flatten() {
                 fact.flags |= flags;
                 fact.quotes += usize::from(kind == "block_quote");
-                // `max_by_key` keeps the last of equal keys.
-                if paragraph_like
-                    && fact.paragraph.is_none_or(|best| {
-                        (range.kind == "caption", range.path.len())
-                            >= (best.kind == "caption", best.path.len())
-                    })
-                {
-                    fact.paragraph = Some(range);
-                }
-                if kind == "line_block" {
-                    fact.line_block = Some(range);
-                }
             }
         }
         if is_opaque_leaf(kind) {
@@ -188,8 +168,6 @@ struct LineFacts<'r> {
     flags: u8,
     content: Option<usize>,
     quotes: usize,
-    paragraph: Option<&'r Range<'r>>,
-    line_block: Option<&'r Range<'r>>,
     masks: Vec<&'r Range<'r>>,
 }
 

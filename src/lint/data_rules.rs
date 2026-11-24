@@ -748,13 +748,7 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             }),
         };
         last = Some((key, found));
-        // C2-W-138: a finding on a line of a pipe table that holds no node names the table.
-        let path = || match records.lines[index].path {
-            "" => records
-                .line_table(index)
-                .map_or_else(String::new, |table| records.path_of(table)),
-            path => path.to_owned(),
-        };
+        let path = || records.line_path(index);
         for rule in buckets[found].iter() {
             // These catalog rows can report only when their line contains a marker at the
             // candidate position. Test the necessary source mark before evaluating their lets.
@@ -861,7 +855,8 @@ fn run_text_runs(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnos
             continue;
         }
         let bucket = cache.inline(("text_run", record.first_byte()));
-        let path = || records.path_of(record.range);
+        // C2-W-157: a text run has no node; it names the node whose children make it.
+        let path = || records.run_holder_path(record.range);
         for rule in bucket.iter() {
             run_rule(
                 *rule,
