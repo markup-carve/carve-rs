@@ -39,7 +39,7 @@
     "id": "deprecated-table-attribute",
     "trigger": "{header-rows=1}\n| a |\n",
     "near": "| a |\n",
-    "options": {}
+    "options": { "upgrade": true }
   },
   {
     "id": "djot-emphasis-underscore",

@@ -1,7 +1,12 @@
 //! Hand-written rules give the findings and wording of their catalog rows (carve#6186).
 
 fn found(input: &str, code: &str) -> Vec<(u32, String)> {
-    carve::lint::lint(input, &carve::lint::LintOptions::default())
+    // C2-W-156: `deprecated-continuation-marker` runs under `upgrade`.
+    let options = carve::lint::LintOptions {
+        upgrade: true,
+        ..carve::lint::LintOptions::default()
+    };
+    carve::lint::lint(input, &options)
         .into_iter()
         .filter(|finding| finding.code == code)
         .map(|finding| (finding.pos.expect("range").start_offset, finding.message))
