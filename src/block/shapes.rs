@@ -555,6 +555,14 @@ pub struct DivInfo {
     pub glued: Option<(usize, usize)>,
 }
 
+impl DivInfo {
+    /// A div opener with no name and no sigil (C2-B-119).
+    #[must_use]
+    pub fn is_anonymous(&self) -> bool {
+        self.name.is_none() && self.sigil.is_none()
+    }
+}
+
 /// A div opener or a bare colon run (C2-B-119, C2-B-125, C2-B-196).
 #[must_use]
 pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
