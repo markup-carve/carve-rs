@@ -495,6 +495,7 @@ pub(super) fn parse_file<'a>(
     if let Some((diags, file)) = report {
         let found = out.findings.iter().chain(&inner.findings);
         diags.extend(found.map(|f| Diagnostic::from_finding(f, &src, Some(file))));
+        crate::duplicate_definitions(&doc, &src, Some(file), diags);
     }
     (doc, inner)
 }

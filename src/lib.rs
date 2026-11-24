@@ -677,7 +677,7 @@ pub(crate) fn prepare_with<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
-    duplicate_definitions(&doc, &src, diags);
+    duplicate_definitions(&doc, &src, None, diags);
     diags.extend(
         scope
             .findings
@@ -801,9 +801,10 @@ pub(crate) fn with_lint_tree<R>(
 }
 
 /// C2-B-083, C2-B-085: only the first definition of each label wins.
-fn duplicate_definitions(
+pub(crate) fn duplicate_definitions(
     doc: &ast::Document<'_>,
     src: &source::Source<'_>,
+    file: Option<&str>,
     diags: &mut Vec<diagnostic::Diagnostic>,
 ) {
     let mut links = std::collections::HashSet::new();
@@ -843,7 +844,7 @@ fn duplicate_definitions(
                 p
             }
         });
-        diags.push(diagnostic::Diagnostic::new(code, &[], None, pos));
+        diags.push(diagnostic::Diagnostic::new(code, &[], file, pos));
     }
 }
 
