@@ -173,6 +173,18 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             .filter(|diagnostic| !data_rules::modeled_ids().contains(diagnostic.code)),
     );
     if includes {
+        // C2-N-087: a file included twice reports each parse finding once.
+        let mut seen = HashSet::new();
+        out.retain(|d| match (&d.file, d.pos) {
+            (Some(file), Some(pos)) => seen.insert((
+                file.clone(),
+                pos.start_offset,
+                pos.end_offset,
+                d.code,
+                d.message.clone(),
+            )),
+            _ => true,
+        });
         includes::scan(source, opts, &mut out);
     }
     out

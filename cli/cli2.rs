@@ -612,17 +612,71 @@ impl<'a> Positions<'a> {
         )
     }
 }
-fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
+/// C2-N-087: the text of each included file an entry names, to count its line and column in.
+fn included_sources(
+    entries: &[Entry],
+    includes: Option<&carve::include::Includes>,
+) -> BTreeMap<String, Vec<u8>> {
+    let mut sources = BTreeMap::new();
+    let Some(includes) = includes else {
+        return sources;
+    };
+    let options = json!({});
+    for name in entries.iter().filter_map(|e| e.file.as_deref()) {
+        if sources.contains_key(name) || includes.file.as_deref() == Some(name) {
+            continue;
+        }
+        let request = carve::include::Request {
+            path: name,
+            section: None,
+            options: &options,
+            from: None,
+        };
+        if let Ok((bytes, _)) = (includes.resolver)(&request) {
+            sources.insert(name.to_string(), bytes);
+        }
+    }
+    sources
+}
+struct Places<'b> {
+    own: Positions<'b>,
+    files: BTreeMap<&'b str, Positions<'b>>,
+}
+impl<'b> Places<'b> {
+    fn new(bytes: &'b [u8], sources: &'b BTreeMap<String, Vec<u8>>) -> Self {
+        Self {
+            own: Positions::new(bytes),
+            files: sources
+                .iter()
+                .map(|(name, text)| (name.as_str(), Positions::new(text)))
+                .collect(),
+        }
+    }
+    fn place(&self, entry: &Entry, offset: usize) -> (usize, usize) {
+        entry
+            .file
+            .as_deref()
+            .and_then(|name| self.files.get(name))
+            .unwrap_or(&self.own)
+            .place(offset)
+    }
+}
+fn located(
+    entries: &[Entry],
+    bytes: &[u8],
+    includes: Option<&carve::include::Includes>,
+) -> Vec<Value> {
     if entries.is_empty() {
         return Vec::new();
     }
-    let positions = Positions::new(bytes);
+    let sources = included_sources(entries, includes);
+    let positions = Places::new(bytes, &sources);
     entries
         .iter()
         .map(|entry| {
             let mut v = serde_json::to_value(entry).unwrap();
             if let Some(range) = entry.range {
-                let (line, column) = positions.place(range.start_offset);
+                let (line, column) = positions.place(entry, range.start_offset);
                 v["line"] = json!(line);
                 v["column"] = json!(column);
             }
@@ -630,14 +684,23 @@ fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
         })
         .collect()
 }
-fn lines(path: &str, bytes: &[u8], entries: &[Entry], stderr: bool) -> Result<(), i32> {
+fn lines(
+    path: &str,
+    bytes: &[u8],
+    entries: &[Entry],
+    stderr: bool,
+    includes: Option<&carve::include::Includes>,
+) -> Result<(), i32> {
     if entries.is_empty() {
         return Ok(());
     }
     let mut text = String::new();
-    let positions = Positions::new(bytes);
+    let sources = included_sources(entries, includes);
+    let positions = Places::new(bytes, &sources);
     for e in entries {
-        let (line, column) = e.range.map_or((0, 0), |r| positions.place(r.start_offset));
+        let (line, column) = e
+            .range
+            .map_or((0, 0), |r| positions.place(e, r.start_offset));
         let name = e.file.as_deref().unwrap_or(display(path));
         if line == 0 {
             let _ = writeln!(text, "{name}: {} {} {}", e.severity, e.code, e.message);
@@ -657,8 +720,14 @@ fn lines(path: &str, bytes: &[u8], entries: &[Entry], stderr: bool) -> Result<()
         output(&text)
     }
 }
-fn loss_report(path: &str, entries: &[Entry], bytes: &[u8], suppressed: usize) -> Value {
-    json!({"file":display(path),"diagnostics":located(entries,bytes),"suppressed":suppressed})
+fn loss_report(
+    path: &str,
+    entries: &[Entry],
+    bytes: &[u8],
+    suppressed: usize,
+    includes: Option<&carve::include::Includes>,
+) -> Value {
+    json!({"file":display(path),"diagnostics":located(entries,bytes,includes),"suppressed":suppressed})
 }
 fn include_report(path: &str, tree: &api::Tree) -> Value {
     let dependencies: Vec<Value> = api::include_dependencies(tree)
@@ -870,9 +939,16 @@ fn diagnostics_file(
             &parsed.diagnostics,
             bytes,
             parsed.suppressed_diagnostics,
+            opts.includes.as_ref(),
         ));
     } else {
-        lines(path, bytes, &parsed.diagnostics, false)?;
+        lines(
+            path,
+            bytes,
+            &parsed.diagnostics,
+            false,
+            opts.includes.as_ref(),
+        )?;
     }
     if str_value(args, "report-includes").is_some() {
         include_reports.push(include_report(path, &parsed.tree));
@@ -1041,7 +1117,7 @@ fn flatten_file(
         .collect();
     if !causes.is_empty() {
         eprintln!("carve[include-unresolved]: {path}: an include did not expand");
-        lines(path, bytes, &causes, true)?;
+        lines(path, bytes, &causes, true, opts.includes.as_ref())?;
         return Ok(1);
     }
     let mut expanded: Value = serde_json::from_str(&api::encode_tree(&parsed.tree))
@@ -1124,9 +1200,15 @@ fn lint_file(
         }
     }
     if bool_value(args, "json", false) {
-        diagnostics.push(loss_report(path, &entries, &source, 0));
+        diagnostics.push(loss_report(
+            path,
+            &entries,
+            &source,
+            0,
+            opts.includes.as_ref(),
+        ));
     } else {
-        lines(path, &source, &entries, fixed)?;
+        lines(path, &source, &entries, fixed, opts.includes.as_ref())?;
     }
     Ok(i32::from(entries.iter().any(|e| {
         bool_value(args, "strict", false) || e.severity == "warning" || e.severity == "error"
@@ -1225,13 +1307,14 @@ fn import_file(
         .into_iter()
         .filter(|e| e.channel == "render-loss")
         .collect();
-    lines(path, bytes, &retained, true)?;
+    lines(path, bytes, &retained, true, None)?;
     if str_value(args, "report-losses").is_some() {
         loss_reports.push(loss_report(
             path,
             &retained,
             bytes,
             imported.suppressed_diagnostics,
+            None,
         ));
     }
     product(args, &imported.source)?;
@@ -1243,7 +1326,7 @@ fn migrate_file(path: &str, bytes: &[u8]) -> Result<i32, i32> {
     let value: Value = serde_json::from_str(source).map_err(|e| fail("ast-json-invalid", e))?;
     let migrated =
         api::migrate_tree_with(&value, &api::MigrateOptions::default()).map_err(api_fail)?;
-    lines(path, bytes, &migrated.diagnostics, true)?;
+    lines(path, bytes, &migrated.diagnostics, true, None)?;
     let encoded = migrated
         .envelope
         .unwrap_or_else(|| api::encode_tree(&migrated.tree));
@@ -1275,6 +1358,7 @@ fn render_file(
             &retained,
             bytes,
             rendered.suppressed_diagnostics,
+            opts.includes.as_ref(),
         ));
     }
     if str_value(args, "report-includes").is_some() {
@@ -1288,7 +1372,7 @@ fn render_file(
             retained.len()
         );
     }
-    lines(path, bytes, &retained, true)?;
+    lines(path, bytes, &retained, true, opts.includes.as_ref())?;
     if strict {
         return Ok(1);
     }
