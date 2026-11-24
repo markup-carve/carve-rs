@@ -153,6 +153,8 @@ pub struct Writer<'t> {
     pub link_escapes: AddrMap<usize, Vec<(N<'t>, usize)>>,
     /// The first write of a group tests its link labels bare.
     pub link_bracket_fallback: bool,
+    /// The attempts a comparison replaced, oldest first, while the link fallback may compare its round again.
+    pub attempts_journal: Option<Vec<(usize, Option<Attempt<'t>>)>>,
     pub saw_link: bool,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
@@ -218,6 +220,7 @@ impl<'t> Writer<'t> {
             link_brackets: AddrMap::default(),
             link_escapes: AddrMap::default(),
             link_bracket_fallback: false,
+            attempts_journal: None,
             saw_link: false,
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),

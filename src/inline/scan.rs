@@ -964,7 +964,8 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// C2-I-087: `[^label]`; with no label the `[` is text.
     fn footnote_ref(&mut self, i: usize) -> bool {
         if let Label::Ok(e, end) = self.label(i + 2) {
-            let key = self.label_key(i + 2, e);
+            // C2-B-224 lists no footnote label: `\|` stays in its key.
+            let key = fold_label(self.t.get(i + 2..e).unwrap_or(""));
             if !key.is_empty() {
                 let node = Node::FootnoteRef(self.c.arena().alloc(FootnoteRef {
                     key: self.c.keep(&key),

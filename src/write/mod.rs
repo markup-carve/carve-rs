@@ -1206,13 +1206,18 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
                 break;
             }
             let saved_lines = w.lines.clone();
-            let saved_escapes = w.sp.escapes.clone();
+            // Only the group's entries: a copy of the whole map made a document of many groups quadratic.
+            let saved_escapes = group_escapes(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
             let saved_losses = w.sp.losses.len();
             pairs::apply(w, &asked);
             let next = repair_group(w, doc, from, out.is_empty());
             if w.sp.losses.len() > saved_losses {
+                let group = nodes.slice(from, at.max(next)).unwrap_or_else(Arr::empty);
+                for n in &group_ids(w, group) {
+                    w.sp.escapes.remove(n);
+                }
+                w.sp.escapes.extend(saved_escapes);
                 w.lines = saved_lines;
-                w.sp.escapes = saved_escapes;
                 w.sp.losses.truncate(saved_losses);
                 break;
             }
@@ -1389,6 +1394,31 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     let end = repair_rounds(w, doc, from, first, reported);
     w.kind_escapes = true;
     end
+}
+
+/// The ids of the nodes of `group` and of their stand-ins.
+fn group_ids(w: &Writer<'_>, group: Arr<'_>) -> Vec<usize> {
+    let mut ids = Vec::new();
+    for node in group {
+        node_ids(node, &mut ids);
+    }
+    let stand_ins: Vec<usize> = ids
+        .iter()
+        .filter_map(|n| w.stand_ins.get(n))
+        .flat_map(|roles| roles.values().map(|n| id(*n)))
+        .collect();
+    ids.extend(stand_ins);
+    ids
+}
+
+fn group_escapes(w: &Writer<'_>, group: Arr<'_>) -> Vec<(usize, Vec<usize>)> {
+    if w.sp.escapes.is_empty() {
+        return Vec::new();
+    }
+    group_ids(w, group)
+        .iter()
+        .filter_map(|n| w.sp.escapes.get(n).map(|e| (*n, e.clone())))
+        .collect()
 }
 
 /// The repair state of a group before its rounds, for the C2-W-088 fallback:
@@ -2008,7 +2038,12 @@ fn compare_with_link_fallback<'t>(
     initial: bool,
     round: &mut Round<'_>,
 ) -> Check<'t> {
+    // The fallback compares this round again, so the respell steps of the first comparison do not count.
+    if initial && w.saw_link && !w.link_bracket_fallback {
+        w.attempts_journal = Some(Vec::new());
+    }
     let mut c = compare_group(w, doc, group, first, round);
+    let journal = w.attempts_journal.take();
     if initial
         && !round.equal
         && w.saw_link
@@ -2016,6 +2051,12 @@ fn compare_with_link_fallback<'t>(
         && link_repair_requested(group, &c)
     {
         w.link_bracket_fallback = true;
+        for (n, prior) in journal.into_iter().flatten().rev() {
+            match prior {
+                Some(attempt) => w.sp.attempts.insert(n, attempt),
+                None => w.sp.attempts.remove(&n),
+            };
+        }
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
         c = compare_group(w, doc, group, first, round);
