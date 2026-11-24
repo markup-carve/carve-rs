@@ -278,7 +278,7 @@
   {
     "id": "fence-closer-indented",
     "origin": "../carve/tests/corpus/276-a-fence-opened-on-a-list-marker-line-body-below-the-content-column-2.crv",
-    "trigger": "- ```\n x\n ```\n",
+    "trigger": "- ```\n x\n   ```\n",
     "near": "- ```\n x\n \n",
     "fragment": "```",
     "message": "This line closes the block opened on line 1 although it is indented differently. If it is content, make the outer fence longer."
