@@ -2070,11 +2070,33 @@ fn report_unread(w: &mut Writer<'_>, group: Arr<'_>, parsed: Option<V<'_>>) {
 }
 
 fn star_after_break(nodes: Arr<'_>, byte: usize, parent: Option<V<'_>>) -> bool {
-    for (index, n) in nodes.iter().enumerate() {
+    // Siblings lie in source order, so the search starts at the first that ends after `byte`: a scan from
+    // the front made each prune trial linear in the length of the paragraph.
+    let before = |i| {
+        nodes
+            .get(i)
+            .is_some_and(|n| span(n).is_none_or(|(_, end)| end <= byte))
+    };
+    let (mut low, mut high) = (0, nodes.len());
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if before(mid) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    for index in low..nodes.len() {
+        let Some(n) = nodes.get(index) else {
+            continue;
+        };
         let Some((start, end)) = span(n) else {
             continue;
         };
-        if byte < start || byte >= end {
+        if byte < start {
+            break;
+        }
+        if byte >= end {
             continue;
         }
         if ty(n) == "text" {
@@ -2165,13 +2187,45 @@ fn prunable_opener<'p>(
     }
 }
 
-/// Whether the byte `at` of `source` lies in a verbatim reference.
-fn in_raw(source: &str, at: usize, raws: &[String]) -> bool {
-    raws.iter().filter(|r| !r.is_empty()).any(|r| {
-        source
-            .match_indices(r.as_str())
-            .any(|(start, m)| start <= at && at < start + m.len())
-    })
+/// The spans of `source` that hold a verbatim reference, sorted and merged for [`in_raw`]. Each reference
+/// keeps its own leftmost non-overlapping occurrences, as `match_indices` gives them, from one pass.
+fn raw_spans(source: &str, raws: &[String]) -> Vec<(usize, usize)> {
+    let patterns: Vec<&str> = raws
+        .iter()
+        .map(String::as_str)
+        .filter(|r| !r.is_empty())
+        .collect();
+    let Ok(searcher) = aho_corasick::AhoCorasick::new(&patterns) else {
+        return Vec::new();
+    };
+    let mut next = vec![0; patterns.len()];
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for m in searcher.find_overlapping_iter(source) {
+        let Some(free) = next.get_mut(m.pattern().as_usize()) else {
+            continue;
+        };
+        if m.start() >= *free {
+            *free = m.end();
+            spans.push((m.start(), m.end()));
+        }
+    }
+    spans.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
+    for (start, end) in spans {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
+}
+
+/// Whether the byte `at` lies in one of the [`raw_spans`].
+fn in_raw(spans: &[(usize, usize)], at: usize) -> bool {
+    let i = spans.partition_point(|&(start, _)| start <= at);
+    i.checked_sub(1)
+        .and_then(|i| spans.get(i))
+        .is_some_and(|&(_, end)| at < end)
 }
 
 /// C2-I-089, C2-W-091: the backslash of a `\[^]` inside the brackets of a `^[` of its line stays where the
@@ -2311,7 +2365,14 @@ fn bare_bracket_starts(w: &Writer<'_>, source: &str) -> HashSet<usize> {
 /// `round.last` is the last read-back parse of the group, the parse of its source as written.
 fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &Round<'_>) {
     let mut source = group_source(w, first);
-    let raws = std::mem::take(&mut w.raw_refs);
+    // Both prunes ask only whether a backslash lies in a verbatim reference, which only a reference holding a
+    // backslash can answer yes; searching the source for every other one was quadratic in the references.
+    let mut raws: Vec<String> = std::mem::take(&mut w.raw_refs)
+        .into_iter()
+        .filter(|r| r.contains('\\'))
+        .collect();
+    raws.sort_unstable();
+    raws.dedup();
     let windowed = prune_in_windows(w, group, &source, &raws, round, true)
         .or_else(|| prune_in_windows(w, group, &source, &raws, round, false));
     if let Some(pruned) = windowed {
@@ -2435,15 +2496,7 @@ fn prunable_escapes(
     parsed: V<'_>,
     notes: &mut dyn FnMut(usize) -> NoteCall,
 ) -> Vec<usize> {
-    let raw_spans: Vec<(usize, usize)> = raws
-        .iter()
-        .filter(|r| !r.is_empty())
-        .flat_map(|r| {
-            source
-                .match_indices(r.as_str())
-                .map(|(at, m)| (at, at + m.len()))
-        })
-        .collect();
+    let raw_spans = raw_spans(source, raws);
     let mut opens: Option<AddrSet<usize>> = None;
     let mut current = || Some(parsed);
     let mut next = next_byte_after(source);
@@ -2462,7 +2515,7 @@ fn prunable_escapes(
                     NoteCall::Keep => false,
                     NoteCall::Open => prunable_opener(source, p, &mut current, &mut next),
                 }
-                && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
+                && !in_raw(&raw_spans, p)
         })
         .collect()
 }
@@ -2606,6 +2659,7 @@ fn prune_whole_group(
     let mut parsed = round.last;
     let mut parsed_source: Option<String> = None;
     let mut notes = NoteEscapes::default();
+    let mut spans = raw_spans(source, raws);
     while let Some(p) = at {
         if exhausted(w) {
             if let Some(host) = group.first() {
@@ -2624,7 +2678,7 @@ fn prune_whole_group(
         let call = notes.call(w, source, p);
         if (call == NoteCall::Prune
             || (call == NoteCall::Open && prunable_opener(source, p, &mut current, &mut next)))
-            && !in_raw(source, p, raws)
+            && !in_raw(&spans, p)
         {
             let candidate = format!(
                 "{}{}",
@@ -2637,6 +2691,7 @@ fn prune_whole_group(
                 && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
             {
                 *source = chunk.text().to_string();
+                spans = raw_spans(source, raws);
                 notes = NoteEscapes::default();
                 parsed = None;
                 parsed_source = Some(source.clone());
