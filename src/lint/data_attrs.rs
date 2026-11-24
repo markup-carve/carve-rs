@@ -224,15 +224,16 @@ fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut impl Parts
 }
 
 thread_local! {
-    /// The source, start and stop of the last unquoted value run read, for [`value_stop`].
-    static VALUE_RUN: Cell<(usize, usize, usize)> = const { Cell::new((0, usize::MAX, 0)) };
+    /// The source (address and length), start and stop of the last unquoted value run read, for
+    /// [`value_stop`].
+    static VALUE_RUN: Cell<((usize, usize), usize, usize)> = const { Cell::new(((0, 0), usize::MAX, 0)) };
 }
 
 /// Where an unquoted value from `from` stops. A value takes `{`, so on a line of glued openers
 /// every opener's value runs to the same stop: it is found once, keeping the line linear
 /// (carve#6488). It is keyed by the source and cleared by [`build`].
 fn value_stop(b: &[u8], from: usize) -> usize {
-    let source = b.as_ptr() as usize;
+    let source = (b.as_ptr() as usize, b.len());
     VALUE_RUN.with(|known| {
         let (read, start, stop) = known.get();
         if read == source && start <= from && from <= stop {
@@ -582,7 +583,7 @@ fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
 
 /// The attribute records of the nodes, in source order within each owner.
 pub(super) fn build<'k, 'v>(source: &str, nodes: impl Iterator<Item = Node<'k, 'v>>) -> Table {
-    VALUE_RUN.with(|known| known.set((0, usize::MAX, 0)));
+    VALUE_RUN.with(|known| known.set(((0, 0), usize::MAX, 0)));
     let mut table = Table::default();
     let mut blocks = Blocks::default();
     for node in nodes {
