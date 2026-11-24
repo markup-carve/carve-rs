@@ -293,3 +293,61 @@ fn heading_number_xref_to_a_linked_title_does_not_nest_links() {
         "{out}"
     );
 }
+
+#[test]
+fn toc_placement_lists_only_top_level_headings() {
+    // carve#6531: the placed table lists the headings a section wraps, as tableOfContents does.
+    let out = html(
+        "= Top\n\n::: note\n= Inside\n:::\n\n::: toc\n:::\n",
+        extensions::toc_placement(),
+    );
+    assert!(out.contains("<li><a href=\"#Top\">Top</a></li>"), "{out}");
+    assert!(!out.contains("<a href=\"#Inside\">"), "{out}");
+}
+
+#[test]
+fn heading_numbers_count_depth_not_level() {
+    // carve#6531: a skipped level gives no duplicate number.
+    let numbers = || extensions::heading_numbers(extensions::HeadingNumbersOptions::default());
+    let skipped = html("= A\n\n=== C\n\n== B\n\n==== D\n", numbers());
+    assert!(
+        skipped.contains("<h3><span class=\"section-number\">1.1</span> C</h3>"),
+        "{skipped}"
+    );
+    assert!(
+        skipped.contains("<h2><span class=\"section-number\">1.2</span> B</h2>"),
+        "{skipped}"
+    );
+    assert!(
+        skipped.contains("<h4><span class=\"section-number\">1.2.1</span> D</h4>"),
+        "{skipped}"
+    );
+    let leading = html("== B\n\n= A\n\n== C\n", numbers());
+    assert!(
+        leading.contains("<h2><span class=\"section-number\">1</span> B</h2>"),
+        "{leading}"
+    );
+    assert!(
+        leading.contains("<h1><span class=\"section-number\">2</span> A</h1>"),
+        "{leading}"
+    );
+    assert!(
+        leading.contains("<h2><span class=\"section-number\">2.1</span> C</h2>"),
+        "{leading}"
+    );
+}
+
+#[test]
+fn heading_numbers_skip_headings_in_containers() {
+    // carve#6531: headings in a note or list item get no number.
+    let out = html(
+        "= A\n\n::: note\n== N\n:::\n\n- item\n\n  == L\n\n== B\n",
+        extensions::heading_numbers(extensions::HeadingNumbersOptions::default()),
+    );
+    assert!(out.contains("<h2 id=\"N\">N</h2>"), "{out}");
+    assert!(out.contains("<h2 id=\"L\">L</h2>"), "{out}");
+    assert!(
+        out.contains("<h2><span class=\"section-number\">1.1</span> B</h2>"),
+        "{out}"
+    );
+}
