@@ -1101,6 +1101,38 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     out.push_str("}\n");
 }
 
+/// The arm of `has_json`: the free JSON fields of the type, a required one always present.
+fn json_arm(a: &mut Arms, ty: &str, def: &Value, props: &Map<String, Value>) {
+    let required_set = string_set(def.get("required"));
+    let json: Vec<String> = props
+        .iter()
+        .filter(|(name, p)| {
+            let common = COMMON.contains(&name.as_str());
+            let kind = if common {
+                common_kind(name)
+            } else {
+                field_kind(name, p)
+            };
+            matches!(kind, FieldKind::Json)
+                && !(common && matches!(name.as_str(), "type" | "attrs" | "pos" | "segments"))
+        })
+        .map(|(name, _)| {
+            if required_set.contains(name) {
+                "true".to_string()
+            } else {
+                format!("n.{}.is_some()", rust_ident(name))
+            }
+        })
+        .collect();
+    if !json.is_empty() {
+        let _ = writeln!(
+            a.json,
+            "            Self::{ty}(n) => {},",
+            json.join(" || ")
+        );
+    }
+}
+
 fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
     let arena = fam == Fam::Arena;
     let props = def
@@ -1140,34 +1172,7 @@ fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
         let get = if arena { "n.data" } else { "n.data.as_deref()" };
         let _ = writeln!(a.data, "            Self::{ty}(n) => {get},");
     }
-    let required_set = string_set(def.get("required"));
-    let json: Vec<String> = props
-        .iter()
-        .filter(|(name, p)| {
-            let common = COMMON.contains(&name.as_str());
-            let kind = if common {
-                common_kind(name)
-            } else {
-                field_kind(name, p)
-            };
-            matches!(kind, FieldKind::Json)
-                && !(common && matches!(name.as_str(), "type" | "attrs" | "pos" | "segments"))
-        })
-        .map(|(name, _)| {
-            if required_set.contains(name) {
-                "true".to_string()
-            } else {
-                format!("n.{}.is_some()", rust_ident(name))
-            }
-        })
-        .collect();
-    if !json.is_empty() {
-        let _ = writeln!(
-            a.json,
-            "            Self::{ty}(n) => {},",
-            json.join(" || ")
-        );
-    }
+    json_arm(a, ty, def, &props);
     if props.get("children").is_some_and(is_node_list) {
         // C2-N-017: an include has `children` only once it is expanded.
         let (get, get_mut, set) = match (arena, required) {
