@@ -2195,6 +2195,17 @@ fn raw_spans(source: &str, raws: &[String]) -> Vec<(usize, usize)> {
         .map(String::as_str)
         .filter(|r| !r.is_empty())
         .collect();
+    // Building the automaton costs more than a paragraph's whole prune, so the common cases skip it.
+    match patterns.as_slice() {
+        [] => return Vec::new(),
+        [only] => {
+            return source
+                .match_indices(only)
+                .map(|(at, m)| (at, at + m.len()))
+                .collect();
+        }
+        _ => {}
+    }
     let Ok(searcher) = aho_corasick::AhoCorasick::new(&patterns) else {
         return Vec::new();
     };
