@@ -49,21 +49,9 @@ impl<'a> From<&'a Value> for V<'a> {
     }
 }
 
-impl<'a> From<&&'a Value> for V<'a> {
-    fn from(value: &&'a Value) -> Self {
-        Self::Json(value)
-    }
-}
-
 impl<'a> From<&V<'a>> for V<'a> {
     fn from(value: &V<'a>) -> Self {
         *value
-    }
-}
-
-impl<'a> From<&&V<'a>> for V<'a> {
-    fn from(value: &&V<'a>) -> Self {
-        **value
     }
 }
 
@@ -396,18 +384,6 @@ impl std::fmt::Display for V<'_> {
 impl PartialEq<&str> for V<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == Some(*other)
-    }
-}
-
-impl PartialEq<str> for V<'_> {
-    fn eq(&self, other: &str) -> bool {
-        self.as_str() == Some(other)
-    }
-}
-
-impl PartialEq<bool> for V<'_> {
-    fn eq(&self, other: &bool) -> bool {
-        self.as_bool() == Some(*other)
     }
 }
 
