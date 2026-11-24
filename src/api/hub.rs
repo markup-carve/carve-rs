@@ -222,7 +222,7 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Flow {
     let floor = longest + 3;
     let count = all.iter().flatten().count();
     // The rewrite grows the text by a fence per line; past this bound comrak's own reading stays.
-    if count.saturating_mul(floor) > input.len().saturating_mul(4) + (1 << 20) {
+    if count.saturating_mul(floor) > input.len().saturating_mul(8) + (4 << 20) {
         return Flow::Comrak;
     }
     // A `$$` line in code or raw HTML is content; left in, its fence could close that block.

@@ -168,3 +168,18 @@ fn one_math_fence_among_many_lines_and_a_long_fence_stays_small() {
     let (written, _) = import("markdown", &source);
     assert_eq!(written.matches("$$`a`").count(), 1);
 }
+
+#[test]
+fn an_unclosed_math_fence_after_a_long_fence_and_many_blocks_still_opens() {
+    let source = format!(
+        "{fence}\nx\n{fence}\n\n{}$$\n# H\n",
+        "$$\na\n$$\n\n".repeat(200),
+        fence = "`".repeat(5_000)
+    );
+    let (written, _) = import("markdown", &source);
+    assert!(
+        written.ends_with("$$`# H`\n"),
+        "{}",
+        &written[written.len() - 40..]
+    );
+}
