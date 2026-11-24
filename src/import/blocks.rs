@@ -1336,7 +1336,7 @@ impl Cx {
         coalesce(children)
     }
 
-    fn rows(&mut self, id: Id, in_head: bool) -> Vec<Value> {
+    fn group_rows(&mut self, id: Id) -> Vec<Id> {
         if !self.dom.is(id, "table") {
             for child in self.dom.elements(id) {
                 if !self.dom.is(child, "tr") {
@@ -1348,14 +1348,21 @@ impl Cx {
                 }
             }
         }
-        let group_rows: Vec<Id> = self
-            .dom
+        self.dom
             .elements(id)
             .into_iter()
             .filter(|&c| self.dom.is(c, "tr"))
-            .collect();
+            .collect()
+    }
+
+    fn rows(&mut self, id: Id, in_head: bool) -> Vec<Value> {
+        let group_rows = self.group_rows(id);
+        self.rows_of(&group_rows, in_head)
+    }
+
+    fn rows_of(&mut self, group_rows: &[Id], in_head: bool) -> Vec<Value> {
         let mut out = Vec::new();
-        for &r in &group_rows {
+        for &r in group_rows {
             let mut cells = Vec::new();
             for entry in self.dom.elements(r) {
                 if self.dom.is(entry, "th") || self.dom.is(entry, "td") {
@@ -1367,8 +1374,26 @@ impl Cx {
             let mapped = self.plain_attrs(r);
             out.push(with("table_row", cells, &mapped));
         }
-        self.clamp_rowspans(&mut out, &group_rows);
+        self.clamp_rowspans(&mut out, group_rows);
         out
+    }
+
+    /// C2-M-037: a row heads the columns when it has cells and each is a `<th>` with no `scope` or with `scope` `col`.
+    fn heads_columns(&self, tr: Id) -> bool {
+        let mut cells = self
+            .dom
+            .elements(tr)
+            .into_iter()
+            .filter(|&c| self.dom.is(c, "th") || self.dom.is(c, "td"))
+            .peekable();
+        cells.peek().is_some()
+            && cells.all(|c| {
+                self.dom.is(c, "th")
+                    && self
+                        .dom
+                        .attr(c, "scope")
+                        .is_none_or(|s| s.eq_ignore_ascii_case("col"))
+            })
     }
 
     /// C2-A-093, C2-B-174: a row span ends at the last row of its group.
@@ -1406,9 +1431,9 @@ impl Cx {
         }
     }
 
-    /// C2-M-037, C2-A-086: the first `<thead>` first and the first `<tfoot>` last.
+    /// C2-M-037, C2-A-086: the first `<thead>` first and the first `<tfoot>` last. With no `<thead>`,
+    /// the leading column-heading rows of the first body are the head, and a body they leave empty is dropped.
     fn table_groups(&mut self, id: Id) -> Vec<Value> {
-        let direct = self.rows(id, false);
         let groups: Vec<Id> = self
             .dom
             .elements(id)
@@ -1417,11 +1442,25 @@ impl Cx {
             .collect();
         let head = groups.iter().copied().find(|&g| self.dom.is(g, "thead"));
         let foot = groups.iter().copied().find(|&g| self.dom.is(g, "tfoot"));
+        let bodies: Vec<Id> = groups
+            .iter()
+            .copied()
+            .filter(|&g| Some(g) != head && Some(g) != foot)
+            .collect();
+        let direct_rows = self.group_rows(id);
+        let first_body = if direct_rows.is_empty() {
+            bodies.first().copied()
+        } else {
+            Some(id)
+        };
+        let mut head_rows = Vec::new();
+        let direct = if direct_rows.is_empty() {
+            Vec::new()
+        } else {
+            self.body_rows(&direct_rows, head.is_none(), &mut head_rows)
+        };
         let mut children = Vec::new();
-        for &g in &groups {
-            if Some(g) == head || Some(g) == foot {
-                continue;
-            }
+        for &g in &bodies {
             if !self.dom.is(g, "tbody") {
                 let tag = self.dom.tag_name(g);
                 self.report(
@@ -1430,9 +1469,24 @@ impl Cx {
                     format!("A further {tag} read as a body"),
                 );
             }
-            let rows = self.rows(g, false);
+            let all = self.group_rows(g);
+            let rows = self.body_rows(
+                &all,
+                head.is_none() && Some(g) == first_body,
+                &mut head_rows,
+            );
+            let emptied = rows.is_empty() && Some(g) == first_body && !head_rows.is_empty();
             let mapped = self.plain_attrs(g);
-            children.push(with("table_body", rows, &mapped));
+            let body = with("table_body", rows, &mapped);
+            if !emptied {
+                children.push(body);
+            } else if body.as_object().is_some_and(|m| m.len() > 2) {
+                self.report(
+                    g,
+                    Code::AttributeDropped,
+                    "The attributes of a body its head rows left empty dropped",
+                );
+            }
         }
         if !direct.is_empty() {
             children.insert(0, parent("table_body", direct));
@@ -1441,6 +1495,8 @@ impl Cx {
             let rows = self.rows(h, true);
             let mapped = self.plain_attrs(h);
             children.insert(0, with("table_head", rows, &mapped));
+        } else if !head_rows.is_empty() {
+            children.insert(0, parent("table_head", head_rows));
         }
         if let Some(f) = foot {
             let rows = self.rows(f, false);
@@ -1448,6 +1504,17 @@ impl Cx {
             children.push(with("table_foot", rows, &mapped));
         }
         children
+    }
+
+    /// The rows of a body; `lead` splits its leading column-heading rows off into `head_rows`.
+    fn body_rows(&mut self, all: &[Id], lead: bool, head_rows: &mut Vec<Value>) -> Vec<Value> {
+        if !lead {
+            return self.rows_of(all, false);
+        }
+        let split = all.iter().take_while(|&&r| self.heads_columns(r)).count();
+        let (lead_rows, rest) = all.split_at(split);
+        *head_rows = self.rows_of(lead_rows, true);
+        self.rows_of(rest, false)
     }
 
     /// C2-H-152: the widths of a column group, a fraction each.
