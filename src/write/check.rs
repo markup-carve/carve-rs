@@ -587,7 +587,8 @@ fn escape_closer_before_brace<'t>(
     escape_in_content(w, c, e)
 }
 
-const RESPELL_STEPS: usize = 17;
+const RESPELL_STEPS: usize = 18;
+const CONTENT_OPENER_STEP: usize = 4;
 
 fn respell_step<'t>(
     w: &mut Writer<'t>,
@@ -599,15 +600,16 @@ fn respell_step<'t>(
 ) -> bool {
     let Some(&e) = es.get(i) else { return false };
     match step {
-        0 | 11 => escape_before(w, c, es, i),
+        0 | 12 => escape_before(w, c, es, i),
         1 => escape_content_start(w, c, e),
         2 => escape_footnote_brace(w, c, e),
         3 => escape_content_construct(w, c, e),
-        4 => escape_across_closer(w, c, es, i),
-        5 | 12 => escape_inside(w, c, es, i),
-        6 => escape_closer_before_brace(w, c, es, i),
-        7 => escape_after(w, c, es, i),
-        8 => escape_content_line(w, c, e),
+        CONTENT_OPENER_STEP => escape_content_opener(w, c, e),
+        5 => escape_across_closer(w, c, es, i),
+        6 | 13 => escape_inside(w, c, es, i),
+        7 => escape_closer_before_brace(w, c, es, i),
+        8 => escape_after(w, c, es, i),
+        9 => escape_content_line(w, c, e),
         _ => late_respell_step(w, c, es.get(..i).unwrap_or(&[]), e, step, attempt),
     }
 }
@@ -621,8 +623,8 @@ fn late_respell_step<'t>(
     attempt: &mut Attempt<'t>,
 ) -> bool {
     match step {
-        9 => escape_owner_mark(w, c, e),
-        10 => {
+        10 => escape_owner_mark(w, c, e),
+        11 => {
             if !has_other_form(w, c, e) {
                 return false;
             }
@@ -633,10 +635,10 @@ fn late_respell_step<'t>(
             change_form(c, e);
             true
         }
-        13 => escape_in_content(w, c, e),
-        14 => escape_lone_bracket(w, c, e),
-        15 => escape_text_note(w, c, es),
-        16 => escape_key_caret(w, c, e),
+        14 => escape_in_content(w, c, e),
+        15 => escape_lone_bracket(w, c, e),
+        16 => escape_text_note(w, c, es),
+        17 => escape_key_caret(w, c, e),
         _ => false,
     }
 }
@@ -656,7 +658,7 @@ fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) ->
             continue;
         }
         // C2-W-125: a brace is case one, tried before the case an earlier step placed in the same text.
-        if step != 10 {
+        if step != 11 {
             let new = c.escapes.get(before..).unwrap_or(&[]);
             let braces: Vec<usize> = new
                 .iter()
@@ -674,9 +676,13 @@ fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) ->
         }
         for &escape in c.escapes.get(before..).unwrap_or(&[]) {
             attempt.escapes.push(escape);
-            if step != 14 {
+            if step != 15 && step != CONTENT_OPENER_STEP {
                 c.trials.push(escape);
             }
+        }
+        // A deferred escape can leave another opener for the next round.
+        if step == CONTENT_OPENER_STEP {
+            attempt.step -= 1;
         }
         w.sp.attempts.insert(id(e), attempt);
         return true;
@@ -733,6 +739,27 @@ fn escape_key_caret<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
             && !is_escaped(w, c, f, 0)
             && escape_at(w, c, f, 0)
     })
+}
+
+/// carve#6331: an opener `{^` in superscript text mixed with other content can take the superscript's closer.
+fn escape_content_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
+    if ty(e) != "superscript" || !has(e, "children") {
+        return false;
+    }
+    let mut found = false;
+    for child in children(e) {
+        // A run made entirely of openers follows the ordinary repair and budget rule.
+        if ty(child) != "text" || text(child).bytes().all(|b| b == b'{' || b == b'^') {
+            continue;
+        }
+        let b = text(child).as_bytes();
+        for at in 0..b.len().saturating_sub(1) {
+            if b.get(at..at + 2) == Some(b"{^") {
+                found |= escape_at(w, c, child, at);
+            }
+        }
+    }
+    found
 }
 
 fn escape_lone_bracket<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {

@@ -2,6 +2,15 @@ use carve::api::{self, Carve, EncodeOptions, Options, WriteOptions};
 use serde_json::json;
 
 #[test]
+fn superscript_content_brace_openers_keep_their_minimal_escapes() {
+    let source = "{^a \\{^ b^} {^a \\{^ b^}\n";
+    let written = Carve::new()
+        .format(source, &WriteOptions::default())
+        .unwrap();
+    assert_eq!(written, source);
+}
+
+#[test]
 fn superscript_with_escaped_carets_and_braces_round_trips() {
     let source = "{^\\^\\{\\^\\\\{\\^\\{x^}\n";
     let carve = Carve::new();
