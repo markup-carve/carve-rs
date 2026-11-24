@@ -67,6 +67,8 @@ mod heading_shift;
 #[doc(hidden)]
 pub mod html;
 mod import;
+#[rustfmt::skip]
+mod jotdown;
 #[doc(hidden)]
 pub mod include;
 #[doc(hidden)]

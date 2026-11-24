@@ -244,12 +244,14 @@ impl LossDetails {
 
 /// About the output length: twice the source length the tree covers.
 fn out_estimate(doc: &Document<'_>) -> usize {
+    // A decoded tree's positions are not checked against its source: the hint stays bounded.
+    const MAX_ESTIMATE: usize = 1 << 24;
     let end = doc
         .children
         .last()
         .and_then(Node::pos)
         .map_or(0, crate::ast::Pos::end);
-    2 * end
+    2 * end.min(MAX_ESTIMATE)
 }
 
 /// The state of one render.

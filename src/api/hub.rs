@@ -274,11 +274,11 @@ fn alert<'a>(arena: &'a comrak::Arena<'a>, quote: comrak::nodes::Node<'a>) {
 /// Markdown, a start of 0 is kept (C2-B-041), and generated section ids are
 /// left out.
 fn djot_html(input: &str, sink: &mut Sink) -> String {
-    use jotdown::{Attributes, Container, Event, ListKind};
+    use crate::jotdown::{Attributes, Container, Event, ListKind};
     let mut events = Vec::new();
     let mut section_attrs: Option<Attributes<'_>> = None;
     let mut raw: Option<(String, String)> = None;
-    for event in jotdown::Parser::new(input) {
+    for event in crate::jotdown::Parser::new(input) {
         if let Some((format, text)) = raw.as_mut() {
             match event {
                 Event::Str(s) => text.push_str(&s),
@@ -344,7 +344,7 @@ fn djot_html(input: &str, sink: &mut Sink) -> String {
             other => events.push(other),
         }
     }
-    jotdown::html::render_to_string(events.into_iter())
+    crate::jotdown::html::render_to_string(events.into_iter())
 }
 
 /// The tree of the HTML importer with the frontmatter in front and each raw
