@@ -280,6 +280,31 @@ struct TailParts {
     title: bool,
 }
 
+/// Merges a tail line into a link definition (C2-B-083): the title, then the
+/// attribute block, at most one of each. Returns the part a title-only line
+/// leaves to the next line, or `None` when the line is no tail.
+fn take_link_tail(
+    parts: TailParts,
+    (more_title, more_attrs): (Option<String>, Option<AttrBlock>),
+    title: &mut Option<String>,
+    attrs: &mut Option<Box<AttrBlock>>,
+) -> Option<Option<TailParts>> {
+    if parts.title && more_title.is_some() {
+        return None;
+    }
+    let rest = more_attrs.is_none().then_some(TailParts { title: true });
+    if more_title.is_some() {
+        *title = more_title;
+    }
+    if let Some(a) = more_attrs {
+        match attrs {
+            Some(own) => own.merge(a),
+            None => *attrs = Some(Box::new(a)),
+        }
+    }
+    Some(rest)
+}
+
 /// Runs the block pass over a source.
 #[must_use]
 pub fn scan(src: &Source) -> BlockOutput {
@@ -399,19 +424,7 @@ impl<'a> Parser<'a> {
     /// (C2-B-083, C2-B-084). A comment-only line ends it (C2-B-137).
     fn definition_tail(&mut self, t: DefTail, walk: &Walk<'a>, e: usize) -> bool {
         let k = walk.cur.after_blanks();
-        if self.stack.len() != 1
-            || self.leaf.is_some()
-            || k.col == 0
-            || shapes::comment_only(k.rest())
-        {
-            return false;
-        }
-        // C2-B-084: a line that ends a heading continuation starts its block.
-        if t.link.is_none()
-            && (self.fence_interrupts(&k)
-                || shapes::table_row_shape(&k).is_some()
-                || shapes::thematic_break(&k))
-        {
+        if !self.may_continue_definition(t, &k) {
             return false;
         }
         let Some(Event::Leaf {
@@ -420,43 +433,49 @@ impl<'a> Parser<'a> {
         else {
             return false;
         };
-        match (kind, t.link) {
+        let next = match (kind, t.link) {
             (LeafKind::LinkDef { title, .. }, Some(parts)) => {
-                let Some((more_title, more_attrs)) = shapes::link_def_tail(k.rest()) else {
+                let Some(tail) = shapes::link_def_tail(k.rest()) else {
                     return false;
                 };
-                if parts.title && more_title.is_some() {
+                let Some(rest) = take_link_tail(parts, tail, title, attrs) else {
                     return false;
-                }
-                // A title line may leave the attribute block to the next line.
-                let rest = (more_attrs.is_none()).then_some(TailParts { title: true });
-                if more_title.is_some() {
-                    *title = more_title;
-                }
-                if let Some(a) = more_attrs {
-                    match attrs {
-                        Some(own) => own.merge(a),
-                        None => *attrs = Some(Box::new(a)),
-                    }
-                }
-                *end = e;
-                self.def_tail = rest.map(|parts| DefTail {
+                };
+                rest.map(|parts| DefTail {
                     event: t.event,
                     link: Some(parts),
-                });
+                })
             }
             (LeafKind::AbbrDef { expansion, .. }, None) => {
                 expansion.push(' ');
                 expansion.push_str(k.rest().trim_end_matches([' ', '\t']));
-                *end = e;
-                self.def_tail = Some(t);
+                Some(t)
             }
             _ => return false,
-        }
+        };
+        *end = e;
+        self.def_tail = next;
         if let Some(top) = self.stack.last_mut() {
             top.end = top.end.max(e);
         }
         true
+    }
+
+    /// Whether a line may continue the open definition: indented, in the
+    /// document, no comment-only line, and for an abbreviation no line that
+    /// ends a heading continuation (C2-B-084).
+    fn may_continue_definition(&self, t: DefTail, k: &Cursor<'_>) -> bool {
+        if self.stack.len() != 1
+            || self.leaf.is_some()
+            || k.col == 0
+            || shapes::comment_only(k.rest())
+        {
+            return false;
+        }
+        t.link.is_some()
+            || !(self.fence_interrupts(k)
+                || shapes::table_row_shape(k).is_some()
+                || shapes::thematic_break(k))
     }
 
     fn comment_line(
