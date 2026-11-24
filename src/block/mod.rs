@@ -1169,25 +1169,13 @@ impl<'a> Parser<'a> {
         start: usize,
         end: usize,
         anonymous: bool,
+        code: Option<&FenceInfo>,
     ) {
         let text = self.src.text();
         let line = text.get(fence..end).unwrap_or("").trim_start();
         let opener = text.get(fence..start).unwrap_or("").trim();
-        let respaced = line.split_whitespace().collect::<Vec<_>>().join(" ");
         let (message, values) = if line.starts_with("```") {
-            let run = line.bytes().take_while(|&b| b == b'`').count();
-            let rest = line.get(run..).unwrap_or("");
-            if rest.trim_start().starts_with('{') && rest.starts_with("  ") {
-                (4, vec![("correctedOpener", opener.to_string())])
-            } else if rest.starts_with("  ") || rest.starts_with('\t') && rest.trim().is_empty() {
-                (5, vec![("respaced", respaced)])
-            } else if rest.contains('\t') {
-                (6, vec![("respaced", respaced)])
-            } else if rest.contains('"') {
-                (1, Vec::new())
-            } else {
-                (4, vec![("correctedOpener", opener.to_string())])
-            }
+            code_fence_advice(text, fence, start, line, code)
         } else if anonymous {
             (0, Vec::new())
         } else {
@@ -1591,4 +1579,102 @@ fn paragraph_role(src: &Source, pieces: &[Piece]) -> Option<Role> {
         return Some(Role::Math);
     }
     None
+}
+
+/// C2-B-122, C2-B-117: the message and values for further words of a backtick fence.
+/// `line` starts at the fence run; `start` is where the further words begin.
+fn code_fence_advice(
+    text: &str,
+    fence: usize,
+    start: usize,
+    line: &str,
+    code: Option<&FenceInfo>,
+) -> (usize, Vec<(&'static str, String)>) {
+    let run = line.bytes().take_while(|&b| b == b'`').count();
+    let fence_run = line.get(..run).unwrap_or("");
+    let rest = line.get(run..).unwrap_or("");
+    // C2-B-117: one space follows the run in the advice, glued or not.
+    let spaced = |parts: &str| {
+        if parts.is_empty() {
+            fence_run.to_string()
+        } else {
+            format!("{fence_run} {parts}")
+        }
+    };
+    // An attribute block glued to the word goes on its own line above.
+    let kept = code
+        .and_then(|info| info.glued)
+        .map_or(start, |(glued, _)| glued.min(start));
+    let corrected = || spaced(text.get(fence + run..kept).unwrap_or("").trim());
+    let respaced = || spaced(&rest.split_whitespace().collect::<Vec<_>>().join(" "));
+    let word = code.map_or(0, |info| {
+        info.language
+            .as_ref()
+            .or(info.raw.as_ref())
+            .map_or(0, |w| w.len() + usize::from(info.raw.is_some()))
+    });
+    let after_word = rest
+        .get(usize::from(rest.starts_with(' ')) + word..)
+        .unwrap_or("");
+    if rest.trim_start().starts_with('{') && rest.starts_with("  ") {
+        (4, vec![("correctedOpener", corrected())])
+    } else if word == 0
+        && (rest.starts_with('\t') || rest.starts_with("  ") || rest.starts_with(" \t"))
+    {
+        (5, vec![("respaced", respaced())])
+    } else if code.is_some_and(|info| info.title.is_some()) {
+        (1, Vec::new())
+    } else if word > 0 && after_word.starts_with('\t') {
+        (6, vec![("respaced", respaced())])
+    } else if let Some(advice) = code.and_then(|info| title_advice(line, run, start, info, text)) {
+        advice
+    } else {
+        (4, vec![("correctedOpener", corrected())])
+    }
+}
+
+/// Typographic double quotation marks that open or close a fence title.
+const CURLY_QUOTES: [char; 4] = ['“', '”', '„', '‟'];
+
+/// C2-B-122: the advice for further words that directly follow a code fence
+/// language after a space: a typographically quoted title (message 2) or an
+/// unquoted title (message 3). `None` leaves the generic further-words advice.
+fn title_advice(
+    line: &str,
+    run: usize,
+    start: usize,
+    info: &FenceInfo,
+    text: &str,
+) -> Option<(usize, Vec<(&'static str, String)>)> {
+    if info.raw.is_some() || info.title.is_some() || info.label.is_some() || info.glued.is_some() {
+        return None;
+    }
+    let language = info.language.as_deref()?;
+    let at = run + usize::from(line.as_bytes().get(run) == Some(&b' ')) + language.len();
+    if line.as_bytes().get(at) != Some(&b' ') {
+        return None;
+    }
+    let rest = text.get(start..)?.lines().next()?.trim();
+    if rest.starts_with('{') {
+        return None;
+    }
+    let (words, label) = match rest.rfind(" [") {
+        Some(open) if rest.ends_with(']') => (rest.get(..open)?.trim(), rest.get(open..)?),
+        _ => (rest, ""),
+    };
+    let (message, title) = if let Some(inner) = words.strip_prefix(CURLY_QUOTES) {
+        (2, inner.strip_suffix(CURLY_QUOTES).unwrap_or(inner))
+    } else {
+        let inner = words.strip_prefix('"').unwrap_or(words);
+        (3, inner.strip_suffix('"').unwrap_or(inner))
+    };
+    Some((
+        message,
+        vec![
+            ("type", language.to_string()),
+            ("fence", "`".repeat(run)),
+            ("title", title.to_string()),
+            ("label", label.to_string()),
+        ],
+    ))
 }
