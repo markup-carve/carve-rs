@@ -1,4 +1,4 @@
-//! heading_numbers and toc_placement on the owned render view (carve-rs#4700).
+//! `heading_numbers` and `toc_placement` on the owned render view (carve-rs#4700).
 //! The walks visit what the JSON `visit` and `rewrite` of the parent module
 //! visit; extension slots stay JSON there and take the JSON forms.
 
