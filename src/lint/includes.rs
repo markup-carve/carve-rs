@@ -108,19 +108,13 @@ fn lint_include(
     };
     let (slice, start, line_shift, selected) = selected_source(node, text);
     let places = selected.map(|_| section_paths(node, text));
-    let mut child_options = LintOptions {
-        includes: None,
-        upgrade: false,
-        ..context.options.clone()
-    };
     let (findings, _) = crate::with_lint_tree(
         slice,
         &crate::Options::default(),
         &crate::Options::default(),
         true,
         |tree, arena| {
-            child_options.upgrade =
-                context.options.upgrade || (start == 0 && tree.is_some_and(declares_below_0_2));
+            let child_options = included_options(context.options, start, tree);
             lint_core(slice, &child_options, tree, arena)
         },
     );
@@ -159,6 +153,18 @@ fn lint_include(
         finding.path = Some(format!("{path}{under}"));
         finding.included_by = chain.to_vec();
         output.push(finding);
+    }
+}
+
+fn included_options(
+    options: &LintOptions,
+    start: usize,
+    tree: Option<crate::view::V<'_>>,
+) -> LintOptions {
+    LintOptions {
+        includes: None,
+        upgrade: options.upgrade || (start == 0 && tree.is_some_and(declares_below_0_2)),
+        ..options.clone()
     }
 }
 
