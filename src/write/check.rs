@@ -2999,7 +2999,15 @@ fn read_starts(
             super::node::pos_field(block, "startLine"),
             super::node::pos_field(block, "startColumn"),
         ) {
-            if ty(block) != "paragraph" {
+            // A paragraph created under a div can begin at an attachment marker
+            // after earlier fence repairs. That marker still needs its own
+            // line escape when the surrounding div is rewritten (CC-1565).
+            let attached_paragraph = ty(block) == "paragraph"
+                && first_div_line.is_some()
+                && children(block).first().is_some_and(|n| {
+                    ty(n) == "text" && text(n).trim_end_matches([' ', '\t']) == "+"
+                });
+            if ty(block) != "paragraph" || attached_paragraph {
                 lines.insert(line - offset);
             }
             if ty(block) == "div" {
