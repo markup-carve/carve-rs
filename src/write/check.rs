@@ -2906,7 +2906,7 @@ fn compare_inline<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>)
 
 fn block_mismatch<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) {
     c.misaligned = true;
-    if ty(e) == "paragraph" && !children(e).is_empty() {
+    if matches!(ty(e), "paragraph" | "line") && !children(e).is_empty() {
         escape_line_start(w, c, &refs(children(e)), 0, e);
     } else {
         c.losses.push((e, None));
@@ -2914,7 +2914,7 @@ fn block_mismatch<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) {
 }
 
 fn missing_block<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) {
-    let first = if ty(e) == "paragraph" {
+    let first = if matches!(ty(e), "paragraph" | "line") {
         children(e).first()
     } else {
         None
@@ -2923,7 +2923,7 @@ fn missing_block<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) {
         c.losses.push((f, Some("value".into())));
         return;
     }
-    if ty(e) == "paragraph" && !children(e).is_empty() {
+    if matches!(ty(e), "paragraph" | "line") && !children(e).is_empty() {
         escape_line_start(w, c, &refs(children(e)), 0, e);
     } else if has_other_form(w, c, e) {
         change_form(c, e);
