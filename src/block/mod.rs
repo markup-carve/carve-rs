@@ -850,19 +850,21 @@ impl<'a> Parser<'a> {
         else {
             return false;
         };
-        let (blank_held, unclosed) =
-            end_unowned_comment(comment, entries, &k, owned, !*stanza_open || lazy_end);
+        let found = (self.src, &mut self.findings);
+        let blank_held = end_unowned_comment(
+            comment,
+            entries,
+            &k,
+            owned,
+            !*stanza_open || lazy_end,
+            found,
+        );
         let no_stanza = !*stanza_open || blank_held;
-        if let Some(f) = unclosed {
-            self.findings.push(unclosed_comment(self.src, &f));
-        }
         if comment.is_some() {
-            let (parent_closes, cut) =
-                line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
+            let found = (self.src, &mut self.findings);
+            let parent_closes =
+                line_block_comment_line(comment, entries, (*len, walk, &k, e, owned), found);
             *end = e;
-            if let Some(f) = cut {
-                self.findings.push(unclosed_comment(self.src, &f));
-            }
             if parent_closes {
                 self.fence_closes = true;
                 self.close_leaf();
@@ -1396,14 +1398,11 @@ fn unclosed_comment(src: &Source, f: &LineCommentFence) -> Finding {
 fn line_block_comment_line(
     comment: &mut Option<LineCommentFence>,
     entries: &mut Vec<LineBlockEntry>,
-    opener_len: usize,
-    walk: &Walk<'_>,
-    k: &Cursor<'_>,
-    end: usize,
-    owned: bool,
-) -> (bool, Option<LineCommentFence>) {
+    (opener_len, walk, k, end, owned): (usize, &Walk<'_>, &Cursor<'_>, usize, bool),
+    (src, findings): (&Source, &mut Vec<Finding>),
+) -> bool {
     let Some(fence) = comment.as_mut() else {
-        return (false, None);
+        return false;
     };
     let inner_closes = shapes::bare_run(k, b'%') >= fence.len;
     let parent_closes = owned && shapes::bare_run(k, b':') >= opener_len;
@@ -1413,13 +1412,15 @@ fn line_block_comment_line(
             end: if inner_closes { end } else { fence.end },
             value: fence.lines.join("\n"),
         });
-        let fence = comment.take();
-        return (parent_closes, fence.filter(|_| !inner_closes));
+        if let Some(fence) = comment.take().filter(|_| !inner_closes) {
+            findings.push(unclosed_comment(src, &fence));
+        }
+        return parent_closes;
     }
     // C2-B-123, C2-B-130: the body is stripped by the container only, and a straddling tab is kept (C2-B-007).
     fence.lines.push(walk.cur.rest().to_string());
     fence.end = end;
-    (false, None)
+    false
 }
 
 /// C2-B-024: a lazy comment-only line ends the stanza line above it; a comment
@@ -1454,9 +1455,10 @@ fn end_unowned_comment(
     k: &Cursor<'_>,
     owned: bool,
     no_stanza: bool,
-) -> (bool, Option<LineCommentFence>) {
+    (src, findings): (&Source, &mut Vec<Finding>),
+) -> bool {
     let Some(fence) = comment.as_ref().filter(|_| !owned) else {
-        return (false, None);
+        return false;
     };
     let blank_held = fence
         .lines
@@ -1466,10 +1468,10 @@ fn end_unowned_comment(
         && (no_stanza || blank_held)
         && let Some(fence) = comment.take()
     {
-        entries.push(fence.clone().unclosed());
-        return (blank_held, Some(fence));
+        findings.push(unclosed_comment(src, &fence));
+        entries.push(fence.unclosed());
     }
-    (blank_held, None)
+    blank_held
 }
 
 /// Moves the blank lines held back in a fence body into it.
