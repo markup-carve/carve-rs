@@ -14,7 +14,7 @@ pub(crate) use inline::CORE_SEMANTIC_KEYS;
 use crate::ast::{Document, LinkReferenceDefinition, Node};
 use crate::hash::{AddrMap, AddrSet};
 use crate::options::Options;
-use crate::resolve::order::{Order, addr, caption_of, mark_of};
+use crate::resolve::order::{Order, addr, caption_of, is_panel, mark_of};
 use crate::resolve::{label_key, plain, slug};
 use crate::source::SourceView;
 use attrs::{El, Filter};
@@ -809,12 +809,7 @@ fn panel_targets(group: &crate::ast::FigureGroup<'_>, opts: &Options) -> Vec<(St
     group
         .children
         .iter()
-        .filter(|node| {
-            matches!(
-                node,
-                Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
-            )
-        })
+        .filter(|node| is_panel(node))
         .enumerate()
         .filter_map(|(index, panel)| {
             let id = panel.attrs().and_then(|attrs| attrs.id)?;
