@@ -2572,10 +2572,15 @@ fn prunable_opener<'p>(
 ) -> bool {
     let b = source.as_bytes();
     let next = b.get(at + 1).copied();
-    // A repaired inline mark may no longer open anything in the complete
-    // group. The read-back trial below, rather than the probe that placed
-    // the escape, decides whether its backslash remains necessary.
-    if matches!(next, Some(b'`' | b'*')) && at > 0 && b.get(at - 1) == Some(&b'}') {
+    // A mark behind a braced inline closer may no longer open in the complete
+    // group. An attribute span ends in `}` too, but its code-kind repair still
+    // owns the escape (C2-W-088). The marker before `}` distinguishes the two.
+    if matches!(next, Some(b'`' | b'*'))
+        && at > 1
+        && b.get(at - 1) == Some(&b'}')
+        && b.get(at - 2)
+            .is_some_and(|mark| b"*/_~=+-^,".contains(mark))
+    {
         return true;
     }
     if next == Some(b'*') {
