@@ -801,8 +801,9 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
     if dlen == 0 {
         return None;
     }
-    // C2-B-083, C2-I-013: the destination of a link tail reads its escapes.
-    let href = crate::block::include::unescape(rest.get(..dlen)?);
+    // C2-B-083, C2-I-013: definition destinations use the same narrow
+    // escape rule as inline link destinations.
+    let href = unescape_destination(rest.get(..dlen)?);
     let tail = rest.get(dlen..)?;
     let (title, attrs) = def_tail(tail)?;
     Some(LinkDef {
@@ -811,6 +812,30 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
         title,
         attrs,
     })
+}
+
+fn unescape_destination(raw: &str) -> String {
+    if !raw
+        .as_bytes()
+        .windows(2)
+        .any(|pair| matches!(pair, [b'\\', b'(' | b')' | b'\\']))
+    {
+        return raw.to_string();
+    }
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\'
+            && chars
+                .peek()
+                .is_some_and(|next| matches!(next, '(' | ')' | '\\'))
+        {
+            out.push(chars.next().unwrap_or('\\'));
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn def_tail(tail: &str) -> Option<(Option<String>, Option<AttrBlock>)> {

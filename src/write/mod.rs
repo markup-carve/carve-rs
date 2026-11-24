@@ -2572,6 +2572,17 @@ fn prunable_opener<'p>(
 ) -> bool {
     let b = source.as_bytes();
     let next = b.get(at + 1).copied();
+    // A mark behind a braced inline closer may no longer open in the complete
+    // group. An attribute span ends in `}` too, but its code-kind repair still
+    // owns the escape (C2-W-088). The marker before `}` distinguishes the two.
+    if matches!(next, Some(b'`' | b'*'))
+        && at > 1
+        && b.get(at - 1) == Some(&b'}')
+        && b.get(at - 2)
+            .is_some_and(|mark| b"*/_~=+-^,".contains(mark))
+    {
+        return true;
+    }
     if next == Some(b'*') {
         return parsed().is_some_and(|p| star_after_break(children(p), at, None));
     }
@@ -2899,6 +2910,12 @@ fn prune_in_windows(
     if escapes.is_empty() {
         return Some(source.to_string());
     }
+    // Most escapes placed by one repair kind are all redundant after the
+    // complete group settles. Test that common case in one readback, then
+    // fall back to the per-window trials when only some may be removed.
+    if let Some(pruned) = try_prune_all(w, group, source, &escapes) {
+        return Some(pruned);
+    }
     let mut leaves = Vec::new();
     leaf_blocks(children(parsed), split, &mut leaves);
     let mut accepted = Vec::new();
@@ -2913,6 +2930,21 @@ fn prune_in_windows(
     let same =
         kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
     same.then(|| chunk.text().to_string())
+}
+
+fn try_prune_all(
+    w: &mut Writer<'_>,
+    group: Arr<'_>,
+    source: &str,
+    escapes: &[usize],
+) -> Option<String> {
+    if escapes.len() < 2 {
+        return None;
+    }
+    let candidate = Chunk::new(without_bytes(source, escapes)?);
+    let kids = children(candidate.parse(w));
+    (kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e)))
+        .then(|| candidate.text().to_string())
 }
 
 /// The backslashes of `source` that the prune tries, in source order; `parsed` is its parse.
