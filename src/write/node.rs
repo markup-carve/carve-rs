@@ -171,8 +171,12 @@ pub fn pointer<'t>(n: V<'t>, path: &str) -> Option<V<'t>> {
         return Some(n);
     }
     let mut at = n;
-    for part in path.strip_prefix('/')?.split('/') {
-        let part = part.replace("~1", "/").replace("~0", "~");
+    for raw in path.strip_prefix('/')?.split('/') {
+        let part = if raw.contains('~') {
+            Cow::Owned(raw.replace("~1", "/").replace("~0", "~"))
+        } else {
+            Cow::Borrowed(raw)
+        };
         at = if let Some(items) = at.as_array() {
             if part.starts_with('+') || (part.starts_with('0') && part.len() != 1) {
                 return None;
@@ -640,7 +644,21 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
     same && at == l.len
 }
 
+/// The typed pairs a parsed tree is made of, sent where [`equal_values`] dispatches them; `None` for any other pair.
+fn equal_typed(a: V<'_>, b: V<'_>, span_marks: bool) -> Option<bool> {
+    Some(match (a, b) {
+        (V::Node(_), V::Node(_)) => equal_objects(a, None, b, None, span_marks),
+        (V::Nodes(x), V::Nodes(y)) => equal_arrays(Arr::Nodes(x), Arr::Nodes(y), span_marks),
+        (V::Str(x), V::Str(y)) => x == y,
+        (V::Bool(x), V::Bool(y)) => x == y,
+        _ => return None,
+    })
+}
+
 fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
+    if let Some(same) = equal_typed(a, b, span_marks) {
+        return same;
+    }
     // The JSON side of an imported tree, read without the view's dispatch.
     if let V::Json(p) = a {
         match p {
