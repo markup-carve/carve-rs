@@ -29,9 +29,9 @@ profile = []
 [dependencies]
 bumpalo = "3"
 caseless = "0.2.2"
-# Markdown and GFM (cmark-gfm port) and Djot for the import hub (carve-js#5074).
+# Markdown and GFM (cmark-gfm port) for the import hub (carve-js#5074); Djot is the
+# vendored jotdown in src/jotdown.
 comrak = { version = "=0.55.0", default-features = false }
-jotdown = "0.10"
 # The two move together: markup5ever_rcdom is cut against this exact html5ever.
 html5ever = "0.39"
 markup5ever_rcdom = "0.39"

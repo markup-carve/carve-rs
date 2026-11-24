@@ -45,11 +45,12 @@ name = "carve-lang"
 version = "0.1.14"
 dependencies = [
  "bumpalo",
+ "caseless",
  "comrak",
  "html5ever",
- "jotdown",
  "markup5ever_rcdom",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "typed-arena",
@@ -166,12 +167,6 @@ dependencies = [
  "getrandom",
  "libc",
 ]
-
-[[package]]
-name = "jotdown"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "206bf4773a58f2a051a24fb77cb6c5eeaa84403c0dc5d072ec460ed1648db594"
 
 [[package]]
 name = "libc"
