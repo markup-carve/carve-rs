@@ -901,7 +901,8 @@ impl<'a> Parser<'a> {
             return true;
         }
         if !owned {
-            if shapes::comment_only(k.rest()) && !no_stanza {
+            // C2-B-024: a line that ends the stanza, as a region marker does, is no lazy comment.
+            if shapes::comment_only(k.rest()) && !no_stanza && !lazy_end {
                 lazy_comment(entries, last_line, &k, e);
                 *end = e;
                 return true;
