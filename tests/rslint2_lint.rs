@@ -103,8 +103,7 @@ fn term_lint_ranges_follow_term_text() {
     for (input, code, expected) in [
         (":: > a\n", "definition-term-block-folded", (1, 4)),
         (":: - a\n", "definition-term-block-folded", (1, 4)),
-        (":: a\nb\n", "description-term-multi-line", (2, 1)),
-        (":: a\n  b\n", "description-term-multi-line", (2, 3)),
+        (":: a\n  : b\n", "description-term-multi-line", (2, 3)),
     ] {
         assert_eq!(first_position(input, code), expected, "{input:?}");
     }

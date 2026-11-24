@@ -25,7 +25,8 @@ fn line_shape_rules_read_behind_container_prefixes() {
         ("[^f]: ---\n", "thematic-break-spelling", &[(6, 9)]),
         (":: term\n: ----\n", "thematic-break-spelling", &[(10, 14)]),
         (">  > ----\n", "thematic-break-spelling", &[(5, 9)]),
-        (":: t\n> ---\n", "thematic-break-spelling", &[]),
+        // C2-B-234: the unindented quote closes the list.
+        (":: t\n> ---\n", "thematic-break-spelling", &[(7, 10)]),
         (":: t\n  - ----\n", "thematic-break-spelling", &[]),
         ("1. :\n1. ----\n", "thematic-break-spelling", &[]),
         ("a. - - -\n", "deprecated-spaced-thematic-break", &[(3, 8)]),

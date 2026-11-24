@@ -228,11 +228,7 @@ fn c2_b_010_lone_carriage_return_is_not_a_line_start() {
 
 #[test]
 fn c2_w_106_term_atom_crossing_lines_is_multiline() {
-    let options = LintOptions {
-        upgrade: true,
-        ..LintOptions::default()
-    };
-    let findings = lint(":: [^\n[]", &options);
+    let findings = lint(":: [^\n   : []", &LintOptions::default());
     assert!(
         findings
             .iter()

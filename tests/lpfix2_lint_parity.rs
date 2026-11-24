@@ -59,7 +59,8 @@ fn nested_opener_uses_div_content_column() {
             "{{x.crv}}\n\n[^n]: :: x y\n       : text ~sub~\n       ::: bibliography\n       :: term  \n: def \n\t:::",
             "block-opener-overindented"
         ),
-        vec![(51, 54)]
+        // C2-B-234: `: def` closes the list and the note, so `\t:::` opens a div.
+        vec![(51, 54), (93, 96)]
     );
 }
 
@@ -105,8 +106,13 @@ fn attribute_run_must_be_an_attribute_leaf() {
         Vec::new()
     );
     assert_eq!(
-        spans(":: a\n{.c}\n", "unattached-block-attribute"),
+        spans(":: a\n   {.c}\n", "unattached-block-attribute"),
         Vec::new()
+    );
+    // C2-B-234: an unindented line below a term closes the list.
+    assert_eq!(
+        spans(":: a\n{.c}\n", "unattached-block-attribute"),
+        vec![(5, 9)]
     );
 }
 

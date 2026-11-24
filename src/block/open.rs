@@ -176,19 +176,8 @@ impl Parser<'_> {
 
     /// Interrupter (d) and Exception C2-B-018.
     fn caption_interrupts(&self, walk: &Walk<'_>) -> bool {
-        if let Some(q) = walk.missing_quote {
-            // Gap G-026: C2-B-018 interrupts an open paragraph; an open term
-            // takes the caret line as a lazy line, as in the oracle.
-            let lazy = matches!(
-                self.leaf,
-                Some(OpenLeaf {
-                    leaf: Leaf::Term { .. } | Leaf::Caption { .. },
-                    ..
-                })
-            );
-            if walk.matched == q && !lazy {
-                return true;
-            }
+        if walk.missing_quote == Some(walk.matched) {
+            return true;
         }
         // C2-B-146: a caret line the paragraph's container does not own is no
         // caption line, so it is a lazy line (as in C2-B-018).
@@ -303,13 +292,13 @@ impl Parser<'_> {
                 }
                 Some(Kind::DescList { col, has_term }) => match shapes::desc_mark(k) {
                     // C2-B-052: three blank lines end a description list too.
+                    // C2-B-190: a description that cannot open is text, which
+                    // closes the list (C2-B-071, C2-B-234).
                     Some((term, pos, ccol))
-                        if col == m && (term || has_term) && blanks < LIST_END_BLANK_LINES =>
+                        if col == m
+                            && (term || has_term && self.room(1))
+                            && blanks < LIST_END_BLANK_LINES =>
                     {
-                        // C2-B-190: a description that cannot open is text.
-                        if !term && !self.room(1) {
-                            return None;
-                        }
                         return Some(self.desc_entry(k, m, term, pos, ccol, e));
                     }
                     _ => self.pop_container(),
@@ -391,6 +380,7 @@ impl Parser<'_> {
             };
             self.set_leaf(
                 Leaf::Term {
+                    marker_col: m,
                     pieces: Pieces::One(Some(piece)),
                 },
                 k.offset(),
@@ -603,7 +593,7 @@ impl Parser<'_> {
         if self.open_fence(k, m, e)
             || self.open_table(k, e)
             || self.open_attr_line(k, e)
-            || self.open_caption(k, e)
+            || self.open_caption(k, m, e)
         {
             return;
         }
@@ -824,7 +814,7 @@ impl Parser<'_> {
     }
 
     /// C2-B-146: a caption directly below its block in the same container.
-    fn open_caption(&mut self, k: &Cursor<'_>, e: usize) -> bool {
+    fn open_caption(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let Some(content) = shapes::caption(k) else {
             return false;
         };
@@ -844,6 +834,7 @@ impl Parser<'_> {
         };
         self.leaf = Some(OpenLeaf {
             leaf: Leaf::Caption {
+                marker_col: m,
                 pieces: Pieces::One(Some(piece)),
             },
             start: k.offset(),

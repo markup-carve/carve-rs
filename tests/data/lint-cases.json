@@ -236,12 +236,11 @@
   },
   {
     "id": "description-term-multi-line",
-    "options": { "upgrade": true },
     "origin": "../carve/tests/corpus/973-open-state-lifetime-boundaries-28.crv",
-    "trigger": ":: t\n: \n",
-    "near": ":: t\n\n",
-    "fragment": ": ",
-    "message": "This line continues the term above. Add a blank line after the term if it is a paragraph."
+    "trigger": ":: t\n   : d\n",
+    "near": ":: t\n: d\n",
+    "fragment": ": d",
+    "message": "This line continues the term above, so its `:` is term text and opens no description. Put the description mark at the column of the term mark."
   },
   {
     "id": "emphasis-as-heading",
@@ -688,7 +687,7 @@
 {
     "id": "description-term-multi-line#6220",
     "origin": "carve#6220",
-    "input": "> :: w\n> w\n",
+    "input": "> :: w\n>  : w\n",
     "code": "description-term-multi-line",
     "reported": true
   },
@@ -709,7 +708,7 @@
 {
     "id": "github-alert-marker#6227",
     "origin": "carve#6227",
-    "input": "> :: a\n> :: t2\n>: key\n> > [!NOTE]\n",
+    "input": "> :: a\n> :: t2\n>    >: key\n>    > [!NOTE]\n",
     "code": "github-alert-marker",
     "reported": false
   },

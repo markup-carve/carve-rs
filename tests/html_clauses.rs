@@ -432,9 +432,9 @@ fn c2_b_052_three_blank_lines_end_a_description_list() {
 }
 
 #[test]
-fn g_026_a_caret_line_below_a_quoted_term_is_a_lazy_line() {
+fn c2_b_234_a_caret_line_below_a_quoted_term_captions_the_quote() {
     assert_eq!(
         html("> :: t\n^ c"),
-        "<blockquote>\n  <dl>\n    <dt>t\n^ c</dt>\n  </dl>\n</blockquote>"
+        "<figure>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </blockquote>\n  <figcaption>c</figcaption>\n</figure>"
     );
 }

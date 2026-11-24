@@ -67,9 +67,9 @@ fn bare_html_tag_after_many_inline_code_candidates() {
 #[test]
 fn caption_looking_paragraph_skips_term_text() {
     for input in [
-        " :: term\n: | A | B |\n  | x | y |\n",
-        "\t:: t\n: ## H #\n | 1 | 2 |\n",
-        ":: term\nCaption: x\n| a |\n",
+        " :: term\n  : | A | B |\n  | x | y |\n",
+        "\t:: t\n     : ## H #\n | 1 | 2 |\n",
+        ":: term\n   Caption: x\n| a |\n",
     ] {
         assert!(
             ranges(input, "caption-looking-paragraph").is_empty(),

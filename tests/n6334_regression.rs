@@ -12,10 +12,11 @@ fn nested_list_between_item_and_description_columns_ends_the_term() {
 }
 
 #[test]
-fn marker_at_description_column_and_non_one_value_stay_lazy() {
+fn marker_not_indented_past_the_term_mark_ends_the_term() {
+    // C2-B-234: a term continues only on lines indented past its mark.
     for source in ["10. :: t\n    1. x\n", "10. :: t\n  2. x\n"] {
         let html = carve::render(source, &Options::default());
-        assert!(html.contains("<dt>t\n"), "{source:?}: {html}");
-        assert!(!html.contains("<li>x</li>"), "{source:?}: {html}");
+        assert!(html.contains("<dt>t</dt>"), "{source:?}: {html}");
+        assert!(html.contains("<li>x</li>"), "{source:?}: {html}");
     }
 }

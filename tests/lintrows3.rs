@@ -23,7 +23,7 @@ fn bare_nested_quote_after_paragraph_is_an_opener_candidate() {
 fn indented_caption_continuation_is_not_a_definition() {
     let code = "definition-in-container";
     let options = LintOptions::default();
-    assert!(messages(" | w | w |\n ^ w\n [^w]: %%\n", code, &options).is_empty());
+    assert!(messages(" | w | w |\n ^ w\n  [^w]: %%\n", code, &options).is_empty());
     assert_eq!(messages("> [^w]: note\n", code, &options).len(), 1);
 }
 

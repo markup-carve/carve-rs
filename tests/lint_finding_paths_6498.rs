@@ -65,7 +65,7 @@ fn a_line_names_its_leaf_block() {
     );
     // The paragraph inside a caption.
     assert_eq!(
-        path_of("| a |\n^ cap\n# h\n", "block-opener-without-blank-line").as_deref(),
+        path_of("| a |\n^ cap\n  # h\n", "block-opener-without-blank-line").as_deref(),
         Some("/children/0/caption/children/0")
     );
 }
