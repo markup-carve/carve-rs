@@ -160,19 +160,19 @@ pub fn read<'t>(w: &mut Writer<'t>, doc: N<'t>, entries: &[Entry]) {
 /// The facts the writer reads, read from `src` by the positions of its parse `doc`.
 pub fn from_source(doc: V<'_>, src: &str) -> Vec<Entry> {
     let mut out = Vec::new();
-    walk(doc, src, &mut String::new(), false, &mut out);
+    walk(doc, src, &mut String::new(), 0, &mut out);
     out
 }
 
 /// `path` is the pointer of `node`, one buffer extended and cut back per step.
-fn walk(node: V<'_>, src: &str, path: &mut String, quoted: bool, out: &mut Vec<Entry>) {
-    if let Some(facts) = node_facts(node, src, path, quoted, out) {
+fn walk(node: V<'_>, src: &str, path: &mut String, quote_depth: usize, out: &mut Vec<Entry>) {
+    if let Some(facts) = node_facts(node, src, path, quote_depth, out) {
         out.push(Entry {
             path: path.clone(),
             facts,
         });
     }
-    let inner = quoted || ty(node) == "block_quote";
+    let inner = quote_depth + usize::from(ty(node) == "block_quote");
     let include = ty(node) == "include";
     super::node::for_each_slot(node, true, &mut |nodes, step, single| {
         if include && step == "children" {
@@ -216,7 +216,7 @@ fn node_facts(
     node: V<'_>,
     src: &str,
     path: &str,
-    quoted: bool,
+    quote_depth: usize,
     out: &mut Vec<Entry>,
 ) -> Option<Facts> {
     let mut facts = Facts::default();
@@ -235,7 +235,9 @@ fn node_facts(
             });
         }
         "table" => table_facts(node, src, path, out, &mut facts),
-        "link" | "image" if node.get("key").is_some() => facts.raw_ref = raw_ref(node, src, quoted),
+        "link" | "image" if node.get("key").is_some() => {
+            facts.raw_ref = raw_ref(node, src, quote_depth);
+        }
         "include" => facts.option_spelling = option_spelling(node, src),
         _ => return None,
     }
@@ -530,7 +532,7 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
     }
 }
 
-fn raw_ref(node: V<'_>, src: &str, quoted: bool) -> Option<String> {
+fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
     let (start, end) = span(node)?;
     let start = if ty(node) == "image" {
         start + 1
@@ -559,10 +561,11 @@ fn raw_ref(node: V<'_>, src: &str, quoted: bool) -> Option<String> {
                 return l.to_string();
             }
             let mut t = l.trim_start_matches([' ', '\t']);
-            if quoted {
-                while let Some(rest) = t.strip_prefix('>') {
-                    t = rest.trim_start_matches([' ', '\t']);
-                }
+            for _ in 0..quote_depth {
+                let Some(rest) = t.strip_prefix('>') else {
+                    break;
+                };
+                t = rest.trim_start_matches([' ', '\t']);
             }
             t.to_string()
         })
