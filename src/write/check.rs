@@ -2999,7 +2999,9 @@ fn read_starts(
             super::node::pos_field(block, "startLine"),
             super::node::pos_field(block, "startColumn"),
         ) {
-            lines.insert(line - offset);
+            if ty(block) != "paragraph" {
+                lines.insert(line - offset);
+            }
             if ty(block) == "div" {
                 *first_div_line =
                     Some(first_div_line.map_or(line - offset, |first| first.min(line - offset)));
