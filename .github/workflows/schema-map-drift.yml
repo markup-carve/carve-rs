@@ -3,9 +3,13 @@ name: Schema map attribute drift
 # ci.yml's schema-map job gates the map's DECISIONS on every pull request
 # (tools/check-schema-map.py) and does not read node `attrs`, which is how the
 # table cell attributes fell behind (markup-carve/carve-rs#4292). This compares
-# the attrs with carve-grammars `main` daily and files one tracking issue, the
-# way carve-php's schema-map-drift.yml does. A drift verdict files the ticket
-# and the run stays green; a check that could not run is red.
+# the attrs with carve-grammars daily and files one tracking issue, the way
+# carve-php's schema-map-drift.yml does. A drift verdict files the ticket and
+# the run stays green; a check that could not run is red.
+#
+# The upstream side is pinned to the last 0.1 tag, not carve-grammars `main`:
+# carve-grammars 0.2 deletes tiptap/schema-map.json (markup-carve/carve-rs#4339).
+# Retarget GRAMMARS_REF when a 0.2 schema map exists.
 
 on:
   schedule:
@@ -16,6 +20,10 @@ on:
 permissions:
   contents: read
   issues: write
+
+env:
+  GRAMMARS_REF: v0.1.24
+  GRAMMARS_MAP: tiptap/schema-map.json
 
 concurrency:
   group: schema-map-drift-${{ github.event_name }}
@@ -30,30 +38,45 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Verify the pinned carve-grammars tag holds the map
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/markup-carve/carve-grammars/git/ref/tags/$GRAMMARS_REF" --jq .object.sha; then
+            echo "::error::carve-grammars has no tag $GRAMMARS_REF; fix GRAMMARS_REF in this workflow."
+            exit 1
+          fi
+          if ! gh api "repos/markup-carve/carve-grammars/contents/$GRAMMARS_MAP?ref=$GRAMMARS_REF" --jq .sha; then
+            echo "::error::carve-grammars $GRAMMARS_REF has no $GRAMMARS_MAP; fix GRAMMARS_REF in this workflow."
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
           repository: markup-carve/carve-grammars
+          ref: ${{ env.GRAMMARS_REF }}
           path: .carve-grammars
 
-      - name: Compare the map's attributes with carve-grammars main
+      - name: Compare the map's attributes with the pinned carve-grammars tag
         id: measure
         run: |
           set -uo pipefail
           upstream_sha="$(git -C .carve-grammars rev-parse HEAD)"
           echo "upstream=$upstream_sha" >> "$GITHUB_OUTPUT"
           python3 tools/schema-map-attrs-drift.py resources/prosemirror-schema-map.json \
-            .carve-grammars/tiptap/schema-map.json > /tmp/schema-map-drift.txt
+            ".carve-grammars/$GRAMMARS_MAP" > /tmp/schema-map-drift.txt
           status=$?
           case "$status" in
             0) verdict=clean ;;
-            1) verdict=drift; echo "::warning::node attributes differ from carve-grammars $upstream_sha" ;;
+            1) verdict=drift; echo "::warning::node attributes differ from carve-grammars $GRAMMARS_REF ($upstream_sha)" ;;
             *) echo "::error::schema-map-attrs-drift could not run (exit $status); no verdict to file."; exit 1 ;;
           esac
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
           {
             echo '## Schema map attribute drift'
             echo
-            echo "carve-grammars \`$upstream_sha\`: $verdict"
+            echo "carve-grammars \`$GRAMMARS_REF\` (\`$upstream_sha\`): $verdict"
             echo
             echo '```text'
             cat /tmp/schema-map-drift.txt
@@ -87,10 +110,10 @@ jobs:
           issue="${open_issues%%$'\n'*}"
 
           if [ "$VERDICT" = clean ]; then
-            echo "The schema map attributes agree with carve-grammars $UPSTREAM."
+            echo "The schema map attributes agree with carve-grammars $GRAMMARS_REF ($UPSTREAM)."
             if [ -n "$issue" ]; then
               gh issue comment "$issue" --repo "$REPO" --body \
-                "Clean again: run $RUN_URL against carve-grammars \`$UPSTREAM\`. Closing. The next drift verdict opens a fresh ticket."
+                "Clean again: run $RUN_URL against carve-grammars \`$GRAMMARS_REF\` (\`$UPSTREAM\`). Closing. The next drift verdict opens a fresh ticket."
               gh issue close "$issue" --repo "$REPO"
             fi
             exit 0
@@ -100,7 +123,7 @@ jobs:
             echo "$MARKER"
             echo
             echo "The node attributes in \`resources/prosemirror-schema-map.json\` no longer match"
-            echo "carve-grammars \`tiptap/schema-map.json\` at \`$UPSTREAM\`."
+            echo "carve-grammars \`$GRAMMARS_MAP\` at \`$GRAMMARS_REF\` (\`$UPSTREAM\`)."
             echo
             echo "Run: $RUN_URL"
             echo
