@@ -399,6 +399,46 @@ mod batched_repair_test {
 }
 
 #[cfg(test)]
+mod nested_span_import_cost_test {
+    use super::READ_CHARS;
+    use crate::api::{Carve, ImportFormat, ImportOptions, LossOptions};
+
+    fn read_chars(depth: usize) -> Result<usize, Box<dyn std::error::Error>> {
+        let html = format!("<p>{}</p>\n", "<span title=\"a\nb\">[ ".repeat(depth));
+        let before = READ_CHARS.with(std::cell::Cell::get);
+        let result = Carve::new().import_from(
+            &html,
+            ImportFormat::Html,
+            &ImportOptions::default(),
+            &LossOptions::default(),
+        )?;
+        assert!(!result.source.is_empty());
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "writer-refused")
+        );
+        Ok(READ_CHARS.with(std::cell::Cell::get) - before)
+    }
+
+    #[test]
+    fn one_lone_bracket_per_nested_span_reads_linearly() -> Result<(), Box<dyn std::error::Error>> {
+        let (small, large) = (read_chars(25)?, read_chars(100)?);
+        let capped = read_chars(200)?;
+        assert!(
+            large <= small * 5,
+            "25 spans read {small} chars, 100 read {large}"
+        );
+        assert!(
+            capped <= small * 8,
+            "25 spans read {small} chars, 200 read {capped}"
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod capped_run_test {
     use super::*;
     use crate::api::{Carve, ImportFormat, ImportOptions, LossOptions};
@@ -1275,6 +1315,7 @@ fn repair_rounds_once<'t>(
     loop {
         let end = group_end(w, nodes, from);
         let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
+        check::seed_lone_brackets(w, group);
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
         if w.lines.is_empty() {

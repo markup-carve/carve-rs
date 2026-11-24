@@ -779,6 +779,49 @@ fn scan_lone_brackets<'t>(w: &Writer<'_>, c: &Check<'_>, e: N<'t>) -> Vec<(N<'t>
     lone
 }
 
+fn has_attribute_opener(value: &str) -> bool {
+    value.as_bytes().windows(2).any(|pair| {
+        matches!(pair, [b'{', next] if next.is_ascii_alphanumeric() || b"_.#:".contains(next))
+    })
+}
+
+/// Place the bracket escapes that a bracketed node needs to keep its own
+/// closer before probing nested content. At the inline depth cap, an opener is
+/// text and cannot consume the closer (C2-I-118).
+pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(node) = pending.pop() {
+        // Pair, note and attribute-block repairs choose escapes by round. Their
+        // spelling can depend on when a bracket was escaped.
+        if matches!(ty(node), "emphasis" | "strong")
+            || (ty(node) == "text"
+                && (text(node).contains(['*', '/'])
+                    || text(node).contains("^[")
+                    || has_attribute_opener(text(node))))
+        {
+            return;
+        }
+        super::node::for_each_slot(node, false, &mut |kids, _, _| {
+            pending.extend(kids.iter());
+        });
+    }
+    count_open_above(w, group);
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    let c = Check::default();
+    while let Some(node) = pending.pop() {
+        if matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
+            && w.open_above.get(&id(node)).copied().unwrap_or(0) < 200
+        {
+            for (text, at, _) in scan_lone_brackets(w, &c, node) {
+                w.add_escape(text, at);
+            }
+        }
+        super::node::for_each_slot(node, false, &mut |kids, _, _| {
+            pending.extend(kids.iter());
+        });
+    }
+}
+
 fn content_flags(c: &Check<'_>, e: V<'_>) -> u32 {
     c.flags
         | match ty(e) {
