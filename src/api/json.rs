@@ -111,9 +111,7 @@ fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Rep
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
     let mut opts = call_options(name, req)?;
-    if let Some(includes) = includes {
-        host_includes(&mut opts, req, includes)?;
-    }
+    host_includes(&mut opts, req, includes)?;
     let enabled;
     let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
         host
@@ -137,7 +135,14 @@ fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Rep
 }
 
 /// The host resolver of [`call_with_includes`] as the `includes` option of every stage.
-fn host_includes(opts: &mut CallOptions, req: &Value, includes: Includes) -> Result<(), Error> {
+fn host_includes(
+    opts: &mut CallOptions,
+    req: &Value,
+    includes: Option<Includes>,
+) -> Result<(), Error> {
+    let Some(includes) = includes else {
+        return Ok(());
+    };
     if req.pointer("/options/includes").is_some() {
         return Err(Error::option(
             "includes",
