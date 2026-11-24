@@ -642,7 +642,7 @@ impl Parser<'_> {
                 self.fence_opener_fallback(begin, end);
             }
             if let Some(begin) = info.further {
-                self.further_words(start, begin, e, false);
+                self.further_words(start, begin, e, false, Some(&info));
             }
             self.set_leaf(
                 Leaf::Code {
@@ -696,7 +696,7 @@ impl Parser<'_> {
             self.fence_opener_fallback(begin, end);
         }
         if let Some(begin) = info.further {
-            self.further_words(start, begin, e, info.is_anonymous());
+            self.further_words(start, begin, e, info.is_anonymous(), None);
         }
         let bare = k.rest().get(len..).is_some_and(crate::chars::is_blank_line)
             && info.name.is_none()
