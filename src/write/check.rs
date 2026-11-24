@@ -28,12 +28,23 @@ fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
 pub struct Chunk {
     text: String,
     arena: crate::Arena,
+    /// C2-I-118: the constructs open around the written content where it stands.
+    open_above: usize,
 }
 
 impl Chunk {
     pub fn new(text: String) -> Self {
+        Self::nested(text, 0)
+    }
+
+    /// Content written apart from the `open_above` constructs around it, read as nesting no deeper than in place.
+    pub fn nested(text: String, open_above: usize) -> Self {
         let arena = crate::Arena::for_input(&text);
-        Self { text, arena }
+        Self {
+            text,
+            arena,
+            open_above,
+        }
     }
 
     pub fn text(&self) -> &str {
@@ -60,8 +71,13 @@ impl Chunk {
         super::READ_CHARS.with(|count| count.set(count.get() + self.text.len()));
         let source = crate::source::Source::new(&self.text);
         let out = crate::block::scan(&source);
-        let (doc, _) =
-            crate::tree::build_layered(&source, &self.arena, out.events, keys, &w.abbreviations);
+        let (doc, _) = crate::tree::build_nested(
+            &source,
+            &self.arena,
+            out.events,
+            (keys, &w.abbreviations),
+            self.open_above,
+        );
         if w.extensions.is_empty() {
             return V::Doc(self.arena.alloc(doc));
         }
@@ -1029,6 +1045,28 @@ struct ProbeKinds<'t> {
 /// What one probe round asks for: its escapes, whether it found losses, and the escapes a brace ousts.
 type ProbeRound<'t> = (Vec<(N<'t>, usize)>, bool, Vec<(N<'t>, usize)>);
 
+/// C2-I-118: counts, once per group, the inline constructs around the content of each inline node of `group`.
+/// A probe writes that content apart, and read from the top it would nest past the cap the document reads it at:
+/// every deeper level then differs, and the probes of those levels repeat the whole content once per level.
+pub fn count_open_above<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    let key = group.first().map(|n| (id(n), group.len()));
+    if key.is_none() || w.open_above_of == key {
+        return;
+    }
+    w.open_above_of = key;
+    w.open_above.clear();
+    let mut pending: Vec<(N<'t>, Option<usize>)> = group.iter().map(|n| (n, None)).collect();
+    while let Some((n, above)) = pending.pop() {
+        let own = above.or_else(|| super::node::is_inline_parent(n).then_some(0));
+        if let Some(open) = own.filter(|&open| open > 0) {
+            w.open_above.insert(id(n), open);
+        }
+        super::node::for_each_slot(n, false, &mut |kids, _, _| {
+            pending.extend(kids.iter().map(|k| (k, own.map(|open| open + 1))));
+        });
+    }
+}
+
 /// One round of a probe, in the spelling of the probe: the escapes it asked for, whether it found losses,
 /// and the escapes a brace of case one may take out.
 fn probe_round<'t>(
@@ -1038,7 +1076,11 @@ fn probe_round<'t>(
     flags: u32,
     kinds: &mut ProbeKinds<'t>,
 ) -> Option<ProbeRound<'t>> {
-    let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
+    let open_above = w.open_above.get(&id(e)).copied().unwrap_or(0);
+    let chunk = Chunk::nested(
+        format!("{}\n", write_inlines(w, expected, flags)),
+        open_above,
+    );
     let parsed = chunk.parse(w);
     let source = chunk.text().to_string();
     let block = children(parsed).single()?;

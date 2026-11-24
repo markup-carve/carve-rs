@@ -14,6 +14,8 @@ use crate::tables;
 pub struct Ctx<'a> {
     pub t: &'a str,
     pub comments: &'a [(usize, usize)],
+    /// C2-I-118: the constructs the content may nest.
+    pub cap: usize,
 }
 
 impl Ctx<'_> {
@@ -136,7 +138,7 @@ fn delimiter(
     base: usize,
     ctx: &Ctx<'_>,
 ) {
-    let room = base + stack.len() < tables::INLINE_DEPTH;
+    let room = base + stack.len() < ctx.cap;
     match d {
         Delim::Bare(c) => bare(toks, stack, k, c, room, ctx),
         Delim::BracedOpen(c) if room => stack.push(Entry {

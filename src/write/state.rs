@@ -143,6 +143,11 @@ pub struct Writer<'t> {
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
+    /// C2-I-118: the inline constructs around the content of each inline node of the group in repair, the node
+    /// itself included, so a probe of that content reads it as nesting no deeper than in place.
+    pub open_above: AddrMap<usize, usize>,
+    /// The group `open_above` was counted for, by its first node and length.
+    pub open_above_of: Option<(usize, usize)>,
     /// C2-W-125: unmatched bracket counts and escape positions of link labels.
     pub link_brackets: AddrMap<usize, (usize, usize)>,
     pub link_escapes: AddrMap<usize, Vec<(N<'t>, usize)>>,
@@ -205,6 +210,8 @@ impl<'t> Writer<'t> {
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
+            open_above: AddrMap::default(),
+            open_above_of: None,
             link_brackets: AddrMap::default(),
             link_escapes: AddrMap::default(),
             node_ids: AddrMap::default(),

@@ -447,6 +447,36 @@ mod capped_run_test {
 }
 
 #[cfg(test)]
+mod capped_probe_test {
+    use super::*;
+
+    /// carve-rs#4719: a probe reads nested content apart from the constructs around it. Read from the top, the
+    /// content past the depth cap would nest again, and each level would be probed over the whole content.
+    #[test]
+    fn probes_of_content_past_the_cap_read_it_at_its_depth() {
+        let u = |t: &str, n: usize| t.repeat(n);
+        let source = format!(
+            "{}[[[]]](){}{}{}{}%x ^[\n%a \\] b^^]\\]\n",
+            u("{^", 24),
+            u("{^", 192),
+            u("^}", 21),
+            u("{^", 378),
+            u("^}", 276)
+        );
+        let tree = parse_plain(&source).unwrap_or_default();
+        let before = READ_CHARS.with(std::cell::Cell::get);
+        let (output, losses) = format_tree(&tree, Some(&source), &Settings::default());
+        let read = READ_CHARS.with(std::cell::Cell::get) - before;
+        assert!(losses.is_empty() && !output.is_empty());
+        assert!(
+            read <= 60 * source.len(),
+            "{read} characters read back for {} written",
+            source.len()
+        );
+    }
+}
+
+#[cfg(test)]
 mod escape_prune_test {
     use super::*;
 
@@ -1496,6 +1526,7 @@ fn compare_group<'t, 's>(
             .zip(actual)
             .all(|(expected, read_back)| node::trees_equal(expected, read_back));
     if !round.equal {
+        check::count_open_above(w, group);
         compare_blocks(w, &mut c, group, actual, doc);
     }
     escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });

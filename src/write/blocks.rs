@@ -641,7 +641,10 @@ fn definition_list<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32
         return;
     }
     attribute_line(w, node, prefix, &BlockParts::default());
-    write_siblings(w, children(node), prefix, flags, Layout::Entries);
+    // C2-B-067, C2-B-229: opened on a marker line, its entries stand at its own column, past a lead wider than the
+    // body column such as a task box.
+    let inner = format!("{prefix}{}", " ".repeat(lead_indent(w, prefix)));
+    write_siblings(w, children(node), &inner, flags, Layout::Entries);
 }
 
 /// A block between an opener and a closer of one colon run. C2-W-032: an empty body is one blank line.
