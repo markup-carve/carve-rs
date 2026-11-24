@@ -24,7 +24,7 @@ impl AttrBlock {
     }
 }
 
-const fn name_char(b: u8) -> bool {
+pub(crate) const fn name_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
 

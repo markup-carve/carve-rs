@@ -59,3 +59,18 @@ fn span_on_tree_opener_reports_no_kind() {
         ("> {,\\{,,}\\},}\\,{,\n", "> {,\\{,,}},},{,\n"),
     ]);
 }
+
+// carve#6570, C2-W-125 case nine (CC-2021): the `=` behind the key characters makes the attribute block valid.
+#[test]
+fn underline_read_as_attribute_block_escapes_equals() {
+    check_writes(&[
+        ("{_=\\._}\n", "{_\\=._}\n"),
+        ("{_=\\!_}\n", "{_\\=!_}\n"),
+        ("x{_=\\._}y\n", "x{_\\=._}y\n"),
+        ("> a {_=\\._} b\n", "> a {_\\=._} b\n"),
+        ("- {_=\\._}\n", "- {_\\=._}\n"),
+        ("| {_=\\._} |\n", "| {_\\=._} |\n"),
+        ("{_foo-bar=\\._}\n", "{_foo-bar\\=._}\n"),
+        ("{_a\\=b_}\n", "{_a\\=b_}\n"),
+    ]);
+}
