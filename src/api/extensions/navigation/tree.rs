@@ -418,30 +418,10 @@ fn plain_text(nodes: &[Node], out: &mut String, depth: usize) {
         return;
     }
     for node in nodes {
+        if leaf_text(node, out) {
+            continue;
+        }
         match node {
-            Node::Text(t) => out.push_str(&t.value),
-            Node::Code(t) => out.push_str(&t.value),
-            Node::LiteralInline(t) => out.push_str(&t.value),
-            Node::Math(t) => out.push_str(&t.value),
-            Node::NonBreakingSpace(_) => out.push('\u{a0}'),
-            Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
-            Node::SmartPunctuation(s) => out.push_str(&s.glyph),
-            Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
-            Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
-            Node::Abbreviation(a) => out.push_str(&a.key),
-            Node::Mention(m) => {
-                out.push('@');
-                out.push_str(&m.target);
-            }
-            Node::Tag(t) => {
-                out.push('#');
-                out.push_str(&t.name);
-            }
-            Node::CaptionNumber(c) => {
-                if let Some(n) = c.n {
-                    out.push_str(&n.to_string());
-                }
-            }
             Node::Ruby(r) => {
                 for pair in &r.pairs {
                     if let Node::RubyPair(p) = pair {
@@ -468,6 +448,37 @@ fn plain_text(nodes: &[Node], out: &mut String, depth: usize) {
             }
         }
     }
+}
+
+/// The nodes that give a fixed text; true when `node` was one of them.
+fn leaf_text(node: &Node, out: &mut String) -> bool {
+    match node {
+        Node::Text(t) => out.push_str(&t.value),
+        Node::Code(t) => out.push_str(&t.value),
+        Node::LiteralInline(t) => out.push_str(&t.value),
+        Node::Math(t) => out.push_str(&t.value),
+        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+        Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
+        Node::SmartPunctuation(s) => out.push_str(&s.glyph),
+        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
+        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
+        Node::Abbreviation(a) => out.push_str(&a.key),
+        Node::Mention(m) => {
+            out.push('@');
+            out.push_str(&m.target);
+        }
+        Node::Tag(t) => {
+            out.push('#');
+            out.push_str(&t.name);
+        }
+        Node::CaptionNumber(c) => {
+            if let Some(n) = c.n {
+                out.push_str(&n.to_string());
+            }
+        }
+        _ => return false,
+    }
+    true
 }
 
 pub(super) fn freeze_xrefs(doc: &mut owned::Document, titles: &mut Titles) {
