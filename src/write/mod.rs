@@ -3610,15 +3610,8 @@ fn prune_window(
     for &p in &window.escapes {
         let at = local(p) - accepted.len();
         let candidate = format!("{}{}", text.get(..at)?, text.get(at + 1..)?);
-        let base_kids = children(read);
         let kept = round.read(w, candidate, |_, candidate, parsed| {
-            let kids = children(parsed);
-            (kids.len() == base_kids.len()
-                && kids
-                    .iter()
-                    .zip(base_kids)
-                    .all(|(n, e)| node::trees_equal(n, e)))
-            .then(|| candidate.to_string())
+            blocks_equal(children(parsed), children(read)).then(|| candidate.to_string())
         });
         if let Some(candidate) = kept {
             text = candidate;
@@ -3629,6 +3622,14 @@ fn prune_window(
         }
     }
     Some(accepted)
+}
+
+fn blocks_equal(read: Arr<'_>, blocks: Arr<'_>) -> bool {
+    read.len() == blocks.len()
+        && read
+            .iter()
+            .zip(blocks)
+            .all(|(n, e)| node::trees_equal(n, e))
 }
 
 /// Each prunable escape tried by a parse of the whole group without it.
