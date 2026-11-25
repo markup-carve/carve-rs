@@ -289,11 +289,29 @@ impl<'s> TreeParser<'s> {
     /// Recursively parse a block and all of its children. Return number of lines the block uses.
     fn parse_block(&mut self, lines: &mut [std::ops::Range<usize>], top_level: bool) -> usize {
         if let Some(MeteredBlock {
-            kind,
-            span: span_start,
-            line_count,
+            mut kind,
+            span: mut span_start,
+            mut line_count,
         }) = MeteredBlock::new(lines.iter().map(|sp| &self.src[sp.clone()]))
         {
+            // carve-rs: a later line of an attribute block stands right of its brace in the source,
+            // which inside a list item the stripped lines do not show (djot.js).
+            if matches!(kind, Kind::AttributeLines { .. }) {
+                let brace = column(self.src, span_start.start + lines[0].start);
+                let inside = lines[1..line_count].iter().all(|l| {
+                    let at = l.start + self.src[l.clone()].len()
+                        - self.src[l.clone()].trim_start_matches([' ', '\t']).len();
+                    column(self.src, at) > brace
+                });
+                if !inside {
+                    kind = Kind::Paragraph;
+                    span_start = span_start.start..span_start.start;
+                    line_count = 1 + lines[1..]
+                        .iter()
+                        .take_while(|l| kind.continues(&self.src[(*l).clone()]))
+                        .count();
+                }
+            }
             let lines = &mut lines[..line_count];
             let span_start = (span_start.start + lines[0].start)..(span_start.end + lines[0].start);
 
@@ -1357,6 +1375,11 @@ impl<'s> Kind<'s> {
             }
         }
     }
+}
+
+/// carve-rs: the byte column of `at` on its source line.
+fn column(src: &str, at: usize) -> usize {
+    at - src[..at].rfind('\n').map_or(0, |p| p + 1)
 }
 
 /// carve-rs: whether the row `line` ends in a `|` outside a code span; an unclosed span takes the
