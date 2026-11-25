@@ -375,6 +375,9 @@ fn escape_line_start<'t>(
     owner: N<'t>,
 ) {
     c.misaligned = true;
+    if escape_attribute_lines_above(w, c, nodes, from, owner) {
+        return;
+    }
     let first = nodes.get(from).copied();
     let before = c.escapes.len();
     if let Some(mark) = escape_run_opener_at(w, c, nodes, from) {
@@ -398,6 +401,41 @@ fn escape_line_start<'t>(
         Some(f) if has_other_form(w, c, f) => change_form(c, f),
         _ => c.losses.push((first.unwrap_or(owner), None)),
     }
+}
+
+/// C2-I-028: the first lines of a block that are each a whole attribute block read as attribute lines, so the line
+/// at `nodes[from]` behind them starts a block of its own; the first brace takes the backslash (C2-W-125 case one).
+fn escape_attribute_lines_above<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    nodes: &[N<'t>],
+    from: usize,
+    owner: N<'t>,
+) -> bool {
+    let Some(&first) = nodes.first() else {
+        return false;
+    };
+    if from == 0
+        || !is_break(nodes.get(from - 1).copied())
+        || children(owner).first().map(id) != Some(id(first))
+    {
+        return false;
+    }
+    let mut line = String::new();
+    for &n in nodes.get(..from).unwrap_or(&[]) {
+        if is_break(Some(n)) {
+            let t = line.trim_end_matches([' ', '\t']);
+            if !crate::attr::parse_block(t, 0).is_some_and(|(_, end)| end == t.len()) {
+                return false;
+            }
+            line.clear();
+        } else if ty(n) == "text" {
+            line.push_str(text(n));
+        } else {
+            return false;
+        }
+    }
+    escape_at(w, c, first, 0)
 }
 
 fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
