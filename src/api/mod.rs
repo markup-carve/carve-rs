@@ -579,6 +579,29 @@ impl Carve {
         Ok(())
     }
 
+    /// Registers the standard `carve.cite` renderer, the citations bundle, with
+    /// its host mode, `numbered` or `author-date` (C2-X-058, C2-X-068).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] for a mode other than `numbered` or `author-date`.
+    pub fn enable_standard_cite_renderer(&mut self, mode: &str) -> Result<(), Error> {
+        let mode = match mode {
+            "numbered" => extensions::CitationMode::Numbered,
+            "author-date" => extensions::CitationMode::AuthorDate,
+            _ => {
+                return Err(Error::option(
+                    "mode",
+                    "citations mode must be numbered or author-date",
+                ));
+            }
+        };
+        self.register(extensions::citations(extensions::CitationsOptions {
+            mode,
+            ..extensions::CitationsOptions::default()
+        }))
+    }
+
     /// PROVISIONAL: registers a bundle of [`extensions`]: its extensions as
     /// [`Carve::register_extension`] does, and its matchers, which claim in
     /// [`Carve::parse`] and the render calls (C2-X-005).

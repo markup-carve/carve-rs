@@ -196,3 +196,43 @@ fn apparatus_options_and_backlinks_match_reference() {
         "{csl}"
     );
 }
+
+const DOE: &str = "See :cite[doe].\n\n::: bibliography\n:: [doe]{author=\"Doe\" year=\"2020\"}\n: Doe, J. A book.\n:::\n";
+
+#[test]
+fn standard_cite_renderer_takes_the_host_mode() {
+    let render = |mode: &str| {
+        let mut host = Carve::new();
+        host.enable_standard_cite_renderer(mode).unwrap();
+        host.render(DOE, &Options::default()).unwrap()
+    };
+    let numbered = [
+        "<p>See [<a href=\"#ref-doe\" data-cite-key=\"doe\">1</a>].</p>",
+        "<div class=\"bibliography\">",
+        "  <ol class=\"references\">",
+        "    <li id=\"ref-doe\">Doe, J. A book.</li>",
+        "  </ol>",
+        "</div>",
+    ]
+    .join("\n");
+    assert_eq!(render("numbered").trim_end(), numbered);
+    let mut host = Carve::new();
+    host.enable_standard("carve.cite", true).unwrap();
+    assert_eq!(
+        host.render(DOE, &Options::default()).unwrap().trim_end(),
+        numbered
+    );
+    assert_eq!(
+        render("author-date").trim_end(),
+        [
+            "<p>See (<a href=\"#ref-doe\" data-cite-key=\"doe\">Doe 2020</a>).</p>",
+            "<div class=\"bibliography\">",
+            "  <ul class=\"references\">",
+            "    <li id=\"ref-doe\">Doe, J. A book.</li>",
+            "  </ul>",
+            "</div>",
+        ]
+        .join("\n")
+    );
+    assert!(Carve::new().enable_standard_cite_renderer("other").is_err());
+}
