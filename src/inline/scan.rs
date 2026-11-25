@@ -633,12 +633,13 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// `attr::parse_block` with a memo that keeps the scan linear: a failed
     /// block whose first part is `key=value` fails behind the end of that
     /// unquoted run, so every block that starts inside the run and ends its
-    /// first value there fails too (`{k={k={k=...`).
+    /// first value there fails too (`{k={k={k=...`). A block whose value starts
+    /// at the end of the run is read in full (`{v={k="a"}`).
     fn attr_block(&mut self, i: usize) -> Option<(crate::attr::AttrBlock, usize)> {
         let eq = key_eq(self.b, i);
         if let (Some((a, r)), Some(e)) = (self.attr_fail, eq)
             && i >= a
-            && e < r
+            && e + 1 < r
         {
             return None;
         }
