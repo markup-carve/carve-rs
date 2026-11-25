@@ -166,9 +166,16 @@ fn include_and_table_hints_select_the_authored_token() {
 
 #[test]
 fn empty_include_path_respects_spacing_and_quotes() {
-    for input in ["{{ \"\" }}\n", "{{ #a }}\n"] {
+    for input in ["{{ \"\" }}\n", "{{ #a.b }}\n"] {
         assert_eq!(first_position(input, "empty-include-path"), (1, 1));
     }
+    // C2-N-089: a section with no path is reserved, not an empty path.
+    assert_eq!(first_position("{{ #a }}\n", "reserved-syntax"), (1, 1));
+    assert!(
+        !lint("{{ #a }}\n", &LintOptions::default())
+            .iter()
+            .any(|d| d.code == "empty-include-path")
+    );
     assert!(
         !lint("{{#if}}\n", &LintOptions::default())
             .iter()
