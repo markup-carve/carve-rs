@@ -147,6 +147,16 @@ fn pinned_lint_clause_cases() {
     // for the same diagnostics. Keep checking every other expectation while
     // the spec resolves CC-813 against CC-1174 and CC-891 against CC-1163.
     let unresolved = ["CC-813:", "CC-891:"];
+    // C2-B-187, ruling of carve#6637 (carve-rs line, lane w6637-rs): not ported yet. A held
+    // case that passes fails the run, so the hold goes with the port.
+    let held = ["CC-2069:"];
+    for id in held {
+        assert!(
+            failures.iter().any(|f| f.starts_with(id)),
+            "{id} held but passes; drop the hold"
+        );
+    }
+    failures.retain(|f| !held.iter().any(|id| f.starts_with(id)));
     let regressions: Vec<_> = failures
         .iter()
         .filter(|failure| !unresolved.iter().any(|id| failure.starts_with(id)))

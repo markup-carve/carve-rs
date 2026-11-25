@@ -67,7 +67,7 @@ fn every_layout_clause_has_its_required_sidecar_facts() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 38);
+    assert_eq!(checked, 40);
 }
 
 #[test]
