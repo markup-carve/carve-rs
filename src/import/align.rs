@@ -121,11 +121,14 @@ fn resolve_axis(table: &mut Value, cells: &[Placed], axis: &str) {
             },
         }
     }
-    if cells.iter().any(|p| p.head) {
-        return;
+    if !cells.iter().any(|p| p.head) {
+        give_columns(table, by_column, axis);
     }
-    // A column gives its alignment only after columns that all give one:
-    // an `aligns` or `valigns` list has no empty entry (C2-B-211).
+}
+
+/// A column gives its alignment only after columns that all give one:
+/// an `aligns` or `valigns` list has no empty entry (C2-B-211).
+fn give_columns(table: &mut Value, mut by_column: Vec<(usize, Vec<&Placed>)>, axis: &str) {
     by_column.sort_by_key(|(c, _)| *c);
     for (expected, (index, entries)) in by_column.into_iter().enumerate() {
         if index != expected {
