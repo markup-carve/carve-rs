@@ -41,6 +41,48 @@ fn commands_use_the_same_file_and_error_contract() {
     assert!(stderr.starts_with("carve[usage]:"));
 }
 
+/// C2-T-034: a writer loss of C2-W-134 fails the file and writes no source,
+/// `--allow-loss` notwithstanding; `--strict-losses` fails it with `render-loss`.
+#[test]
+fn import_fails_the_file_on_a_writer_loss() {
+    let html = "<table><tr><td valign=\"baseline\">a</td></tr></table>";
+    let line =
+        "field-unspellable Carve source cannot spell field valign of a table_cell node here\n";
+    for flags in [&[][..], &["--allow-loss", "field-unspellable"][..]] {
+        let mut args = vec!["import", "--from", "html"];
+        args.extend_from_slice(flags);
+        args.push("-");
+        let (status, stdout, stderr) = run(&args, html);
+        assert_eq!((status, stdout.as_str()), (1, ""));
+        assert!(stderr.starts_with("carve[writer-refused]: <stdin>: the import lost content\n"));
+        assert_eq!(stderr.contains(line), flags.is_empty());
+    }
+    let (status, stdout, stderr) = run(&["import", "--from", "html", "--strict-losses", "-"], html);
+    assert_eq!((status, stdout), (1, String::new()));
+    assert_eq!(
+        stderr,
+        format!("carve[render-loss]: <stdin>: the import lost content\n<stdin>: error {line}")
+    );
+    let root =
+        std::env::temp_dir().join(format!("carve-import-writer-loss-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let lost = root.join("lost.html");
+    let kept = root.join("kept.html");
+    std::fs::write(&lost, html).unwrap();
+    std::fs::write(&kept, "<p>ok</p>").unwrap();
+    let (status, stdout, _) = run(
+        &[
+            "import",
+            "--from",
+            "html",
+            lost.to_str().unwrap(),
+            kept.to_str().unwrap(),
+        ],
+        "",
+    );
+    assert_eq!((status, stdout), (1, "ok\n".into()));
+}
+
 #[test]
 fn region_command_restores_inclusive_ranges_and_code_markers() {
     assert_eq!(

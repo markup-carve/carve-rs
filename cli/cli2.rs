@@ -1282,6 +1282,9 @@ fn fmt_output(args: &Args, path: &str, before: &str, after: &str) -> Result<i32,
     Ok(i32::from(check || diff))
 }
 
+/// C2-T-034: the CLI gates the file. Under `--strict-losses` any loss fails
+/// it with `render-loss`; without it a C2-W-134 writer loss, allowed or not,
+/// fails it with `writer-refused`. A failed file writes no source.
 fn import_file(
     args: &Args,
     path: &str,
@@ -1294,34 +1297,64 @@ fn import_file(
     let format = str_value(args, "from")
         .and_then(api::ImportFormat::from_name)
         .ok_or_else(|| usage("bad import format"))?;
+    let strict = bool_value(args, "strict-losses", false);
     let settings = ImportOptions {
         raw_html: bool_value(args, "raw-html", false),
-        strict_losses: bool_value(args, "strict-losses", false),
+        strict_losses: false,
         adapter: str_value(args, "adapter")
             .and_then(api::ImportAdapter::from_name)
             .unwrap_or_default(),
     };
-    let limits = LossOptions {
-        allow_losses: opts.allow_losses.clone(),
-        max_losses: opts.max_losses,
+    let every = LossOptions {
+        allow_losses: Vec::new(),
+        max_losses: usize::MAX,
     };
     let imported = host
-        .import_from(input, format, &settings, &limits)
+        .import_from(input, format, &settings, &every)
         .map_err(api_fail)?;
-    let retained: Vec<Entry> = imported
+    let writer_loss = imported.diagnostics.iter().any(|e| {
+        matches!(
+            e.code.as_str(),
+            "writer-refused" | "structure-unspellable" | "field-unspellable"
+        )
+    });
+    let (mut shown, losses): (Vec<Entry>, Vec<Entry>) = imported
         .diagnostics
         .into_iter()
-        .filter(|e| e.channel == "render-loss")
+        .filter(|e| !(e.channel == "render-loss" && opts.allow_losses.contains(&e.code)))
+        .partition(|e| e.channel != "render-loss");
+    let lost = !losses.is_empty();
+    let suppressed = losses.len().saturating_sub(opts.max_losses);
+    let retained: Vec<Entry> = losses
+        .into_iter()
+        .take(opts.max_losses)
+        .map(|mut e| {
+            if strict {
+                e.severity = "error".into();
+            }
+            e
+        })
         .collect();
-    lines(path, bytes, &retained, true, None)?;
     if str_value(args, "report-losses").is_some() {
-        loss_reports.push(loss_report(
-            path,
-            &retained,
-            bytes,
-            imported.suppressed_diagnostics,
-            None,
-        ));
+        loss_reports.push(loss_report(path, &retained, bytes, suppressed, None));
+    }
+    let failure = if strict && lost {
+        Some("render-loss")
+    } else if writer_loss {
+        Some("writer-refused")
+    } else {
+        None
+    };
+    if let Some(category) = failure {
+        eprintln!(
+            "carve[{category}]: {}: the import lost content",
+            display(path)
+        );
+    }
+    shown.extend(retained);
+    lines(path, bytes, &shown, true, None)?;
+    if failure.is_some() {
+        return Ok(1);
     }
     product(args, &imported.source)?;
     Ok(0)
