@@ -12,6 +12,7 @@
 
 use crate::options::UrlPolicy;
 use crate::tables::{DEFAULT_DENIED_SCHEMES, PROBE_REMOVES, STYLE_PATTERNS};
+use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
@@ -439,12 +440,11 @@ impl State<'_> {
             || (self.opts.allow_external_images && lower_tag == "image");
         let attrs = parse_attrs(raw);
         let animates_href = animates_href(&attrs);
-        let mut seen: Vec<&str> = Vec::new();
+        let mut seen: HashSet<&str> = HashSet::with_capacity(attrs.len());
         for &(name, value) in &attrs {
-            if seen.contains(&name) {
+            if !seen.insert(name) {
                 continue;
             }
-            seen.push(name);
             let lower = name.to_ascii_lowercase();
             // carve#6755: the root's own xmlns goes by name; a regex over the
             // written attributes also matched values.
