@@ -3182,6 +3182,7 @@ fn prunable_opener<'p>(
     at: usize,
     parsed: &mut dyn FnMut() -> Option<V<'p>>,
     find: &mut NextByte<'_>,
+    others: &mut Option<usize>,
 ) -> bool {
     let b = source.as_bytes();
     let next = b.get(at + 1).copied();
@@ -3218,7 +3219,7 @@ fn prunable_opener<'p>(
     }
     match b.get(at + 2) {
         Some(b'/' | b'*') => true,
-        Some(b'#') => prunable_tag_brace(source, at, parsed, find),
+        Some(b'#') => prunable_tag_brace(source, at, parsed, find, others),
         _ => false,
     }
 }
@@ -3234,6 +3235,7 @@ fn prunable_tag_brace<'p>(
     at: usize,
     parsed: &mut dyn FnMut() -> Option<V<'p>>,
     find: &mut NextByte<'_>,
+    others: &mut Option<usize>,
 ) -> bool {
     let Some(close) = find(b'}', at + 3) else {
         return false;
@@ -3247,9 +3249,12 @@ fn prunable_tag_brace<'p>(
     };
     close - at <= LONGEST_TAG_BRACE
         && !in_hyphen_run(source, dash)
-        && parsed().is_some_and(|p| {
-            text_backslashes(source, p) == braced_name_escapes(source, at, close) + 1
-        })
+        && others
+            .or_else(|| {
+                *others = parsed().map(|p| text_backslashes(source, p));
+                *others
+            })
+            .is_some_and(|n| n == braced_name_escapes(source, at, close) + 1)
 }
 
 fn in_hyphen_run(source: &str, at: usize) -> bool {
@@ -3667,6 +3672,8 @@ fn prunable_escapes(
     let mut opens: Option<AddrSet<usize>> = None;
     let mut current = || Some(parsed);
     let mut next = next_byte_after(source);
+    // The count of text backslashes, asked for the parse of `source` once.
+    let mut others = None;
     source
         .match_indices('\\')
         .map(|(p, _)| p)
@@ -3680,7 +3687,9 @@ fn prunable_escapes(
                 && match notes(p) {
                     NoteCall::Prune => true,
                     NoteCall::Keep => false,
-                    NoteCall::Open => prunable_opener(source, p, &mut current, &mut next),
+                    NoteCall::Open => {
+                        prunable_opener(source, p, &mut current, &mut next, &mut others)
+                    }
                 }
                 && !in_raw(&raw_spans, p)
         })
@@ -3834,6 +3843,7 @@ fn prune_whole_group(
     let mut parsed_source: Option<String> = None;
     let mut notes = NoteEscapes::default();
     let mut spans = raw_spans(source, raws);
+    let mut others = None;
     while let Some(p) = at {
         if exhausted(w) {
             if let Some(host) = group.first() {
@@ -3851,7 +3861,8 @@ fn prune_whole_group(
         let mut next = |b, from| memchr_from(source, b, from);
         let call = notes.call(w, source, p);
         if (call == NoteCall::Prune
-            || (call == NoteCall::Open && prunable_opener(source, p, &mut current, &mut next)))
+            || (call == NoteCall::Open
+                && prunable_opener(source, p, &mut current, &mut next, &mut others)))
             && !in_raw(&spans, p)
         {
             let candidate = format!(
@@ -3868,6 +3879,7 @@ fn prune_whole_group(
                 spans = raw_spans(source, raws);
                 notes = NoteEscapes::default();
                 parsed = None;
+                others = None;
                 parsed_source = Some(source.clone());
                 at = source.get(p..).and_then(|r| r.find('\\')).map(|q| q + p);
                 continue;
