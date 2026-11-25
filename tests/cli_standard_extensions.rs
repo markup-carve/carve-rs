@@ -56,7 +56,6 @@ fn c2_t_010_standard_extension_cli_clause_cases() {
 
 /// Cases of a ruling this engine has not ported yet; a held case that passes fails the run.
 const HELD: &[(&str, &str)] = &[
-    ("CC-2128", "carve#6752: cite mode, carve-rs#4839"),
     ("CC-2146", "carve#6766: 0.1 CLI catalog keys"),
     ("CC-2147", "carve#6766: 0.1 CLI catalog keys"),
 ];
