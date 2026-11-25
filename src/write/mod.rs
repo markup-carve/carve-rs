@@ -2253,21 +2253,24 @@ fn compare_group<'t>(
 
 /// A repair belongs to a link when the changed node is the link or one of its descendants.
 fn link_repair_requested(group: Arr<'_>, c: &Check<'_>) -> bool {
-    fn visit(node: N<'_>, inside: bool, c: &Check<'_>) -> bool {
+    fn visit(node: N<'_>, inside: bool, asked: &AddrSet<usize>) -> bool {
         let inside = inside || node::ty(node) == "link";
-        let changed = c
-            .escapes
-            .iter()
-            .any(|(n, _)| node::id(*n) == node::id(node))
-            || c.losses.iter().any(|(n, _)| node::id(*n) == node::id(node))
-            || c.forms.iter().any(|n| node::id(*n) == node::id(node));
-        (inside && changed) || node::children(node).iter().any(|n| visit(n, inside, c))
+        (inside && asked.contains(&node::id(node)))
+            || node::children(node).iter().any(|n| visit(n, inside, asked))
     }
-    group.iter().any(|n| visit(n, false, c))
+    let asked: AddrSet<usize> = c
+        .escapes
+        .iter()
+        .map(|(n, _)| node::id(*n))
+        .chain(c.losses.iter().map(|(n, _)| node::id(*n)))
+        .chain(c.forms.iter().map(|n| node::id(*n)))
+        .collect();
+    !asked.is_empty() && group.iter().any(|n| visit(n, false, &asked))
 }
 
 /// A bare link-label group is already the C2-W-088 result if it reads back.
-/// Only a changed parse asks for the bounded unmatched-bracket fallback.
+/// Only a changed parse asks for the bounded unmatched-bracket fallback; the rounds after a first round that
+/// did not read back write the lone brackets of link text with their backslash (C2-W-125 case five).
 fn compare_with_link_fallback<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
@@ -2280,26 +2283,24 @@ fn compare_with_link_fallback<'t>(
     if initial && w.saw_link && !w.link_bracket_fallback {
         w.attempts_journal = Some(Vec::new());
     }
-    let mut c = compare_group(w, doc, group, first, round);
+    let c = compare_group(w, doc, group, first, round);
     let journal = w.attempts_journal.take();
-    if initial
-        && !round.equal
-        && w.saw_link
-        && !w.link_bracket_fallback
-        && link_repair_requested(group, &c)
-    {
-        w.link_bracket_fallback = true;
-        for (n, prior) in journal.into_iter().flatten().rev() {
-            match prior {
-                Some(attempt) => w.sp.attempts.insert(n, attempt),
-                None => w.sp.attempts.remove(&n),
-            };
-        }
-        reset_lines(w);
-        blocks::write_blocks(w, group, "", 0, false);
-        c = compare_group(w, doc, group, first, round);
+    if !initial || round.equal || !w.saw_link || w.link_bracket_fallback {
+        return c;
     }
-    c
+    w.link_bracket_fallback = true;
+    if check::reports_construct(&c, group) && !link_repair_requested(group, &c) {
+        return c;
+    }
+    for (n, prior) in journal.into_iter().flatten().rev() {
+        match prior {
+            Some(attempt) => w.sp.attempts.insert(n, attempt),
+            None => w.sp.attempts.remove(&n),
+        };
+    }
+    reset_lines(w);
+    blocks::write_blocks(w, group, "", 0, false);
+    compare_group(w, doc, group, first, round)
 }
 
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.

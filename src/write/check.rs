@@ -155,6 +155,8 @@ pub struct Check<'t> {
     pub early_closers: usize,
     /// C2-W-125 case eight: the text `^[` whose early closer this round already escaped, by node and offset.
     pub notes_done: HashSet<(usize, usize)>,
+    /// C2-W-088: the escapes of the openers of constructs the parse holds and the tree does not.
+    pub constructs: Vec<(N<'t>, usize)>,
 }
 
 impl Check<'_> {
@@ -2014,6 +2016,21 @@ fn early_note_closer<'t>(
     None
 }
 
+/// Whether the parse holds a construct the tree does not hold. In a group with a caret pair, case eight can keep a
+/// text `^[` bare, so there only a construct on another text `[` counts.
+pub fn reports_construct(c: &Check<'_>, group: Arr<'_>) -> bool {
+    if c.constructs.is_empty() {
+        return false;
+    }
+    if !group.iter().any(holds_caret_pair) {
+        return true;
+    }
+    c.constructs.iter().any(|&(n, at)| {
+        let b = text(n).as_bytes();
+        b.get(at) == Some(&b'[') && (at == 0 || b.get(at - 1) != Some(&b'^'))
+    })
+}
+
 /// Whether `node` or a node below it is link or span text starting with a caret, whose bracket forms
 /// `[^`. One inside an inline footnote opens nothing there (C2-I-089).
 fn holds_caret_pair(node: V<'_>) -> bool {
@@ -2523,7 +2540,9 @@ fn after_text_node<'t>(
     } else if at.j + 1 >= as_.len()
         && matches!(ty(owner), "emphasis" | "strong")
         && !joins_next(es, at.i)
-        && !es.get(at.i).is_some_and(|&n| reads_as_text(w, c, n))
+        && !es.get(at.i).is_some_and(|&n| {
+            reads_as_text(w, c, n) || holds_spelling(w, c, n, as_.get(at.j), at.aj)
+        })
     {
         closed_early(w, c, es, at.i, 0, owner);
     } else {
@@ -2566,6 +2585,32 @@ fn reads_into_closer(owner: V<'_>, n: V<'_>, at: usize) -> bool {
 fn reads_as_text(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
     matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
         && has_lone_bracket(w, c, node)
+}
+
+/// Whether the text `a` holds the spelling of `e` from `offset` on: `e` did not form, and the content around it did
+/// not end there.
+fn holds_spelling<'t>(
+    w: &mut Writer<'t>,
+    c: &Check<'t>,
+    e: N<'t>,
+    a: Option<V<'_>>,
+    offset: usize,
+) -> bool {
+    let Some(a) = a.filter(|a| ty(*a) == "text") else {
+        return false;
+    };
+    let written = write_inlines(w, &[e], c.flags);
+    let mut spelled = String::with_capacity(written.len());
+    let mut chars = written.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => spelled.push(chars.next().unwrap_or('\\')),
+            _ => spelled.push(ch),
+        }
+    }
+    text(a)
+        .get(offset..)
+        .is_some_and(|rest| rest.starts_with(spelled.as_str()))
 }
 
 fn match_text<'t>(
@@ -2689,10 +2734,10 @@ fn skip_construct<'t>(
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
     let quoted = comparison_behind_quote(prior, before, e, at.vi, a);
+    let placed = c.escapes.len();
     if quoted {
         escape_at(w, c, e, at.vi + 1);
     } else {
-        let placed = c.escapes.len();
         escape_opener(w, c, e, es, at.i, at.vi, a);
         let read_on: Vec<(usize, usize)> = c
             .escapes
@@ -2706,6 +2751,8 @@ fn skip_construct<'t>(
         c.cut |= !read_on.is_empty();
         c.closers.extend(read_on);
     }
+    let placed = c.escapes.get(placed..).unwrap_or(&[]).to_vec();
+    c.constructs.extend(placed);
     let Some((start, end)) = span(a) else {
         return false;
     };
