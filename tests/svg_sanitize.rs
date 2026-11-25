@@ -217,7 +217,10 @@ fn a_non_css_space_before_the_hash_is_not_local() {
     // carve#6773: the URL keeps a leading U+00A0, U+3000 or U+FEFF.
     for space in ['\u{A0}', '\u{3000}', '\u{FEFF}'] {
         assert_eq!(
-            sanitize(&format!("<svg><rect fill=\"url({space}#g)\"/><rect fill=\"url('{space}#g')\"/></svg>")).svg,
+            sanitize(&format!(
+                "<svg><rect fill=\"url({space}#g)\"/><rect fill=\"url('{space}#g')\"/></svg>"
+            ))
+            .svg,
             "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><rect/></svg>",
             "{space:?}"
         );
@@ -235,12 +238,18 @@ fn output_holds_only_xml_characters() {
         }
     );
     assert_eq!(
-        sanitize("<svg><text id=\"a&#xFFFE;\">&#55296;&#9;&#0000000065;&#x10FFFF;&#x110000;</text></svg>").svg,
+        sanitize(
+            "<svg><text id=\"a&#xFFFE;\">&#55296;&#9;&#0000000065;&#x10FFFF;&#x110000;</text></svg>"
+        )
+        .svg,
         "<svg xmlns=\"http://www.w3.org/2000/svg\"><text id=\"a&amp;#xFFFE;\">&amp;#55296;&#9;&#0000000065;&#x10FFFF;&amp;#x110000;</text></svg>"
     );
     // Raw characters go before any check, so they cannot split a needle.
     assert_eq!(
-        sanitize("<svg><rect fill=\"ur\u{1}l(https://e.example/x)\"/><text>a\u{0}b\u{FFFF}c</text></svg>").svg,
+        sanitize(
+            "<svg><rect fill=\"ur\u{1}l(https://e.example/x)\"/><text>a\u{0}b\u{FFFF}c</text></svg>"
+        )
+        .svg,
         "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><text>abc</text></svg>"
     );
 }
