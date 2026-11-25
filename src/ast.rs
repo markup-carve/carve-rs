@@ -194,20 +194,25 @@ pub mod owned {
             return;
         }
         let mut out: Vec<(String, String)> = Vec::with_capacity(kv.len());
+        // The last place of each spelling class; a semantic key's other class is `~`-marked.
+        let mut last: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for (key, value) in kv.drain(..) {
-            let exact = key == key.to_ascii_lowercase();
-            let semantic = ["abbr", "time", "kbd"].contains(&key.to_ascii_lowercase().as_str());
-            let same = |old: &String| {
-                old.eq_ignore_ascii_case(&key)
-                    && (!semantic || (old == &old.to_ascii_lowercase()) == exact)
+            let folded = key.to_ascii_lowercase();
+            let semantic = ["abbr", "time", "kbd"].contains(&folded.as_str());
+            let marked = format!("{folded}~");
+            let (class, other) = match (semantic, key == folded) {
+                (false, _) => (folded, None),
+                (true, true) => (folded, Some(marked)),
+                (true, false) => (marked, Some(folded)),
             };
-            let last_same = out.iter().rposition(|(old, _)| same(old));
-            let last_other = out
-                .iter()
-                .rposition(|(old, _)| old.eq_ignore_ascii_case(&key) && !same(old));
-            match (last_same, last_other) {
-                (Some(i), other) if other.is_none_or(|o| o < i) => out[i].1 = value,
-                _ => out.push((key, value)),
+            let at = last.get(&class).copied();
+            let other_at = other.and_then(|o| last.get(&o).copied());
+            match at {
+                Some(i) if other_at.is_none_or(|o| o < i) => out[i].1 = value,
+                _ => {
+                    last.insert(class, out.len());
+                    out.push((key, value));
+                }
             }
         }
         *kv = out;
