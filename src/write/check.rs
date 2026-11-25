@@ -967,11 +967,67 @@ pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 
 /// Whether a link below `doc` has text that starts with a caret.
 pub fn holds_caret_link(doc: V<'_>) -> bool {
+    // An arena tree is walked through its typed slots: the generic slot walk costs a share of every `fmt`.
+    let typed = match doc {
+        V::Doc(d) => typed_caret_links(d.children.iter()),
+        V::Node(n) => typed_caret_link(n),
+        _ => None,
+    };
+    if let Some(found) = typed {
+        return found;
+    }
     let mut nodes = Vec::new();
     super::node::descendants(doc, &mut nodes);
     nodes
         .into_iter()
         .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
+}
+
+/// [`super::inline::leading_caret`] of every link below `n`, on the typed tree; `None` where no caret link was
+/// found and a JSON slot (a citation locator, extension slots) holds nodes the typed children do not reach.
+fn typed_caret_link(n: &crate::ast::Node<'_>) -> Option<bool> {
+    use crate::ast::Node;
+    match n {
+        Node::Link(l) if caret_text(l.children) => return Some(true),
+        Node::Text(_) => return Some(false),
+        _ => {}
+    }
+    let (mut found, mut json) = (false, false);
+    n.for_each_child(&mut |c| {
+        if !found {
+            match typed_caret_link(c) {
+                Some(true) => found = true,
+                None => json = true,
+                Some(false) => {}
+            }
+        }
+    });
+    if found {
+        return Some(true);
+    }
+    json |= matches!(n, Node::Citation(c) if c.locator.is_some())
+        || matches!(n, Node::BlockExtension(e) if e.slots.is_some())
+        || matches!(n, Node::InlineExtension(e) if e.slots.is_some());
+    (!json).then_some(false)
+}
+
+/// [`super::inline::leading_caret`] of a link holding `kids`.
+fn caret_text(kids: &[crate::ast::Node<'_>]) -> bool {
+    matches!(kids.first(), Some(crate::ast::Node::Text(t)) if t.value.strip_prefix('^').is_some_and(|rest| {
+        rest.chars().next().map_or(kids.len() == 1, char::is_whitespace)
+    }))
+}
+
+fn typed_caret_links<'a>(nodes: impl Iterator<Item = &'a crate::ast::Node<'a>>) -> Option<bool> {
+    let mut json = false;
+    for n in nodes {
+        match typed_caret_link(n) {
+            Some(true) => return Some(true),
+            None => json = true,
+            Some(false) => {}
+        }
+    }
+    (!json).then_some(false)
 }
 
 fn scan_text_note_closers<'t>(
@@ -3906,5 +3962,33 @@ mod resync_break_test {
         assert!(check.losses.iter().any(|(node, field)| {
             id(*node) == id(V::Json(&expected[1])) && field.as_deref() == Some("dir")
         }));
+    }
+}
+
+#[cfg(test)]
+mod caret_link_test {
+    use super::*;
+
+    #[test]
+    fn the_typed_walk_finds_the_caret_links_the_slot_walk_finds() {
+        for (src, expected) in [
+            ("^[\\] [^](u)\n", true),
+            ("| a [\\^ b](u) | c |\n", true),
+            ("> - x [\\^](u)\n", true),
+            ("| a | b |\n^ cap [\\^](u)\n", true),
+            ("[^a](u) [b](u) [^b][n]\n\n[n]: /x\n", false),
+            (
+                "{table aligns=left}\n```csv\nA,B\n^,x\n```\n^ Stock\n",
+                false,
+            ),
+        ] {
+            let arena = crate::Arena::for_input(src);
+            let doc = crate::parse_resolved_in(src, &crate::Options::default(), &arena)
+                .unwrap_or_default();
+            let typed = holds_caret_link(V::Doc(&doc));
+            let json = super::super::parse_plain(src).unwrap_or_default();
+            assert_eq!(typed, holds_caret_link(V::Json(&json)), "{src:?}");
+            assert_eq!(typed, expected, "{src:?}");
+        }
     }
 }
