@@ -802,7 +802,7 @@ impl Cx {
         Value::Object(m)
     }
 
-    /// C2-H-043: one paragraph per stanza, a line per `<br>`, leading spaces as no-break spaces.
+    /// C2-H-043: one paragraph per stanza, a line per `<br>`, verse whitespace read back as spaces.
     fn line_block(&mut self, id: Id) -> Value {
         let mut lines: Vec<Value> = Vec::new();
         for stanza in self.dom.elements(id) {
@@ -850,25 +850,14 @@ impl Cx {
             children.remove(0);
             spaces.push(' ');
         }
-        let lead_text = children.first().is_some_and(|c| ty(c) == "text");
-        if let Some(lead) = children.first_mut()
-            && lead_text
-        {
-            let value = lead["value"].as_str().unwrap_or("").to_string();
-            let rest = value.trim_start_matches('\u{a0}');
-            let count = value.chars().count() - rest.chars().count();
-            spaces.push_str(&" ".repeat(count));
-            let rest = rest.to_string();
-            if let Some(m) = lead.as_object_mut() {
-                m.insert("value".into(), rest.into());
-            }
-        }
+        let mut lead = children.first().is_some_and(|c| ty(c) == "text");
+        verse_spaces(&mut children, &mut lead);
         if !spaces.is_empty() {
-            if let Some(lead) = children.first_mut()
-                && lead_text
+            if let Some(first) = children.first_mut()
+                && ty(first) == "text"
             {
-                let value = format!("{spaces}{}", lead["value"].as_str().unwrap_or(""));
-                if let Some(m) = lead.as_object_mut() {
+                let value = format!("{spaces}{}", first["value"].as_str().unwrap_or(""));
+                if let Some(m) = first.as_object_mut() {
                     m.insert("value".into(), value.into());
                 }
             } else {
@@ -1929,4 +1918,52 @@ fn resolve_probe(probe: &Value) -> Option<Value> {
 
 pub(crate) fn flow(cx: &mut Cx, nodes: &[Id], host: Id, reader: Reader) -> Vec<Value> {
     cx.flow_of(nodes, host, reader)
+}
+
+/// C2-H-043 read back: the renderer writes the whole space and tab run of a
+/// line-block line, as `&nbsp;` per column when it leads the line (`lead`) or
+/// covers two or more columns. Any other U+00A0 run was authored and stays.
+fn verse_spaces(nodes: &mut [Value], lead: &mut bool) {
+    for n in nodes {
+        match ty(n) {
+            "text" => {
+                if let Some(Value::String(s)) = n.get_mut("value")
+                    && s.contains('\u{a0}')
+                {
+                    *s = verse_text(s, *lead);
+                }
+            }
+            "image" | "inline_footnote" => {}
+            _ => {
+                if let Some(Value::Array(kids)) = n.get_mut("children") {
+                    verse_spaces(kids, lead);
+                }
+            }
+        }
+        *lead = false;
+    }
+}
+
+fn verse_text(s: &str, lead: bool) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    let mut prev: Option<char> = None;
+    while let Some(at) = rest.find('\u{a0}') {
+        let (head, tail) = rest.split_at(at);
+        out.push_str(head);
+        prev = head.chars().next_back().or(prev);
+        let after = tail.trim_start_matches('\u{a0}');
+        let count = (tail.len() - after.len()) / '\u{a0}'.len_utf8();
+        let blank = |c: Option<char>| matches!(c, Some(' ' | '\t'));
+        let first = lead && at == 0 && out.is_empty();
+        if !blank(prev) && !blank(after.chars().next()) && (count > 1 || first) {
+            out.push_str(&" ".repeat(count));
+        } else {
+            out.push_str(&tail[..tail.len() - after.len()]);
+        }
+        prev = Some('\u{a0}');
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
