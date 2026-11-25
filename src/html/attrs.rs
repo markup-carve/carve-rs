@@ -107,9 +107,9 @@ impl<'a> El<'a> {
         if self.is_bare() {
             return;
         }
-        let keys = self.keys(f);
+        let (keys, align_at) = self.keys(f);
         self.write_prefix(out);
-        self.write_keys(keys, out);
+        self.write_keys(keys, align_at, out);
         self.write_generated(out);
     }
 
@@ -137,16 +137,24 @@ impl<'a> El<'a> {
         }
     }
 
-    fn write_keys(&self, keys: Vec<(&str, &str)>, out: &mut String) {
+    /// C2-H-009: without an authored `style`, the style of an `align` key
+    /// stands at `align_at`, the place of that key among the written keys.
+    fn write_keys(&self, keys: Vec<(&str, &str)>, align_at: Option<usize>, out: &mut String) {
         let has_style = keys.iter().any(|(k, _)| k.eq_ignore_ascii_case("style"));
-        for (k, v) in keys {
+        let generated = !has_style && (self.style_before.is_some() || !self.style_after.is_empty());
+        let align_at = align_at.filter(|_| generated);
+        let len = keys.len();
+        for (i, (k, v)) in keys.into_iter().enumerate() {
+            if align_at == Some(i) {
+                attr(out, "style", Some(&self.merge_style(None)));
+            }
             if k.eq_ignore_ascii_case("style") {
                 attr(out, k, Some(&self.merge_style(Some(v))));
             } else {
                 attr(out, k, Some(v));
             }
         }
-        if !has_style && (self.style_before.is_some() || !self.style_after.is_empty()) {
+        if generated && !matches!(align_at, Some(i) if i < len) {
             attr(out, "style", Some(&self.merge_style(None)));
         }
     }
@@ -218,11 +226,14 @@ impl<'a> El<'a> {
 
     /// The authored keys that are written, filtered and with collisions
     /// settled (C2-H-013, C2-H-116, C2-H-161).
-    fn keys(&mut self, f: Filter<'_>) -> Vec<(&'a str, &'a str)> {
+    /// With them, the index in that list where the first written `align`
+    /// key stood.
+    fn keys(&mut self, f: Filter<'_>) -> (Vec<(&'a str, &'a str)>, Option<usize>) {
         let Some(attrs) = self.attrs else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let mut out = Vec::new();
+        let mut align_at = None;
         for (k, v) in attrs.key_values {
             if self.skip_key(k) {
                 continue;
@@ -233,6 +244,7 @@ impl<'a> El<'a> {
                     .to_ascii_lowercase();
                 if matches!(folded.as_str(), "left" | "right" | "center") {
                     self.style_after.push(format!("text-align: {folded};"));
+                    align_at.get_or_insert(out.len());
                     continue;
                 }
             }
@@ -249,7 +261,7 @@ impl<'a> El<'a> {
             self.generated.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
             out.push((*k, url::filter_value_in(k, v, f.policy)));
         }
-        out
+        (out, align_at)
     }
 
     fn skip_key(&self, key: &str) -> bool {
