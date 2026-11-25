@@ -13,12 +13,8 @@ fn run(args: &[&str], input: &str) -> (i32, String, String) {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
+    // A usage error exits before reading stdin, so the write may hit a closed pipe.
+    let _ = child.stdin.take().unwrap().write_all(input.as_bytes());
     let output = child.wait_with_output().unwrap();
     (
         output.status.code().unwrap(),
