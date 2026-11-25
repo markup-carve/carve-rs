@@ -162,6 +162,8 @@ struct LineCommentFence {
     len: usize,
     start: usize,
     end: usize,
+    /// The end of the blank lines behind `end`, kept when the parent fence closes the body.
+    blank_end: usize,
     lines: Vec<String>,
 }
 
@@ -177,6 +179,7 @@ impl LineCommentFence {
             len: run,
             start: k.offset(),
             end,
+            blank_end: end,
             lines: (!first.is_empty())
                 .then(|| first.to_string())
                 .into_iter()
@@ -759,9 +762,10 @@ impl<'a> Parser<'a> {
                 stanza_open,
                 ..
             } => {
+                // C2-B-113: a blank line is not part of the comment until a later line keeps it.
                 if let Some(fence) = comment {
                     fence.lines.push(String::new());
-                    fence.end = e;
+                    fence.blank_end = e;
                     return true;
                 }
                 // C2-B-024: a blank line ends the stanza, so no lazy line follows it.
@@ -1413,7 +1417,7 @@ fn line_block_comment_line(
     if inner_closes || parent_closes {
         entries.push(LineBlockEntry::BlockComment {
             start: fence.start,
-            end: if inner_closes { end } else { fence.end },
+            end: if inner_closes { end } else { fence.blank_end },
             value: fence.lines.join("\n"),
         });
         if let Some(fence) = comment.take().filter(|_| !inner_closes) {
@@ -1424,6 +1428,7 @@ fn line_block_comment_line(
     // C2-B-123, C2-B-130: the body is stripped by the container only, and a straddling tab is kept (C2-B-007).
     fence.lines.push(walk.cur.rest().to_string());
     fence.end = end;
+    fence.blank_end = end;
     false
 }
 
