@@ -500,6 +500,15 @@ fn list_has_span_marks(table: V<'_>) -> bool {
     })
 }
 
+/// The span-mark flag below a node: a table reads it off its cells. `unmarked` holds where no cell of the JSON
+/// side has a span mark.
+fn inner_marks(a: V<'_>, b: V<'_>, table: bool, span_marks: bool, unmarked: bool) -> bool {
+    if !table {
+        return span_marks;
+    }
+    list_has_span_marks(b) || (!(unmarked && matches!(a, V::Json(_))) && list_has_span_marks(a))
+}
+
 pub fn equal_scalars(a: V<'_>, b: V<'_>) -> bool {
     if let (Some(x), Some(y)) = (a.as_str(), b.as_str()) {
         return x == y;
@@ -596,11 +605,7 @@ fn equal_json_node(
     if crate::view::json_field(value, "type").and_then(Value::as_str) != Some(name) {
         return None;
     }
-    let inner = if name == "table" {
-        list_has_span_marks(b) || (!unmarked && list_has_span_marks(a))
-    } else {
-        span_marks
-    };
+    let inner = inner_marks(a, b, name == "table", span_marks, unmarked);
     let fields = results().get(name);
     let mut left = map.iter().filter(|(k, _)| !skipped_in(a, fields, k, inner));
     let mut same = true;
@@ -632,11 +637,7 @@ fn equal_objects(
     {
         return same;
     }
-    let inner = if ty(a) == "table" {
-        list_has_span_marks(b) || (!(unmarked && matches!(a, V::Json(_))) && list_has_span_marks(a))
-    } else {
-        span_marks
-    };
+    let inner = inner_marks(a, b, ty(a) == "table", span_marks, unmarked);
     if let Some(same) = equal_nodes(a, b, (lv, rv), inner, unmarked) {
         return same;
     }
