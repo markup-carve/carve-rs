@@ -701,7 +701,8 @@ fn take_attempt<'t>(w: &mut Writer<'t>, n: usize) -> Attempt<'t> {
 /// The node `es[i]` did not read back: the ways to make it form are tried one per round.
 fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) -> bool {
     let Some(&e) = es.get(i) else { return false };
-    if w.is_lost(e) {
+    // Nor does any spelling of a node whose lost break left a blank line in it (C2-W-124).
+    if w.is_lost(e) || holds_lost_break(w, e) {
         return false;
     }
     let mut attempt = take_attempt(w, id(e));
@@ -3443,6 +3444,14 @@ pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: V<'_>, offs
     }
 }
 
+/// Whether the inlines of `e` hold a lost soft break: its blank line split the block, which is reported there.
+fn holds_lost_break(w: &Writer<'_>, e: V<'_>) -> bool {
+    super::node::is_inline_parent(e)
+        && children(e)
+            .iter()
+            .any(|n| (ty(n) == "soft_break" && w.is_lost(n)) || holds_lost_break(w, n))
+}
+
 /// Compares the blocks `es` of `owner`, as they were written, with their parse `as_`.
 pub fn compare_blocks<'t>(
     w: &mut Writer<'t>,
@@ -3457,7 +3466,10 @@ pub fn compare_blocks<'t>(
             return;
         }
     }
-    if es.len() == as_.len() || c.changes() > before || es.iter().any(|e| w.is_lost(e)) {
+    if es.len() == as_.len()
+        || c.changes() > before
+        || es.iter().any(|e| w.is_lost(e) || holds_lost_break(w, e))
+    {
         return;
     }
     c.misaligned = true;

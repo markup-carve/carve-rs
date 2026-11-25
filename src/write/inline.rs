@@ -1434,6 +1434,12 @@ fn write_part_into<'t>(
         out.push_str(&unspelled_space(w, node));
         return;
     }
+    // C2-W-117, C2-W-124: two line endings make a blank line, so each soft break behind a break is lost.
+    if ty(node) == "soft_break"
+        && super::node::is_break(at.checked_sub(1).and_then(|i| nodes.get(i)).copied())
+    {
+        lose(w, node, None);
+    }
     let start = out.len();
     if end > at + 1 {
         out.push_str(&code_run(nodes, at, end));
