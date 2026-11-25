@@ -758,33 +758,108 @@ pub fn plain_text(nodes: Arr<'_>) -> String {
     out
 }
 
-/// The JSON pointer of each wanted node in the document, by identity.
-pub fn pointers(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
+/// The JSON pointer of each wanted node in the document, by identity, and its rank in the document
+/// order of C2-L-011: a node before the nodes inside it, the slots in source order.
+pub fn places(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, (String, usize)> {
     let mut found = AddrMap::default();
     if wanted.is_empty() {
         return found;
     }
     let mut stack: Vec<(V<'_>, String)> = vec![(doc, String::new())];
+    let mut rank = 0;
+    let mut inner = Vec::new();
     while let Some((n, path)) = stack.pop() {
         if wanted.contains(&id(n)) {
-            found.insert(id(n), path.clone());
+            found.insert(id(n), (path.clone(), rank));
             if found.len() == wanted.len() {
                 break;
             }
         }
-        for_each_slot(n, false, &mut |nodes, step, single| {
+        rank += 1;
+        for_each_slot(n, true, &mut |nodes, step, single| {
             if single {
                 if let Some(c) = nodes.first() {
-                    stack.push((c, format!("{path}/{step}")));
+                    inner.push((c, format!("{path}/{step}")));
                 }
             } else {
                 for (i, c) in nodes.iter().enumerate() {
-                    stack.push((c, format!("{path}/{step}/{i}")));
+                    inner.push((c, format!("{path}/{step}/{i}")));
                 }
             }
         });
+        stack.extend(inner.drain(..).rev());
     }
     found
+}
+
+/// One step down from `node` along `segments`: the node a slot holds there and how many segments name it.
+pub fn descend<'t>(node: V<'t>, segments: &[&str]) -> Option<(V<'t>, usize)> {
+    if let V::Json(value) = node
+        && let Some(found) = descend_json(value, segments)
+    {
+        return found.map(|(c, used)| (V::Json(c), used));
+    }
+    let mut next = None;
+    for_each_slot(node, true, &mut |nodes, step, single| {
+        if next.is_some() {
+            return;
+        }
+        let used = step.split('/').count();
+        if segments
+            .get(..used)
+            .is_none_or(|s| !step.split('/').eq(s.iter().copied()))
+        {
+            return;
+        }
+        let index = if single {
+            Some(0)
+        } else {
+            index_at(segments, used)
+        };
+        if let Some(c) = index.and_then(|i| nodes.get(i)) {
+            next = Some((c, used + usize::from(!single)));
+        }
+    });
+    next
+}
+
+fn index_at(segments: &[&str], at: usize) -> Option<usize> {
+    segments
+        .get(at)
+        .filter(|t| **t == "0" || !t.starts_with('0'))
+        .and_then(|t| t.parse::<usize>().ok())
+}
+
+/// [`descend`] in a JSON value without a walk of every slot; `None` where a slot path has a wildcard.
+fn descend_json<'t>(node: &'t Value, segments: &[&str]) -> Option<Option<(&'t Value, usize)>> {
+    for p in slot_paths(ty(V::Json(node))) {
+        if p.iter().any(|part| part == "*") {
+            return None;
+        }
+        if !segments
+            .get(..p.len())
+            .is_some_and(|names| p.iter().zip(names).all(|(part, name)| part == name))
+        {
+            continue;
+        }
+        let Some(value) = p
+            .iter()
+            .try_fold(node, |v, part| crate::view::json_field(v, part))
+        else {
+            continue;
+        };
+        let next = match value {
+            Value::Array(items) => index_at(segments, p.len())
+                .and_then(|i| items.get(i))
+                .map(|c| (c, p.len() + 1)),
+            Value::Object(map) if map.contains_key("type") => Some((value, p.len())),
+            _ => None,
+        };
+        if next.is_some() {
+            return Some(next);
+        }
+    }
+    Some(None)
 }
 
 #[cfg(test)]
