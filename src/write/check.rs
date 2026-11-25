@@ -425,7 +425,7 @@ fn escape_attribute_lines_above<'t>(
     for &n in nodes.get(..from).unwrap_or(&[]) {
         if is_break(Some(n)) {
             let t = line.trim_end_matches([' ', '\t']);
-            if !crate::attr::parse_block(t, 0).is_some_and(|(_, end)| end == t.len()) {
+            if crate::attr::parse_block(t, 0).is_none_or(|(_, end)| end != t.len()) {
                 return false;
             }
             line.clear();
