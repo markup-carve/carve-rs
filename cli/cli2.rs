@@ -896,7 +896,15 @@ fn one(
         "fmt" => fmt_file(args, standard, path, bytes),
         "import" => import_file(args, path, bytes, host, &opts, loss_reports),
         "migrate-ast" => migrate_file(path, bytes),
-        _ => render_file(args, path, bytes, host, opts, loss_reports, include_reports),
+        _ => render_file(
+            args,
+            path,
+            bytes,
+            host,
+            &opts,
+            loss_reports,
+            include_reports,
+        ),
     }
 }
 
@@ -1378,25 +1386,66 @@ fn render_file(
     path: &str,
     bytes: &[u8],
     host: &Carve,
-    opts: Options,
+    opts: &Options,
     loss_reports: &mut Vec<Value>,
     include_reports: &mut Vec<Value>,
 ) -> Result<i32, i32> {
-    let (rendered, tree) = render_input(args, path, bytes, host, &opts)?;
-    let parsed_tree = tree_if_needed(args, bytes, host, &opts, tree.as_ref())?;
+    let (rendered, tree) = render_input(args, path, bytes, host, opts)?;
+    let parsed_tree = tree_if_needed(args, bytes, host, opts, tree.as_ref())?;
     let resolved_tree = tree.as_ref().or(parsed_tree.as_ref());
     let strict_entry = bool_value(args, "strict", false) && !rendered.diagnostics.is_empty();
-    let retained: Vec<Entry> = rendered
+    let mut retained: Vec<Entry> = rendered
         .diagnostics
         .into_iter()
         .filter(|e| e.channel == "render-loss")
         .collect();
+    let target = str_value(args, "to").filter(|s| *s != "html");
+    let write = |target: &str| {
+        host.write_to(
+            target,
+            resolved_tree.unwrap(),
+            &WriteOptions {
+                render: opts.clone(),
+                ..Default::default()
+            },
+        )
+        .map_err(api_fail)
+    };
+    // C2-W-134, C2-T-028: Carve source goes out only with its writer losses,
+    // so it is written before the report.
+    let carve_written = match target {
+        Some("carve") => Some(write("carve")?),
+        _ => None,
+    };
+    let writer_losses: Vec<Entry> = match &carve_written {
+        Some(out) => out
+            .diagnostics
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.code.as_str(),
+                    "writer-refused" | "structure-unspellable" | "field-unspellable"
+                )
+            })
+            .cloned()
+            .collect(),
+        None => Vec::new(),
+    };
+    // C2-T-027, C2-T-029: an allowed code is no loss and the cap holds; the
+    // writer loss still refuses the source (C2-T-034).
+    let room = opts.max_losses.saturating_sub(retained.len());
+    let counted: Vec<&Entry> = writer_losses
+        .iter()
+        .filter(|e| !opts.allow_losses.contains(&e.code))
+        .collect();
+    let suppressed = rendered.suppressed_diagnostics + counted.len().saturating_sub(room);
+    retained.extend(counted.into_iter().take(room).cloned());
     if str_value(args, "report-losses").is_some() {
         loss_reports.push(loss_report(
             path,
             &retained,
             bytes,
-            rendered.suppressed_diagnostics,
+            suppressed,
             opts.includes.as_ref(),
         ));
     }
@@ -1411,21 +1460,26 @@ fn render_file(
             retained.len()
         );
     }
+    let refused = !strict && !writer_losses.is_empty();
+    if refused {
+        let found: Vec<String> = writer_losses
+            .iter()
+            .map(|e| format!("{} at {}", e.code, e.path.as_deref().unwrap_or("")))
+            .collect();
+        eprintln!(
+            "carve[writer-refused]: writer carve: the source cannot be returned without its loss report: {}",
+            found.join(", ")
+        );
+    }
     lines(path, bytes, &retained, true, opts.includes.as_ref())?;
-    if strict {
+    if strict || refused {
         return Ok(1);
     }
-    if let Some(target) = str_value(args, "to").filter(|s| *s != "html") {
-        let out = host
-            .write_to(
-                target,
-                resolved_tree.unwrap(),
-                &WriteOptions {
-                    render: opts,
-                    ..Default::default()
-                },
-            )
-            .map_err(api_fail)?;
+    if let Some(target) = target {
+        let out = match carve_written {
+            Some(out) => out,
+            None => write(target)?,
+        };
         product(args, &out.output)?;
     } else {
         product(args, &format!("{}\n", rendered.html))?;
