@@ -172,8 +172,45 @@ pub mod owned {
             }
             self.classes.extend(later.classes);
             self.key_values.extend(later.key_values);
-            dedupe_keys_semantic(&mut self.key_values);
+            merge_keys_ordered(&mut self.key_values);
         }
+    }
+
+    /// Like [`dedupe_keys_semantic`], but a semantic key written after its other
+    /// spelling is kept again at the end, so a later fold for a non-span node
+    /// still sees the last value written (C2-A-035). Spans fold with
+    /// [`dedupe_keys_semantic`], everything else with [`dedupe_keys`].
+    pub fn merge_keys_ordered(kv: &mut Vec<(String, String)>) {
+        let collides = kv.iter().any(|(k, _)| {
+            ["abbr", "time", "kbd"]
+                .iter()
+                .any(|s| k.eq_ignore_ascii_case(s))
+                && k.bytes().any(|b| b.is_ascii_uppercase())
+        }) && kv
+            .iter()
+            .any(|(k, _)| ["abbr", "time", "kbd"].contains(&k.as_str()));
+        if !collides {
+            dedupe_keys_semantic(kv);
+            return;
+        }
+        let mut out: Vec<(String, String)> = Vec::with_capacity(kv.len());
+        for (key, value) in kv.drain(..) {
+            let exact = key == key.to_ascii_lowercase();
+            let semantic = ["abbr", "time", "kbd"].contains(&key.to_ascii_lowercase().as_str());
+            let same = |old: &String| {
+                old.eq_ignore_ascii_case(&key)
+                    && (!semantic || (old == &old.to_ascii_lowercase()) == exact)
+            };
+            let last_same = out.iter().rposition(|(old, _)| same(old));
+            let last_other = out
+                .iter()
+                .rposition(|(old, _)| old.eq_ignore_ascii_case(&key) && !same(old));
+            match (last_same, last_other) {
+                (Some(i), other) if other.is_none_or(|o| o < i) => out[i].1 = value,
+                _ => out.push((key, value)),
+            }
+        }
+        *kv = out;
     }
 
     /// A lower-case semantic span key is distinct from its ordinary upper-case spelling (C2-H-013).
