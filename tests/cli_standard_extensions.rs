@@ -239,3 +239,43 @@ fn c2_x_072_glossary_and_term_register_once_in_either_order() {
     assert!(outputs[0].contains(r##"<a href="#gloss-API" class="term">API</a>"##));
     assert!(outputs.iter().all(|o| *o == outputs[0]));
 }
+
+#[test]
+fn c2_x_075_quote_locale_and_a_listed_smart_quotes_register_once() {
+    let dir = dir("quotes");
+    std::fs::write(dir.join("a.crv"), "\"a\" b\n").unwrap();
+    for (args, want) in [
+        (
+            vec![
+                "--quote-locale",
+                "de",
+                "--extensions",
+                r#"["carve.smartQuotes"]"#,
+            ],
+            "<p>„a“ b</p>\n",
+        ),
+        (
+            vec![
+                "--quote-locale",
+                "fr",
+                "--extensions",
+                r#"["carve.smartQuotes"]"#,
+                "--extension-options",
+                r#"{"carve.smartQuotes":{"locale":"de"}}"#,
+            ],
+            "<p>„a“ b</p>\n",
+        ),
+    ] {
+        let mut all = vec!["render", "--smart-typography"];
+        all.extend(args);
+        all.push("a.crv");
+        let out = carve(&dir, &all);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{all:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&out.stdout), want, "{all:?}");
+    }
+}

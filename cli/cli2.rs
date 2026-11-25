@@ -809,7 +809,9 @@ struct StandardExtensions {
 impl StandardExtensions {
     fn from_args(args: &Args) -> Result<Self, i32> {
         let mut standard = Self::from_catalog(args)?;
-        if let Some(locale) = str_value(args, "quote-locale") {
+        // A listed `carve.smartQuotes` already took the locale.
+        let listed = standard.names.iter().any(|n| n == "carve.smartQuotes");
+        if let Some(locale) = str_value(args, "quote-locale").filter(|_| !listed) {
             let quotes = api::extensions::smart_quotes(&api::extensions::SmartQuotesOptions {
                 locale: Some(locale.to_string()),
                 ..Default::default()
@@ -907,7 +909,9 @@ impl StandardExtensions {
                 ("carve.cite", Some(mode)) if render => host.enable_standard_cite_renderer(mode),
                 ("carve.smartQuotes", _) => host.register(api::extensions::smart_quotes(
                     &api::extensions::SmartQuotesOptions {
-                        locale: setting("locale").map(str::to_string),
+                        locale: setting("locale")
+                            .or_else(|| str_value(args, "quote-locale"))
+                            .map(str::to_string),
                         ..api::extensions::SmartQuotesOptions::default()
                     },
                 )),
