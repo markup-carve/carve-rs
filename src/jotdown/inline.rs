@@ -775,6 +775,18 @@ impl<'s> Parser<'s> {
                 if opener.bidirectional() && whitespace_before {
                     return None;
                 }
+                // carve-rs: a `]` with no `(`, `[` or `{` behind it closes no bracket; it stays text and the
+                // `[` stays open (djot.js).
+                if matches!(opener, Opener::Span(..))
+                    && !matches!(
+                        self.input.peek().map(|t| t.kind),
+                        Some(lex::Kind::Open(
+                            Delimiter::Paren | Delimiter::Bracket | Delimiter::Brace
+                        ))
+                    )
+                {
+                    return None;
+                }
                 // carve-rs: in a link destination a delimiter does not close an opener from before the
                 // link; it stays text (djot.js 713a417).
                 if self.opener_classes[1].last().is_some_and(|&link| o < link) {
