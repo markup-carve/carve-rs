@@ -433,7 +433,7 @@ fn check_template(template: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn url_policy(v: &Value) -> Result<UrlPolicy, Error> {
+pub(crate) fn url_policy(v: &Value) -> Result<UrlPolicy, Error> {
     let map = object("urlPolicy", v)?;
     match (map.get("deny"), map.get("allow"), map.len()) {
         (Some(list), None, 1) => Ok(UrlPolicy::Deny(string_list("urlPolicy", list)?)),

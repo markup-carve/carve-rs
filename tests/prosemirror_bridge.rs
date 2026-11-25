@@ -344,6 +344,26 @@ fn a_denied_destination_is_blanked_in_the_editor() {
 }
 
 #[test]
+fn the_options_read_their_json_form() {
+    let options = ProseMirrorOptions::from_json(&json!({
+        "urlPolicy": {"allow": ["https"]},
+        "mapping": {"nodes": {"poll": {"as": "div", "class": "poll"}}},
+    }))
+    .expect("options");
+    assert_eq!(options.url_policy, UrlPolicy::Allow(vec!["https".into()]));
+    assert_eq!(options.mapping.nodes.len(), 1);
+    assert!(ProseMirrorOptions::from_json(&Value::Null).is_ok());
+    for bad in [
+        json!({"urlPolicy": {"deny": ["a"], "allow": ["b"]}}),
+        json!({"profile": "comment"}),
+        json!({"mapping": {"nodes": {"x": {"as": "p"}}}}),
+        json!([1]),
+    ] {
+        assert!(ProseMirrorOptions::from_json(&bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
 fn a_mapping_entry_declares_a_host_node_and_mark() {
     let mapping = Mapping::from_json(&json!({
         "nodes": {"placeholderToken": {"as": "span", "class": "placeholder", "attributes": ["name"]}},

@@ -315,6 +315,40 @@ pub struct ProseMirrorOptions {
     pub mapping: Mapping,
 }
 
+impl ProseMirrorOptions {
+    /// The options of their JSON form, for bindings: `urlPolicy` as the
+    /// render option spells it (`{"deny": [...]}` or `{"allow": [...]}`) and
+    /// `mapping` as [`Mapping::from_json`] reads it. `null` is the default.
+    ///
+    /// # Errors
+    ///
+    /// [`ProseMirrorError::Carve`] for a refused `urlPolicy` or an unknown
+    /// key; [`ProseMirrorError::Invalid`] for a malformed mapping.
+    pub fn from_json(value: &Value) -> Result<Self, ProseMirrorError> {
+        let mut out = Self::default();
+        let fields = match value {
+            Value::Null => return Ok(out),
+            Value::Object(fields) => fields,
+            _ => return Err(Error::option("options", "expected an object").into()),
+        };
+        for (key, field) in fields {
+            match key.as_str() {
+                "urlPolicy" if !field.is_null() => {
+                    out.url_policy = super::options::url_policy(field)?;
+                }
+                "mapping" => out.mapping = Mapping::from_json(field)?,
+                "urlPolicy" => {}
+                other => {
+                    return Err(
+                        Error::option(other, "not an option of the ProseMirror bridge").into(),
+                    );
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// A rendered ProseMirror document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProseMirrorDoc {
