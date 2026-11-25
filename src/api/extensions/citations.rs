@@ -73,7 +73,7 @@ fn author_year(term: &Value) -> (Option<String>, Option<String>) {
     (fact("author"), fact("year"))
 }
 
-fn list_entries(list: &Value, entries: &mut HashMap<String, Entry>) {
+fn list_entries(list: &Value, entries: &mut HashMap<String, Entry>, keys: &mut Vec<String>) {
     let mut terms = Vec::new();
     let mut facts = (None, None);
     let mut open = false;
@@ -99,6 +99,7 @@ fn list_entries(list: &Value, entries: &mut HashMap<String, Entry>) {
                                 year: facts.1.clone(),
                             },
                         );
+                        keys.push(key.clone());
                     }
                 }
             }
@@ -178,18 +179,23 @@ fn csl_entry(csl: &Value) -> Entry {
     }
 }
 
-fn collect_entries(doc: &mut Value, pool: &[Value]) -> HashMap<String, Entry> {
+/// C2-X-058: the entries, and the keys each directive lists, in walk order.
+/// A duplicate key resolves to its last definition and has one list item.
+fn collect_entries(doc: &mut Value, pool: &[Value]) -> (HashMap<String, Entry>, Vec<Vec<String>>) {
     let mut entries = HashMap::new();
+    let mut directives = Vec::new();
     app::walk(doc, &mut |node| {
         if !references(node) {
             return true;
         }
+        let mut keys = Vec::new();
         for list in app::children(node)
             .iter()
             .filter(|node| app::ty(node) == "definition_list")
         {
-            list_entries(list, &mut entries);
+            list_entries(list, &mut entries, &mut keys);
         }
+        directives.push(keys);
         false
     });
     for item in pool {
@@ -199,7 +205,24 @@ fn collect_entries(doc: &mut Value, pool: &[Value]) -> HashMap<String, Entry> {
                 .or_insert_with(|| csl_entry(item));
         }
     }
-    entries
+    let mut last = HashMap::new();
+    for (at, keys) in directives.iter().enumerate() {
+        for key in keys {
+            last.insert(key.clone(), at);
+        }
+    }
+    for (at, keys) in directives.iter_mut().enumerate() {
+        let mut seen = HashSet::new();
+        let mut kept: Vec<String> = keys
+            .iter()
+            .rev()
+            .filter(|key| last.get(*key) == Some(&at) && seen.insert((*key).clone()))
+            .cloned()
+            .collect();
+        kept.reverse();
+        *keys = kept;
+    }
+    (entries, directives)
 }
 
 struct Uses<'a> {
@@ -303,9 +326,8 @@ fn list_item(entry: &Entry, id: &str, uses: &[String]) -> Value {
     json!({"type":"list_item", "attrs":{"id":id}, "children":blocks})
 }
 
-fn reference_list(uses: &Uses<'_>) -> Value {
-    let mut keys = uses.order.clone();
-    if uses.mode == CitationMode::AuthorDate {
+fn reference_list(uses: &Uses<'_>, mut keys: Vec<String>, source_order: bool) -> Value {
+    if uses.mode == CitationMode::AuthorDate && !source_order {
         keys.sort_by(|a, b| {
             uses.entries[a]
                 .author
@@ -324,8 +346,11 @@ fn reference_list(uses: &Uses<'_>) -> Value {
             )
         })
         .collect();
+    let start = keys.first().and_then(|key| uses.numbers.get(key)).copied();
     let marker = if uses.mode == CitationMode::AuthorDate {
         json!({"kind":"bullet", "char":"-"})
+    } else if let Some(start) = start.filter(|n| source_order && *n != 1) {
+        json!({"kind":"ordered", "style":"1", "delimiter":".", "start":start})
     } else {
         json!({"kind":"ordered", "style":"1", "delimiter":"."})
     };
@@ -338,7 +363,7 @@ struct Transform {
 impl DocumentTransform for Transform {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
         let mut doc = app::view(&view)?;
-        let entries = collect_entries(
+        let (entries, directives) = collect_entries(
             &mut doc,
             self.options.bibliography.as_deref().unwrap_or(&[]),
         );
@@ -352,6 +377,18 @@ impl DocumentTransform for Transform {
             ref_ids: HashMap::new(),
             use_ids: HashMap::new(),
         };
+        // Directive entries take their numbers in source order, before any use.
+        let mut source_keys = HashSet::new();
+        for key in directives.iter().flatten() {
+            source_keys.insert(key.clone());
+            if !uses.numbers.contains_key(key) {
+                uses.numbers.insert(key.clone(), uses.numbers.len() + 1);
+                uses.ref_ids.insert(
+                    key.clone(),
+                    app::fresh_id(&format!("ref-{key}"), &mut uses.taken),
+                );
+            }
+        }
         // Body uses are numbered first, even if a note definition precedes them.
         app::walk(&mut doc, &mut |node| {
             if references(node) || matches!(app::ty(node), "footnote" | "inline_footnote") {
@@ -372,11 +409,22 @@ impl DocumentTransform for Transform {
             }
             true
         });
-        let mut placed = uses.order.is_empty();
+        let mut placed = false;
         let mut claimed = false;
+        let mut at = 0;
         app::walk(&mut doc, &mut |node| {
             if !references(node) {
                 return true;
+            }
+            let mut keys = directives.get(at).cloned().unwrap_or_default();
+            at += 1;
+            if !placed {
+                keys.extend(
+                    uses.order
+                        .iter()
+                        .filter(|key| !source_keys.contains(*key))
+                        .cloned(),
+                );
             }
             let mut body = node.clone();
             if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
@@ -386,20 +434,18 @@ impl DocumentTransform for Transform {
                             .iter()
                             .any(|item| app::ty(item) == "definition_description")
                 });
-                if !placed {
-                    parts.push(reference_list(&uses));
-                    placed = true;
-                }
+                parts.push(reference_list(&uses, keys, true));
             }
+            placed = true;
             *node = app::claim_directive(REFERENCES, node, &[body]);
             claimed = true;
             false
         });
-        if !placed {
+        if !placed && !uses.order.is_empty() {
             if let Some(parts) = doc.get_mut("children").and_then(Value::as_array_mut) {
                 parts.push(
                     json!({"type":"block_extension", "name":REFERENCES, "version":"1",
-                    "children":[], "slots":{"body":[reference_list(&uses)]}, "fallback":[]}),
+                    "children":[], "slots":{"body":[reference_list(&uses, uses.order.clone(), false)]}, "fallback":[]}),
                 );
                 claimed = true;
             }
