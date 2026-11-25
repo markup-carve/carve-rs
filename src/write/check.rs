@@ -51,6 +51,10 @@ impl Chunk {
         &self.text
     }
 
+    pub fn into_text(self) -> String {
+        self.text
+    }
+
     /// The tree with the definitions of the document `w` writes.
     pub fn parse<'c>(&'c self, w: &mut Writer<'_>) -> V<'c> {
         let keys = std::sync::Arc::clone(&w.link_keys);
