@@ -1662,6 +1662,39 @@ fn double_last_backslash<'t>(
     w.sp.escapes.entry(id(node)).or_default().push(last);
 }
 
+/// C2-W-125 case nine: a braced opener whose content of one plain text reads as the key of a valid attribute block takes
+/// the backslash on the `=` behind the key characters, as the rounds would place it.
+fn escape_braced_key(w: &mut Writer<'_>, node: V<'_>) {
+    if !w.seed_cases {
+        return;
+    }
+    let mark = match ty(node) {
+        "underline" => '_',
+        "delete" => '-',
+        _ => return,
+    };
+    let kids = children(node);
+    let Some(first) = kids.first().filter(|f| kids.len() == 1 && ty(f) == "text") else {
+        return;
+    };
+    let value = text(first);
+    let b = value.as_bytes();
+    let Some(at) = b.iter().position(|&x| !crate::attr::name_char(x)) else {
+        return;
+    };
+    let inert = |x: &u8| x.is_ascii_alphanumeric() || b"-=. ".contains(x);
+    if b.get(at) != Some(&b'=')
+        || !b.iter().all(inert)
+        || value.contains("--")
+        || !w.escapes_of(first).is_empty()
+    {
+        return;
+    }
+    if crate::attr::parse_block(&format!("{{{mark}{value}{mark}}}"), 0).is_some() {
+        w.add_escape(first, at);
+    }
+}
+
 /// C2-W-125 case six: a backtick of text glued behind a span lengthens its closing run.
 fn escape_glued_backtick(w: &mut Writer<'_>, node: V<'_>, before: Option<V<'_>>) {
     let Some(before) = before else { return };
@@ -1706,6 +1739,7 @@ fn place_escapes<'t>(
         );
         // The readback rounds decide whether this brace actually opens a pair.
     }
+    escape_braced_key(w, node);
     // Behind an unescaped `!` the bracket reads as span text whatever the caret starts.
     if ty(node) == "span" && !after_bang {
         escape_leading_caret(w, children(node), flags);

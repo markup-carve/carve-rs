@@ -904,6 +904,32 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     }
 }
 
+/// The first write of a group of one paragraph places the backslashes the rounds would reach there, where no other
+/// repair runs in the paragraph (C2-W-091 keeps a backslash an earlier round placed). Called on the first round of a
+/// pass; the result tells the writes of the pass to place the backslash of case nine.
+pub fn seed_group(group: Arr<'_>) -> bool {
+    let Some(paragraph) = group.first().filter(|p| ty(*p) == "paragraph") else {
+        return false;
+    };
+    let kids = children(paragraph);
+    kids.iter().any(|k| matches!(ty(k), "underline" | "delete")) && quiet_braced(kids)
+}
+
+/// A paragraph with a braced underline or delete whose other text, inside emphasis and strong too, opens nothing.
+fn quiet_braced(kids: Arr<'_>) -> bool {
+    let quiet = |n: V<'_>| {
+        ty(n) == "text"
+            && text(n)
+                .bytes()
+                .all(|x| x.is_ascii_alphanumeric() || b" .,".contains(&x))
+    };
+    kids.iter().all(|k| match ty(k) {
+        "underline" | "delete" => true,
+        "strong" | "emphasis" => children(k).iter().all(quiet),
+        _ => quiet(k),
+    })
+}
+
 fn content_flags(c: &Check<'_>, e: V<'_>) -> u32 {
     c.flags
         | match ty(e) {

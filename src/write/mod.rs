@@ -1743,6 +1743,7 @@ fn repair_rounds_once<'t>(
             )
         };
         if let Some(end) = done {
+            w.seed_cases = false;
             return end;
         }
     }
@@ -1760,6 +1761,9 @@ fn repair_round<'t, 's>(
     let nodes = children(doc);
     let end = group_end(w, nodes, from);
     let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
+    if history.rounds == 0 {
+        seed_first_write(w, group);
+    }
     check::seed_lone_brackets(w, group);
     reset_lines(w);
     blocks::write_blocks(w, group, "", 0, false);
@@ -1797,6 +1801,16 @@ fn repair_round<'t, 's>(
     }
     prune_group_escapes(w, group, first && !w.blank_first, &round);
     Some(end)
+}
+
+/// On the first round of a pass, the backslashes of C2-W-125 that the rounds would reach in a group of one
+/// paragraph; the later passes, which run after a loss, decide by rounds alone.
+fn seed_first_write<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    w.seed_cases = w.kind_escapes
+        && !w.closer_kinds
+        && !w.whole_trials
+        && group.len() == 1
+        && check::seed_group(group);
 }
 
 /// C2-I-118: the rounds would place the escapes behind a capped opener one per round and stop at the first
