@@ -301,17 +301,7 @@ struct State<'o> {
 
 impl State<'_> {
     fn run(&mut self, source: &str) -> Option<String> {
-        // carve#6764: dropped before any check, so a check never sees a value
-        // the output does not hold. The byte scan finds C0 controls and the
-        // 0xEF lead byte of U+FFFE / U+FFFF.
-        let suspect = source
-            .bytes()
-            .any(|b| (b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r')) || b == 0xEF);
-        let cleaned: Cow<str> = if suspect && source.contains(non_xml_char) {
-            Cow::Owned(source.chars().filter(|&c| !non_xml_char(c)).collect())
-        } else {
-            Cow::Borrowed(source)
-        };
+        let cleaned = xml_chars_only(source);
         let src = trim(&cleaned);
         let mut cursor = 0;
         while let Some(found) = src[cursor..].find('<') {
@@ -547,6 +537,20 @@ fn write_attr(out: &mut String, name: &str, value: &str) {
     out.push_str("=\"");
     out.push_str(&escape_attr(value));
     out.push('"');
+}
+
+/// carve#6764: raw characters outside XML `Char` go before any check, so a
+/// check never sees a value the output does not hold. The byte scan finds C0
+/// controls and the 0xEF lead byte of U+FFFE / U+FFFF.
+fn xml_chars_only(source: &str) -> Cow<'_, str> {
+    let suspect = source
+        .bytes()
+        .any(|b| (b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r')) || b == 0xEF);
+    if suspect && source.contains(non_xml_char) {
+        Cow::Owned(source.chars().filter(|&c| !non_xml_char(c)).collect())
+    } else {
+        Cow::Borrowed(source)
+    }
 }
 
 /// JavaScript's `\s` and `String.prototype.trim()` set.
