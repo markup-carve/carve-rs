@@ -23,10 +23,7 @@ fn import(html: &str) -> (String, Vec<String>) {
 fn an_imported_colspan_is_written_with_a_mark() {
     assert_eq!(
         import("<table><tr><th>A</th><th>B</th></tr><tr><td colspan=\"2\">m</td></tr></table>"),
-        (
-            "{body-rows=1 body-header-rows=1}\n| A | B |\n| m | < |\n".into(),
-            vec![]
-        )
+        ("|= A |= B |\n| m | < |\n".into(), vec![])
     );
     assert_eq!(
         import(
