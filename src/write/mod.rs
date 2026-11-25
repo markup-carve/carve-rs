@@ -262,7 +262,10 @@ mod group_reads_test {
 
     /// The characters the read-back parses of `fmt` take on `n` paragraphs of `shape`.
     fn read_chars(shape: &str, n: usize) -> (usize, usize) {
-        let src: String = (0..n).map(|i| format!("{shape} w{i}\n\n")).collect();
+        let mut src = String::new();
+        for i in 0..n {
+            src.push_str(&format!("{shape} w{i}\n\n"));
+        }
         let arena = crate::Arena::for_input(&src);
         let doc =
             crate::parse_resolved_in(&src, &crate::Options::default(), &arena).unwrap_or_default();
@@ -2051,9 +2054,37 @@ fn repeated_repair_in<'g>(
 /// The parses of the rounds of one group by their text: a write the rounds try again reads as before.
 #[derive(Default)]
 struct Reads<'k> {
+    /// Searched in order while short; the map holds them all once it is not.
+    list: std::cell::RefCell<Vec<(&'k str, V<'k>)>>,
     parsed: std::cell::RefCell<std::collections::HashMap<&'k str, V<'k>>>,
     /// The characters of the chunks held by the arena these parses live in.
     chars: std::cell::Cell<usize>,
+}
+
+const LISTED_READS: usize = 8;
+
+impl<'k> Reads<'k> {
+    fn get(&self, text: &str) -> Option<(&'k str, V<'k>)> {
+        let list = self.list.borrow();
+        if list.len() <= LISTED_READS {
+            return list.iter().find(|(source, _)| *source == text).copied();
+        }
+        let (&source, &parsed) = self.parsed.borrow().get_key_value(text)?;
+        Some((source, parsed))
+    }
+
+    fn insert(&self, source: &'k str, parsed: V<'k>) {
+        let mut list = self.list.borrow_mut();
+        list.push((source, parsed));
+        if list.len() > LISTED_READS {
+            let mut map = self.parsed.borrow_mut();
+            if map.is_empty() {
+                map.extend(list.iter().copied());
+            } else {
+                map.insert(source, parsed);
+            }
+        }
+    }
 }
 
 /// The characters of parses the rounds of one group keep to read again; the rounds past it keep theirs for
@@ -2073,7 +2104,7 @@ struct Round<'s> {
 
 impl<'s> Round<'s> {
     fn known(&self, w: &mut Writer<'_>, text: &str) -> Option<(&'s str, V<'s>)> {
-        let (&source, &parsed) = self.reads.parsed.borrow().get_key_value(text)?;
+        let (source, parsed) = self.reads.get(text)?;
         count_read(w, source);
         Some((source, parsed))
     }
@@ -2096,7 +2127,7 @@ impl<'s> Round<'s> {
         }
         let chunk = self.alloc(text);
         let parsed = chunk.parse(w);
-        self.reads.parsed.borrow_mut().insert(chunk.text(), parsed);
+        self.reads.insert(chunk.text(), parsed);
         (chunk.text(), parsed)
     }
 
@@ -2107,7 +2138,10 @@ impl<'s> Round<'s> {
         text: String,
         then: impl FnOnce(&mut Writer<'_>, &str, V<'_>) -> R,
     ) -> R {
-        if self.keeps(&text) || self.reads.parsed.borrow().contains_key(text.as_str()) {
+        if let Some((source, parsed)) = self.known(w, &text) {
+            return then(w, source, parsed);
+        }
+        if self.keeps(&text) {
             let (source, parsed) = self.parse(w, text);
             return then(w, source, parsed);
         }
