@@ -993,7 +993,15 @@ impl TocRenderer {
 fn toc_bundle(name: &str, transform: impl DocumentTransform + 'static, placed: bool) -> Bundle {
     Bundle {
         extensions: vec![Extension {
-            declaration: declaration(name, &["list"]),
+            // C2-X-053: a placed table also has the directive's title and body.
+            declaration: declaration(
+                name,
+                if placed {
+                    &["title", "body", "list"]
+                } else {
+                    &["list"]
+                },
+            ),
             renderers: vec![
                 (Channel::Interactive, Box::new(TocRenderer { placed })),
                 (Channel::BuildTime, Box::new(TocRenderer { placed })),

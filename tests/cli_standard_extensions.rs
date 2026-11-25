@@ -55,10 +55,7 @@ fn c2_t_010_standard_extension_cli_clause_cases() {
 }
 
 /// Cases of a ruling this engine has not ported yet; a held case that passes fails the run.
-const HELD: &[(&str, &str)] = &[
-    ("CC-2146", "carve#6766: 0.1 CLI catalog keys"),
-    ("CC-2147", "carve#6766: 0.1 CLI catalog keys"),
-];
+const HELD: &[(&str, &str)] = &[];
 
 fn run_case(case: &Value) -> Option<String> {
     let id = case["id"].as_str().unwrap();
@@ -195,4 +192,50 @@ fn c2_t_010_a_refused_extension_leaves_the_output_file() {
         std::fs::read_to_string(dir.join("out.html")).unwrap(),
         "keep"
     );
+}
+
+#[test]
+fn c2_x_072_toc_placement_declares_the_slots_of_its_row() {
+    let rows = parse_json(include_str!("../spec-data/extensions.json"));
+    let row = rows["extensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "carve.tocPlacement")
+        .unwrap();
+    let want: Vec<String> = row["slotOrder"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap().to_string())
+        .collect();
+    let bundle = carve::api::extensions::toc_placement();
+    assert_eq!(bundle.extensions[0].declaration.slots, want);
+}
+
+#[test]
+fn c2_x_072_glossary_and_term_register_once_in_either_order() {
+    let dir = dir("glossary");
+    std::fs::write(
+        dir.join("a.crv"),
+        "See :term[API].\n\n::: glossary\n:: API\n: An interface.\n:::\n",
+    )
+    .unwrap();
+    let mut outputs = Vec::new();
+    for list in [
+        r#"["carve.glossary"]"#,
+        r#"["carve.glossary","carve.term"]"#,
+        r#"["carve.term","carve.glossary"]"#,
+    ] {
+        let out = carve(&dir, &["render", "--extensions", list, "a.crv"]);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{list}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        outputs.push(String::from_utf8_lossy(&out.stdout).into_owned());
+    }
+    assert!(outputs[0].contains(r##"<a href="#gloss-API" class="term">API</a>"##));
+    assert!(outputs.iter().all(|o| *o == outputs[0]));
 }
