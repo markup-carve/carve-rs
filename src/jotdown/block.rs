@@ -431,7 +431,9 @@ impl<'s> TreeParser<'s> {
                                 &mut self.events[*event].kind
                             {
                                 if *tight {
-                                    self.prev_loose = true;
+                                    // carve-rs: only a block outside the item may still end the list, so
+                                    // only then is the blank line kept out of it when the list closes.
+                                    self.prev_loose = usize::from(*depth) >= self.open.len();
                                     *tight = false;
                                 }
                             }
