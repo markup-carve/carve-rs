@@ -574,10 +574,12 @@ fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
     if !raw.contains('\n') {
         return Some(raw.to_string());
     }
+    // C2-B-010: the CR of a CRLF break is not part of the line.
     let lines: Vec<String> = raw
         .split('\n')
         .enumerate()
         .map(|(i, l)| {
+            let l = l.strip_suffix('\r').unwrap_or(l);
             if i == 0 {
                 return l.to_string();
             }
