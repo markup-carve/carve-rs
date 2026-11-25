@@ -2745,7 +2745,9 @@ impl<'s> Parser<'s> {
                                             c.try_into().expect("should be bullet character"),
                                         ),
                                         block::ListType::Ordered(
-                                            block::ListNumber { numbering, value },
+                                            block::ListNumber {
+                                                numbering, value, ..
+                                            },
                                             style,
                                         ) => ListKind::Ordered {
                                             numbering,

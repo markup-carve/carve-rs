@@ -40,6 +40,15 @@ fn an_ambiguous_marker_takes_the_style_of_the_list() {
 }
 
 #[test]
+fn only_a_single_letter_marker_is_ambiguous() {
+    assert_eq!(import("ivi. one\na. two\n"), "{start=5}\ni. one\na. two\n");
+    assert_eq!(
+        import("i. one\nivi. two\nj. three\n"),
+        "i. one\nii. two\nj. three\n"
+    );
+}
+
+#[test]
 fn a_different_delimiter_still_starts_a_new_list() {
     assert_eq!(import("a. one\ni) two\n"), "a. one\n\n\n\ni. two\n");
 }

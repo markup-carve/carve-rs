@@ -115,6 +115,9 @@ pub enum ListType {
 pub struct ListNumber {
     pub numbering: crate::jotdown::OrderedListNumbering,
     pub value: u64,
+    /// The marker is one letter: only then can a roman marker also read as alphabetic (`ivi.` is
+    /// five but not `v`).
+    pub single_letter: bool,
 }
 
 impl ListNumber {
@@ -122,7 +125,7 @@ impl ListNumber {
     fn ambiguity(self) -> Option<Self> {
         // assume roman if ambiguous (prioritized during parsing)
         match self.numbering {
-            RomanLower | RomanUpper => match self.value {
+            RomanLower | RomanUpper if self.single_letter => match self.value {
                 1 => Some("i"),
                 5 => Some("v"),
                 10 => Some("x"),
@@ -139,6 +142,7 @@ impl ListNumber {
                     AlphaUpper
                 },
                 value: AlphaLower.parse_number(single_digit),
+                single_letter: true,
             }),
             _ => None,
         }
@@ -1250,6 +1254,7 @@ impl<'s> IdentifiedBlock<'s> {
                 ListNumber {
                     numbering,
                     value: numbering.parse_number(style.number(&line[..len])),
+                    single_letter: len_num == 1,
                 },
                 style,
                 len,
