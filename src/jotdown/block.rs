@@ -58,6 +58,8 @@ pub enum Atom {
     Blankline,
     /// A list of attributes.
     Attributes,
+    /// carve-rs: a later line of a list of attributes.
+    AttributesMore,
     /// A thematic break.
     ThematicBreak,
 }
@@ -423,6 +425,7 @@ impl<'s> TreeParser<'s> {
 
             let block = match kind {
                 Kind::Atom(a) => Block::Atom(a),
+                Kind::AttributeLines { .. } => Block::Atom(Attributes),
                 Kind::Paragraph => Block::Leaf(Paragraph),
                 Kind::Heading { level } => Block::Leaf(Heading {
                     level: level.try_into().unwrap(),
@@ -461,6 +464,20 @@ impl<'s> TreeParser<'s> {
             };
 
             match block {
+                // carve-rs: each later line of an attribute block is its own event.
+                Block::Atom(a) if matches!(kind, Kind::AttributeLines { .. }) => {
+                    self.attr_start = self.attr_start.or(Some(self.events.len()));
+                    self.events.push(Event {
+                        kind: EventKind::Atom(a),
+                        span: span_start.start..lines[0].end,
+                    });
+                    for line in &lines[1..] {
+                        self.events.push(Event {
+                            kind: EventKind::Atom(AttributesMore),
+                            span: line.clone(),
+                        });
+                    }
+                }
                 Block::Atom(a) => self.events.push(Event {
                     kind: EventKind::Atom(a),
                     span: span_start,
@@ -472,7 +489,7 @@ impl<'s> TreeParser<'s> {
                 }
             }
 
-            if matches!(kind, Kind::Atom(Attributes)) {
+            if matches!(kind, Kind::Atom(Attributes) | Kind::AttributeLines { .. }) {
                 self.attr_start = self.attr_start.or_else(|| Some(self.events.len() - 1));
             } else {
                 self.attr_start = None;
@@ -906,10 +923,19 @@ struct MeteredBlock<'s> {
 
 impl<'s> MeteredBlock<'s> {
     /// Identify and measure the line length of a single block.
-    fn new<I: Iterator<Item = &'s str>>(mut lines: I) -> Option<Self> {
+    fn new<I: Iterator<Item = &'s str> + Clone>(mut lines: I) -> Option<Self> {
         lines.next().map(|l| {
-            let IdentifiedBlock { mut kind, span } = IdentifiedBlock::new(l);
-            let line_count = 1 + lines.take_while(|l| kind.continues(l)).count();
+            let IdentifiedBlock { mut kind, mut span } = IdentifiedBlock::new(l);
+            let rest = lines.clone();
+            let mut line_count = 1 + lines.take_while(|l| kind.continues(l)).count();
+            // carve-rs: an attribute block that does not end in `}` and a line end is a paragraph.
+            if let Kind::AttributeLines { state, .. } = kind {
+                if state != attr::State::Done {
+                    kind = Kind::Paragraph;
+                    span = span.start..span.start;
+                    line_count = 1 + rest.take_while(|l| kind.continues(l)).count();
+                }
+            }
             Self {
                 kind,
                 span,
@@ -957,6 +983,11 @@ enum Kind<'s> {
         caption: bool,
         blankline: bool,
     },
+    /// carve-rs: an attribute block over more than one line.
+    AttributeLines {
+        indent: usize,
+        state: attr::State,
+    },
 }
 
 struct IdentifiedBlock<'s> {
@@ -1000,10 +1031,17 @@ impl<'s> IdentifiedBlock<'s> {
                 }
             }
             '{' => {
-                (attr::valid(line) == lt).then(|| (Kind::Atom(Attributes), indent..(indent + l)))
+                if attr::valid(line) == lt {
+                    Some((Kind::Atom(Attributes), indent..(indent + l)))
+                } else {
+                    // carve-rs: an unfinished block goes on over lines indented past it (djot.js).
+                    let (state, _) = attr::resume(attr::State::Start, line);
+                    (!matches!(state, attr::State::Done | attr::State::Invalid))
+                        .then_some((Kind::AttributeLines { indent, state }, indent..(indent + l)))
+                }
             }
             '|' => {
-                if lt >= 2 && line_t.ends_with('|') && !line_t.ends_with("\\|") {
+                if lt >= 2 && closes_row(line_t) {
                     Some((
                         Kind::Table {
                             caption: false,
@@ -1212,6 +1250,20 @@ impl<'s> Kind<'s> {
     /// Determine if a line continues the block.
     fn continues(&mut self, line: &'s str) -> bool {
         match self {
+            Self::AttributeLines { indent, state } => {
+                let ws = line.len() - line.trim_start_matches([' ', '\t']).len();
+                if matches!(state, attr::State::Done | attr::State::Invalid) || ws <= *indent {
+                    return false;
+                }
+                let (next, n) = attr::resume(*state, line);
+                // A block that ends before other text on its line is no attribute block.
+                *state = if next == attr::State::Done && !line[n..].trim_ascii().is_empty() {
+                    attr::State::Invalid
+                } else {
+                    next
+                };
+                true
+            }
             Self::Atom(..)
             | Self::Fenced {
                 has_closing_fence: true,
@@ -1297,14 +1349,37 @@ impl<'s> Kind<'s> {
                     *caption = true;
                     true
                 } else {
-                    !*blankline
-                        && (line_t.starts_with('|')
-                            && line_t.ends_with('|')
-                            && !line_t.ends_with("\\|"))
+                    !*blankline && line_t.starts_with('|') && closes_row(line_t)
                 }
             }
         }
     }
+}
+
+/// carve-rs: whether the row `line` ends in a `|` outside a code span; an unclosed span takes the
+/// rest of the line (djot.js), so the line is then no row.
+fn closes_row(line: &str) -> bool {
+    if !line.ends_with('|') || line.ends_with("\\|") {
+        return false;
+    }
+    let mut lex = lex::Lexer::new(&line.as_bytes()[1..]);
+    let mut verbatim = None;
+    let mut last_pipe = false;
+    while let Some(lex::Token { kind, len }) = lex.next() {
+        last_pipe = false;
+        if let Some(l) = verbatim {
+            if matches!(kind, lex::Kind::Seq(lex::Sequence::Backtick)) && len == l {
+                lex.verbatim = false;
+                verbatim = None;
+            }
+        } else if matches!(kind, lex::Kind::Seq(lex::Sequence::Backtick)) {
+            lex.verbatim = true;
+            verbatim = Some(len);
+        } else {
+            last_pipe = matches!(kind, lex::Kind::Sym(lex::Symbol::Pipe));
+        }
+    }
+    verbatim.is_none() && last_pipe
 }
 
 /// Similar to `std::str::split('\n')` but newline is included and spans are used instead of `str`.

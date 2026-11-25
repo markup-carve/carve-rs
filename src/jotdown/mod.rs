@@ -1,6 +1,7 @@
 // Vendored from jotdown 0.10.0 (https://github.com/hellux/jotdown, MIT, see COPYING).
-// One change: `inline::Parser` finds the opener a token closes through a per-class index
-// instead of scanning the opener stack, which was quadratic in unclosed openers.
+// Changes: `inline::Parser` finds the opener a token closes through a per-class index
+// instead of scanning the opener stack, which was quadratic in unclosed openers; and the
+// places marked `carve-rs:` follow djot.js and its test suite where jotdown differs.
 // The crate's own style is kept; the engine's no-panic lints do not apply to it.
 #![allow(
     dead_code,
@@ -2196,7 +2197,7 @@ impl<'s> PrePass<'s> {
         let mut headings: Vec<Heading> = Vec::new();
         let mut used_ids: Set<String> = Set::new();
 
-        let mut attr_prev: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut attr_prev: Vec<Vec<std::ops::Range<usize>>> = Vec::new();
         while let Some(e) = blocks.next() {
             match e.kind {
                 block::EventKind::Enter(block::Node::Leaf(block::Leaf::LinkDefinition {
@@ -2206,9 +2207,7 @@ impl<'s> PrePass<'s> {
                     // appear before the definition.
                     let attrs = attr_prev
                         .iter()
-                        .flat_map(|sp| {
-                            Attributes::try_from(&src[sp.clone()]).expect("should be valid")
-                        })
+                        .flat_map(|lines| block_attributes(src, lines))
                         .collect::<Attributes>();
                     let url = if let Some(block::Event {
                         kind: block::EventKind::Inline,
@@ -2253,9 +2252,7 @@ impl<'s> PrePass<'s> {
                     // We choose to parse all headers twice instead of caching them.
                     let attrs = attr_prev
                         .iter()
-                        .flat_map(|sp| {
-                            Attributes::try_from(&src[sp.clone()]).expect("should be valid")
-                        })
+                        .flat_map(|lines| block_attributes(src, lines))
                         .collect::<Attributes>();
                     let id_override = attrs.get_value("id").map(|s| s.to_string());
 
@@ -2333,7 +2330,12 @@ impl<'s> PrePass<'s> {
                     });
                 }
                 block::EventKind::Atom(block::Atom::Attributes) => {
-                    attr_prev.push(e.span.clone());
+                    attr_prev.push(vec![e.span.clone()]);
+                }
+                block::EventKind::Atom(block::Atom::AttributesMore) => {
+                    if let Some(lines) = attr_prev.last_mut() {
+                        lines.push(e.span.clone());
+                    }
                 }
                 block::EventKind::Enter(..)
                 | block::EventKind::Exit(block::Node::Container(block::Container::Section {
@@ -2647,16 +2649,24 @@ impl<'s> Parser<'s> {
                         };
                         Event::ThematicBreak(attrs)
                     }
+                    block::Atom::AttributesMore => {
+                        self.blocks.next();
+                        continue;
+                    }
                     block::Atom::Attributes => {
                         let (mut attrs, mut span) = self
                             .block_attributes
                             .take()
                             .unwrap_or_else(|| (Attributes::new(), ev_span.clone()));
-                        attrs
-                            .parse(&self.src[ev_span.clone()])
-                            .expect("should be valid");
-                        span.end = ev_span.end;
                         self.blocks.next().unwrap();
+                        let mut lines = vec![ev_span.clone()];
+                        while let Some(more) = self.blocks.next_if(|e| {
+                            matches!(e.kind, block::EventKind::Atom(block::Atom::AttributesMore))
+                        }) {
+                            lines.push(more.span);
+                        }
+                        attrs.extend(block_attributes(self.src, &lines));
+                        span.end = lines[lines.len() - 1].end;
                         if matches!(
                             self.blocks.peek().map(|e| &e.kind),
                             Some(block::EventKind::Atom(block::Atom::Blankline))
@@ -2850,4 +2860,17 @@ impl<'s> Iterator for OffsetIter<'s> {
     fn next(&mut self) -> Option<Self::Item> {
         self.parser.next_span()
     }
+}
+
+/// carve-rs: the attributes of a block attribute event and its later lines.
+fn block_attributes<'s>(src: &'s str, lines: &[std::ops::Range<usize>]) -> Attributes<'s> {
+    let mut attrs = Attributes::new();
+    if lines.len() == 1 {
+        attrs.parse(&src[lines[0].clone()]).expect("should be valid");
+    } else {
+        attrs
+            .parse_lines(lines.iter().map(|l| &src[l.clone()]))
+            .expect("should be valid");
+    }
+    attrs
 }
