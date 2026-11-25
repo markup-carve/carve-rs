@@ -115,6 +115,9 @@ pub enum ListType {
 pub struct ListNumber {
     pub numbering: crate::jotdown::OrderedListNumbering,
     pub value: u64,
+    /// The marker is one letter: only then can a roman marker also read as alphabetic (`ivi.` is
+    /// five but not `v`).
+    pub single_letter: bool,
 }
 
 impl ListNumber {
@@ -122,7 +125,7 @@ impl ListNumber {
     fn ambiguity(self) -> Option<Self> {
         // assume roman if ambiguous (prioritized during parsing)
         match self.numbering {
-            RomanLower | RomanUpper => match self.value {
+            RomanLower | RomanUpper if self.single_letter => match self.value {
                 1 => Some("i"),
                 5 => Some("v"),
                 10 => Some("x"),
@@ -139,6 +142,7 @@ impl ListNumber {
                     AlphaUpper
                 },
                 value: AlphaLower.parse_number(single_digit),
+                single_letter: true,
             }),
             _ => None,
         }
@@ -146,35 +150,23 @@ impl ListNumber {
 }
 
 impl ListType {
-    /// Whether this list item can be continued by the other list item.
-    ///
-    /// If so, return the two new resolved ListType objects. They only differ from the input in
-    /// case of ambiguous types.
-    fn continues(&self, other: &Self) -> Option<(Self, Self)> {
+    /// The other reading of an ambiguous single-letter roman marker, if any.
+    fn ambiguity(self) -> Option<Self> {
+        match self {
+            Ordered(n, s) => n.ambiguity().map(|na| Ordered(na, s)),
+            _ => None,
+        }
+    }
+
+    /// Whether an item of type `other` reads in the same style as this one. Ordered items compare
+    /// numbering and delimiter only: djot.js never checks the number.
+    fn same_style(&self, other: &Self) -> bool {
         match (self, other) {
-            _ if self == other => Some((*self, *other)),
             (
                 Ordered(ListNumber { numbering: n0, .. }, s0),
                 Ordered(ListNumber { numbering: n1, .. }, s1),
-            ) if n0 == n1 && s0 == s1 => Some((*self, *other)),
-            (Ordered(n0, s0), Ordered(n1, s1)) if s0 == s1 => {
-                if let Some(na0) = n0.ambiguity() {
-                    if na0.numbering == n1.numbering && na0.value + 1 == n1.value {
-                        Some((ListType::Ordered(na0, *s0), *other))
-                    } else {
-                        None
-                    }
-                } else if let Some(na1) = n1.ambiguity() {
-                    if n0.numbering == na1.numbering && n0.value + 1 == na1.value {
-                        Some((*self, ListType::Ordered(na1, *s1)))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
+            ) => n0 == n1 && s0 == s1,
+            _ => self == other,
         }
     }
 }
@@ -184,14 +176,35 @@ struct OpenList {
     /// Type of the list, an initial guess is made but may change if ambiguous. Also used to
     /// determine whether this list should be continued or a new one should be created.
     ty_start: ListType,
-    /// Type of the previous item, generally the same as ty_start but value may differ in ordered
-    /// lists.
-    ty_prev: ListType,
+    /// The alphabetic reading of an ambiguous first marker (`i.`, `(V)`) while later items have
+    /// not ruled it out. djot.js keeps both styles open and lets each item narrow them; a list
+    /// still ambiguous at its end is roman (`ty_start`).
+    ty_alt: Option<ListType>,
     /// Depth in the tree where the direct list items of the list are. Needed to determine when to
     /// close the list.
     depth: u16,
     /// Index to event in tree, required to update list type and tightness.
     event: usize,
+}
+
+impl OpenList {
+    /// Whether an item of type `ty` continues the list: its readings share a style with the
+    /// list's. The list keeps only the shared readings.
+    fn narrow(&mut self, ty: ListType) -> bool {
+        let alt = ty.ambiguity();
+        let matches = |t: &ListType| t.same_style(&ty) || alt.is_some_and(|a| t.same_style(&a));
+        let keep_start = matches(&self.ty_start);
+        let keep_alt = self.ty_alt.as_ref().is_some_and(matches);
+        if !keep_start {
+            match self.ty_alt.take() {
+                Some(alt) if keep_alt => self.ty_start = alt,
+                _ => return false,
+            }
+        } else if !keep_alt {
+            self.ty_alt = None;
+        }
+        true
+    }
 }
 
 /// Parser for block-level tree structure of entire document.
@@ -388,27 +401,12 @@ impl<'s> TreeParser<'s> {
             };
 
             // close list if a non list item or a list item of new type appeared
-            if let Some(OpenList {
-                ty_start,
-                ty_prev,
-                depth,
-                ..
-            }) = self.open_lists.last_mut()
-            {
-                debug_assert!(usize::from(*depth) <= self.open.len());
-                if self.open.len() == usize::from(*depth) {
-                    let continues = if let Kind::ListItem { ty: ty_new, .. } = kind {
-                        if let Some((ty_prev_res, ty_new_res)) = ty_prev.continues(&ty_new) {
-                            if ty_start == ty_prev {
-                                *ty_start = ty_prev_res;
-                            }
-                            *ty_prev = ty_new_res;
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
+            if let Some(list) = self.open_lists.last_mut() {
+                debug_assert!(usize::from(list.depth) <= self.open.len());
+                if self.open.len() == usize::from(list.depth) {
+                    let continues = match kind {
+                        Kind::ListItem { ty, .. } => list.narrow(ty),
+                        _ => false,
                     };
                     if !continues {
                         let l = self.open_lists.pop().unwrap();
@@ -663,7 +661,7 @@ impl<'s> TreeParser<'s> {
                 );
                 self.open_lists.push(OpenList {
                     ty_start: *ty,
-                    ty_prev: *ty,
+                    ty_alt: ty.ambiguity(),
                     depth: self.open.len().try_into().unwrap(),
                     event,
                 });
@@ -1256,6 +1254,7 @@ impl<'s> IdentifiedBlock<'s> {
                 ListNumber {
                     numbering,
                     value: numbering.parse_number(style.number(&line[..len])),
+                    single_letter: len_num == 1,
                 },
                 style,
                 len,
