@@ -787,14 +787,7 @@ impl<'s> Parser<'s> {
                     )),
                     Value | ValueQuoted | ValueContinued => {
                         let last = self.attrs.len() - 1;
-                        let content = &content[usize::from(matches!(st, ValueQuoted))..];
-                        // carve-rs: the indentation of a continued value is no part of it (djot.js).
-                        let content = if matches!(st, ValueContinued) {
-                            content.trim_start_matches(|c: char| c.is_ascii_whitespace())
-                        } else {
-                            content
-                        };
-                        self.attrs.0[last].1.extend(content);
+                        self.attrs.0[last].1.extend(value_part(st, content));
                     }
                     Comment | CommentNewline => {
                         let last = self.attrs.len() - 1;
@@ -891,6 +884,16 @@ impl State {
             ValueNewline | ValueContinued => ValueContinued,
             Invalid | Done => panic!("{self:?}"),
         }
+    }
+}
+
+/// The part of a value that `content`, read in `state`, adds.
+fn value_part(state: State, content: &str) -> &str {
+    match state {
+        State::ValueQuoted => &content[1..],
+        // carve-rs: the indentation of a continued value is no part of it (djot.js).
+        State::ValueContinued => content.trim_start_matches(|c: char| c.is_ascii_whitespace()),
+        _ => content,
     }
 }
 
