@@ -894,12 +894,25 @@ fn style_is_dangerous(value: &str) -> bool {
     STYLE_PATTERNS.iter().any(|p| compact.contains(p)) || compact.contains("javascript:")
 }
 
-/// Kept as carve-js reads it: any `url(` not directly followed by `#`
-/// (carve#6763 tracks the quoted local reference this also refuses).
+/// Any `url(` whose content does not start with `#` after CSS whitespace and
+/// one optional quote (carve#6763). Only CSS whitespace is skipped: a URL keeps
+/// a leading no-break space, so `url(\u{A0}#g)` names another resource
+/// (carve#6773).
 fn non_local_url(value: &str) -> bool {
     let b = value.as_bytes();
-    (0..b.len().saturating_sub(3))
-        .any(|at| b[at..at + 4].eq_ignore_ascii_case(b"url(") && b.get(at + 4) != Some(&b'#'))
+    let css_ws = |c: &&u8| matches!(c, b'\t' | b'\n' | 0x0C | b'\r' | b' ');
+    (0..b.len().saturating_sub(3)).any(|at| {
+        if !b[at..at + 4].eq_ignore_ascii_case(b"url(") {
+            return false;
+        }
+        let mut next = at + 4;
+        next += b[next..].iter().take_while(css_ws).count();
+        if matches!(b.get(next), Some(b'"' | b'\'')) {
+            next += 1;
+        }
+        next += b[next..].iter().take_while(css_ws).count();
+        b.get(next) != Some(&b'#')
+    })
 }
 
 fn ref_attr_unsafe(value: &str) -> bool {
