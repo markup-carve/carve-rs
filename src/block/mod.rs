@@ -476,7 +476,7 @@ impl<'a> Parser<'a> {
             return false;
         }
         t.link.is_some()
-            || !(self.fence_interrupts(k)
+            || !(self.fence_interrupts(k, self.stack.len())
                 || shapes::table_row_shape(k).is_some()
                 || shapes::thematic_break(k))
     }
