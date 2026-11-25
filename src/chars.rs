@@ -70,6 +70,12 @@ pub const fn is_blank(c: char) -> bool {
     c == ' ' || c == '\t'
 }
 
+/// Whitespace in the sense of the preliminaries: space, tab or line break.
+#[must_use]
+pub const fn is_ws(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r')
+}
+
 /// A line that holds only spaces and tabs.
 #[must_use]
 pub fn is_blank_line(s: &str) -> bool {
