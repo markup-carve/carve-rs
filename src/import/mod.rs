@@ -30,6 +30,8 @@ pub(crate) struct Refused(pub String);
 pub(crate) struct Imported {
     pub tree: Value,
     pub diagnostics: Vec<Entry>,
+    /// The writer's facts of `tree`, gathered by the nesting check.
+    pub facts: Option<crate::write::JsonFacts>,
 }
 
 pub(crate) struct Cx {
@@ -174,37 +176,6 @@ fn is_full_document(input: &str) -> bool {
     head == "<!doctype" || head.starts_with("<html")
 }
 
-fn nesting_exceeded(root: &Value) -> bool {
-    let mut pending = vec![(root, 0usize, 0usize)];
-    while let Some((value, blocks, inlines)) = pending.pop() {
-        match value {
-            Value::Array(items) => pending.extend(
-                items
-                    .iter()
-                    .filter(|v| v.is_array() || v.is_object())
-                    .map(|v| (v, blocks, inlines)),
-            ),
-            Value::Object(map) => {
-                let kind = crate::view::json_field(value, "type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let blocks = blocks + usize::from(attrs::is_nesting_block(kind));
-                let inlines = inlines + usize::from(attrs::is_nesting_inline(kind));
-                if blocks > MAX_NESTING || inlines > MAX_NESTING {
-                    return true;
-                }
-                pending.extend(
-                    map.values()
-                        .filter(|v| v.is_array() || v.is_object())
-                        .map(|v| (v, blocks, inlines)),
-                );
-            }
-            _ => {}
-        }
-    }
-    false
-}
-
 /// `importDocument` for HTML (C2-M-001): the tree as JSON and the record.
 #[cfg(test)]
 pub(crate) fn import_html(
@@ -271,14 +242,21 @@ pub(crate) fn build(
     all.extend(definitions);
     all.append(&mut cx.footnotes);
     let tree = document_of(&cx, all);
-    if nesting_exceeded(&tree) {
+    let nests = |kind: &str| {
+        (
+            attrs::is_nesting_block(kind),
+            attrs::is_nesting_inline(kind),
+        )
+    };
+    let Some(facts) = crate::write::JsonFacts::checked(&tree, MAX_NESTING, nests) else {
         return Err(Refused(format!(
             "Foreign input exceeds the nesting limit of {MAX_NESTING} levels"
         )));
-    }
+    };
     Ok(Imported {
         tree,
         diagnostics: cx.diagnostics,
+        facts: Some(facts),
     })
 }
 

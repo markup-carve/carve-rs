@@ -464,6 +464,7 @@ impl super::Carve {
         let html = super::hub::to_html(input, format, &mut sink)?;
         let mut imported = run(&html, true, opts.adapter)?;
         imported.tree = super::hub::finish(imported.tree, &sink);
+        imported.facts = None;
         // The library's own line breaks are no whitespace of the input, and a
         // range would index the intermediate HTML.
         imported
@@ -494,7 +495,10 @@ impl super::Carve {
                 .collect(),
             ..crate::write::Settings::default()
         };
-        let (source, writer_diagnostics) = crate::write::write_value(&imported.tree, &settings);
+        let (source, writer_diagnostics) = match imported.facts {
+            Some(facts) => crate::write::write_value_with(&imported.tree, &settings, facts),
+            None => crate::write::write_value(&imported.tree, &settings),
+        };
         let tree = Tree::trusted_imported(imported.tree).map_err(|e| Error::ImportInput {
             message: format!("the imported tree cannot be decoded: {e}"),
         })?;
