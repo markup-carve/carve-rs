@@ -639,7 +639,9 @@ fn alert<'a>(arena: &'a comrak::Arena<'a>, quote: comrak::nodes::Node<'a>) {
 fn djot_html(input: &str, sink: &mut Sink) -> String {
     use crate::jotdown::{Attributes, Container, Event, ListKind};
     let mut events = Vec::new();
-    let mut section_attrs: Option<Attributes<'_>> = None;
+    let mut section: Option<(Container<'_>, Attributes<'_>)> = None;
+    // Per open section, whether its element is written.
+    let mut wrapped: Vec<bool> = Vec::new();
     let mut raw: Option<(String, String)> = None;
     for event in crate::jotdown::Parser::new(input) {
         if let Some((format, text)) = raw.as_mut() {
@@ -685,12 +687,19 @@ fn djot_html(input: &str, sink: &mut Sink) -> String {
             Event::Start(Container::RawBlock { format } | Container::RawInline { format }, _) => {
                 raw = Some((format.to_string(), String::new()));
             }
-            Event::Start(Container::Section { .. }, attrs) => section_attrs = Some(attrs),
-            Event::End(Container::Section { .. }) => {}
+            Event::Start(c @ Container::Section { .. }, attrs) => {
+                section = Some((c, attrs));
+                wrapped.push(false);
+            }
+            Event::End(c @ Container::Section { .. }) => {
+                if wrapped.pop() == Some(true) {
+                    events.push(Event::End(c));
+                }
+            }
             // A heading outside a section carries the id jotdown generated; only an authored id is written.
             Event::Start(Container::Heading { level, id, .. }, mut attrs) => {
-                if let Some(more) = section_attrs.take() {
-                    attrs.extend(more);
+                if let Some(open) = section.take() {
+                    open_section(&mut events, open, &mut wrapped, &mut attrs);
                 }
                 let c = Container::Heading {
                     level,
@@ -714,6 +723,27 @@ fn djot_html(input: &str, sink: &mut Sink) -> String {
         }
     }
     crate::jotdown::html::render_to_string(events.into_iter())
+}
+
+/// C2-M-026, C2-M-027: djot.js gives an authored id and every other attribute to the section, so the
+/// importer drops and reports the rest; without an id they stay on the heading.
+fn open_section<'s>(
+    events: &mut Vec<crate::jotdown::Event<'s>>,
+    (section, more): (
+        crate::jotdown::Container<'s>,
+        crate::jotdown::Attributes<'s>,
+    ),
+    wrapped: &mut [bool],
+    heading: &mut crate::jotdown::Attributes<'s>,
+) {
+    if more.contains_key("id") && more.unique_pairs().any(|(key, _)| key != "id") {
+        events.push(crate::jotdown::Event::Start(section, more));
+        if let Some(w) = wrapped.last_mut() {
+            *w = true;
+        }
+    } else {
+        heading.extend(more);
+    }
 }
 
 /// The tree of the HTML importer with the frontmatter in front and each raw

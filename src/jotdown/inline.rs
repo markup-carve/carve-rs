@@ -775,6 +775,11 @@ impl<'s> Parser<'s> {
                 if opener.bidirectional() && whitespace_before {
                     return None;
                 }
+                // carve-rs: in a link destination a delimiter does not close an opener from before the
+                // link; it stays text (djot.js 713a417).
+                if self.opener_classes[1].last().is_some_and(|&link| o < link) {
+                    return Some(self.push(EventKind::Str));
+                }
 
                 self.truncate_openers(o);
                 let closed = match DelimEventKind::from(opener) {
