@@ -420,8 +420,9 @@ impl DocumentTransform for Transform {
     }
 }
 
-/// Places the reference lists: in each directive, the first one with the
-/// cited entries no directive defines, or else at the end of the document.
+/// Places the reference lists: in each directive, the last one with the
+/// cited entries no directive defines (carve#6759: they are numbered after
+/// every directive entry), or else at the end of the document.
 /// Returns whether anything was claimed.
 fn place(
     doc: &mut Value,
@@ -437,7 +438,7 @@ fn place(
         }
         let mut keys = directives.get(at).cloned().unwrap_or_default();
         at += 1;
-        if !placed {
+        if at == directives.len() {
             keys.extend(
                 uses.order
                     .iter()

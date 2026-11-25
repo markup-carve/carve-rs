@@ -856,6 +856,7 @@ impl StandardExtensions {
                 .and_then(Value::as_str);
             let enabled = match (name.as_str(), mode) {
                 ("carve.tabs", Some(mode)) if render => host.enable_standard_tabs_renderer(mode),
+                ("carve.cite", Some(mode)) if render => host.enable_standard_cite_renderer(mode),
                 // An extension with no standard renderer (C2-X-058) keeps its fallback.
                 _ if render => host
                     .enable_standard(name, true)

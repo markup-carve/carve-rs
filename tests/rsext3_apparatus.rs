@@ -196,3 +196,72 @@ fn apparatus_options_and_backlinks_match_reference() {
         "{csl}"
     );
 }
+
+const DOE: &str = "See :cite[doe].\n\n::: bibliography\n:: [doe]{author=\"Doe\" year=\"2020\"}\n: Doe, J. A book.\n:::\n";
+
+#[test]
+fn standard_cite_renderer_takes_the_host_mode() {
+    let render = |mode: &str| {
+        let mut host = Carve::new();
+        host.enable_standard_cite_renderer(mode).unwrap();
+        host.render(DOE, &Options::default()).unwrap()
+    };
+    let numbered = [
+        "<p>See [<a href=\"#ref-doe\" data-cite-key=\"doe\">1</a>].</p>",
+        "<div class=\"bibliography\">",
+        "  <ol class=\"references\">",
+        "    <li id=\"ref-doe\">Doe, J. A book.</li>",
+        "  </ol>",
+        "</div>",
+    ]
+    .join("\n");
+    assert_eq!(render("numbered").trim_end(), numbered);
+    let mut host = Carve::new();
+    host.enable_standard("carve.cite", true).unwrap();
+    assert_eq!(
+        host.render(DOE, &Options::default()).unwrap().trim_end(),
+        numbered
+    );
+    assert_eq!(
+        render("author-date").trim_end(),
+        [
+            "<p>See (<a href=\"#ref-doe\" data-cite-key=\"doe\">Doe 2020</a>).</p>",
+            "<div class=\"bibliography\">",
+            "  <ul class=\"references\">",
+            "    <li id=\"ref-doe\">Doe, J. A book.</li>",
+            "  </ul>",
+            "</div>",
+        ]
+        .join("\n")
+    );
+    assert!(Carve::new().enable_standard_cite_renderer("other").is_err());
+}
+
+#[test]
+fn pool_only_entry_closes_the_last_directive() {
+    let out = html(
+        "See :cite[c].\n\n::: references\n:: a\n: A.\n:::\n\n::: references\n:: b\n: B.\n:::\n",
+        extensions::citations(extensions::CitationsOptions {
+            mode: extensions::CitationMode::Numbered,
+            bibliography: Some(vec![serde_json::json!({"id":"c", "title":"Pool."})]),
+        }),
+    );
+    assert_eq!(
+        out.trim_end(),
+        [
+            "<p>See [<a id=\"cite-c-1\" href=\"#ref-c\" data-cite-key=\"c\">3</a>].</p>",
+            "<div class=\"references\">",
+            "  <ol class=\"references\">",
+            "    <li id=\"ref-a\">A.</li>",
+            "  </ol>",
+            "</div>",
+            "<div class=\"references\">",
+            "  <ol start=\"2\" class=\"references\">",
+            "    <li id=\"ref-b\">B.</li>",
+            "    <li id=\"ref-c\">Pool.. <a href=\"#cite-c-1\" class=\"ref-backref\">↩</a></li>",
+            "  </ol>",
+            "</div>",
+        ]
+        .join("\n")
+    );
+}
