@@ -487,12 +487,19 @@ fn rows(table: V<'_>, src: &str, first_row: Option<usize>, path: &str, out: &mut
     for ((g, r, row), (first, more)) in rows.into_iter().zip(lines) {
         if !more.is_empty() {
             let row_path = format!("{path}/children/{g}/children/{r}");
-            row_facts(row, first, &more, &row_path, out);
+            row_facts(row, src, first, &more, &row_path, out);
         }
     }
 }
 
-fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mut Vec<Entry>) {
+fn row_facts(
+    row: V<'_>,
+    src: &str,
+    line: &str,
+    continuation: &[&str],
+    path: &str,
+    out: &mut Vec<Entry>,
+) {
     if continuation.is_empty() {
         return;
     }
@@ -509,10 +516,8 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
         let Some(block) = children(cell).single() else {
             continue;
         };
-        let Some(t) = children(block).single() else {
-            continue;
-        };
-        if ty(t) != "text" {
+        let inlines = children(block);
+        if inlines.is_empty() {
             continue;
         }
         let mut parts = vec![first.get(c).map_or("", |f| content_fragment(f))];
@@ -520,25 +525,36 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
             more.iter()
                 .map(|m| m.get(c).map_or("", |f| f.trim_matches([' ', '\t']))),
         );
+        let base = format!("{path}/children/{c}/children/0/children");
         let mut wraps = Vec::new();
-        let mut offset = 0usize;
         let mut seen = false;
         for (k, part) in parts.iter().enumerate() {
             if part.is_empty() {
                 continue;
             }
-            if seen {
-                offset += 1;
-            }
             if k > 0 {
-                wraps.push(Wrap {
-                    line: i64::try_from(k).unwrap_or(0),
-                    path: format!("{path}/children/{c}/children/0/children/0"),
-                    offset,
-                    row: None,
-                });
+                // C2-L-021: a cell whose first piece stands in a continuation row starts there,
+                // whatever its first inline; a later piece is a break in a text child (C2-L-020).
+                let wrap = if seen {
+                    text_wrap(
+                        src,
+                        &inlines,
+                        parts.get(..k).unwrap_or(&[]),
+                        offset_in(src, part),
+                        &base,
+                    )
+                } else {
+                    Some((format!("{base}/0"), 0))
+                };
+                if let Some((path, offset)) = wrap {
+                    wraps.push(Wrap {
+                        line: i64::try_from(k).unwrap_or(0),
+                        path,
+                        offset,
+                        row: None,
+                    });
+                }
             }
-            offset += unescaped_len(part);
             seen = true;
         }
         if !wraps.is_empty() {
@@ -551,6 +567,52 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
             });
         }
     }
+}
+
+/// The byte offset of `part`, a slice of `src`, in `src`.
+fn offset_in(src: &str, part: &str) -> usize {
+    (part.as_ptr() as usize).saturating_sub(src.as_ptr() as usize)
+}
+
+/// The text child of a cell's paragraph that the piece starting at `at` continues, and the byte
+/// offset of that break in its value: the pieces before it read into the value with one joining
+/// space each.
+fn text_wrap(
+    src: &str,
+    inlines: &Arr<'_>,
+    before: &[&str],
+    at: usize,
+    base: &str,
+) -> Option<(String, usize)> {
+    // A text child can carry no position; it fills the gap between its siblings.
+    let nodes: Vec<V<'_>> = inlines.iter().collect();
+    let (index, node, start) = nodes.iter().enumerate().find_map(|(i, &n)| {
+        if ty(n) != "text" {
+            return None;
+        }
+        let start = span(n).map(|(a, _)| a).or_else(|| {
+            i.checked_sub(1)
+                .and_then(|p| nodes.get(p))
+                .and_then(|&p| span(p))
+                .map(|(_, b)| b)
+        });
+        let end = nodes
+            .get(i + 1)
+            .and_then(|&n| span(n))
+            .map_or(usize::MAX, |(a, _)| a);
+        let start = start.unwrap_or(0);
+        (start < at && at <= end).then_some((i, n, start))
+    })?;
+    let mut offset = 0;
+    for piece in before.iter().filter(|p| !p.is_empty()) {
+        let from = offset_in(src, piece);
+        if from + piece.len() < start {
+            continue;
+        }
+        let clip = piece.get(start.saturating_sub(from)..)?;
+        offset += unescaped_len(clip) + 1;
+    }
+    (offset <= text(node).len()).then(|| (format!("{base}/{index}"), offset))
 }
 
 fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
