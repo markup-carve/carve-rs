@@ -2606,8 +2606,9 @@ const MAX_RETESTED_TRIALS: usize = 8;
 
 /// C2-W-125: a round can place trials for several nodes of one stretch, where the first one already forms the
 /// others (the brace before the tag of `x{#a\_--}` forms the dash behind it). A trial that changes nothing beside
-/// the other escapes of the round is no backslash of a case and is taken out. Only where the parse reads no
-/// construct: one it reads reports its kind (C2-W-088), and the rounds after it decide those trials.
+/// the other escapes of the round is no backslash of a case and is taken out. Only where the parse reads no node
+/// the tree lacks, as a strong of the tree beside the stretch (carve#6687): a construct it reports gives its kind
+/// (C2-W-088), and the rounds after it decide those trials.
 fn drop_idle_trials<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
@@ -2616,7 +2617,9 @@ fn drop_idle_trials<'t>(
     round: &Round<'_>,
 ) -> bool {
     if !(2..=MAX_RETESTED_TRIALS).contains(&c.trials.len())
-        || !round.last.is_some_and(reads_only_text)
+        || !round
+            .last
+            .is_some_and(|read| reads_no_other_node(read, group))
     {
         return false;
     }
@@ -2705,17 +2708,39 @@ fn remove_escape(w: &mut Writer<'_>, node: usize, at: usize) -> bool {
     true
 }
 
-/// Whether the inline content of every leaf block of `parsed` is text and line breaks only.
-fn reads_only_text(parsed: V<'_>) -> bool {
-    children(parsed).iter().all(|n| {
-        if node::is_inline_parent(n) {
-            children(n)
+/// Whether each leaf block of `parsed` holds, beside text and breaks, only inline nodes that equal nodes of the same
+/// leaf of the tree `group`, in their order: a node read elsewhere, as a span on another bracket, is a construct the
+/// tree lacks.
+fn reads_no_other_node(parsed: V<'_>, group: Arr<'_>) -> bool {
+    let mut read = Vec::new();
+    inline_leaves(children(parsed), &mut read);
+    let mut tree = Vec::new();
+    inline_leaves(group, &mut tree);
+    read.len() == tree.len()
+        && read.iter().zip(&tree).all(|(&leaf, &held)| {
+            let held = children(held);
+            let mut at = 0;
+            children(leaf)
                 .iter()
-                .all(|k| ty(k) == "text" || node::is_break(Some(k)))
+                .filter(|&n| ty(n) != "text" && !node::is_break(Some(n)))
+                .all(|n| {
+                    while held.get(at).is_some_and(|h| !node::trees_equal(h, n)) {
+                        at += 1;
+                    }
+                    at += 1;
+                    at <= held.len()
+                })
+        })
+}
+
+fn inline_leaves<'p>(nodes: Arr<'p>, out: &mut Vec<V<'p>>) {
+    for n in nodes {
+        if node::is_inline_parent(n) {
+            out.push(n);
         } else {
-            reads_only_text(n)
+            inline_leaves(children(n), out);
         }
-    })
+    }
 }
 
 /// The text nodes below `nodes` in the order they are written: a title before the children.
@@ -3193,12 +3218,105 @@ fn prunable_opener<'p>(
     }
     match b.get(at + 2) {
         Some(b'/' | b'*') => true,
-        // An escaped hyphen before the closing brace keeps the escape.
-        Some(b'#') => find(b'}', at + 3)
-            .and_then(|close| source.get(at + 3..close))
-            .is_some_and(|inner| !inner.contains("\\-")),
+        Some(b'#') => prunable_tag_brace(source, at, parsed, find),
         _ => false,
     }
+}
+
+const LONGEST_TAG_BRACE: usize = 256;
+
+/// C2-W-090, C2-W-099: a `\-` inside the braces that escapes a hyphen run is a kind of a later round that keeps
+/// the brace escape of an earlier one (C2-W-091). Otherwise it is the case-six backslash behind the name, which
+/// gives the tree alone, so the brace escape of case one goes where no other construct takes a backslash in text
+/// (C2-W-125, carve#6687): `x{#a\-w}`, `x{#a\--w}`, but `x\{#a\---}` and `x\{#a\-w} \*s*`.
+fn prunable_tag_brace<'p>(
+    source: &str,
+    at: usize,
+    parsed: &mut dyn FnMut() -> Option<V<'p>>,
+    find: &mut NextByte<'_>,
+) -> bool {
+    let Some(close) = find(b'}', at + 3) else {
+        return false;
+    };
+    let Some(dash) = source
+        .get(at + 3..close)
+        .and_then(|inner| inner.find("\\-"))
+        .map(|d| d + at + 3)
+    else {
+        return true;
+    };
+    close - at <= LONGEST_TAG_BRACE
+        && !in_hyphen_run(source, dash)
+        && parsed().is_some_and(|p| {
+            text_backslashes(source, p) == braced_name_escapes(source, at, close) + 1
+        })
+}
+
+fn in_hyphen_run(source: &str, at: usize) -> bool {
+    let b = source.as_bytes();
+    at.checked_sub(1).and_then(|p| b.get(p)) == Some(&b'-')
+        || (b.get(at + 2) == Some(&b'-') && b.get(at + 3) == Some(&b'-'))
+}
+
+/// The case-six escapes behind a name between the brace at `at` and its closer.
+fn braced_name_escapes(source: &str, at: usize, close: usize) -> usize {
+    let mut count = 0;
+    let mut slash = memchr_from(source, b'\\', at + 2);
+    while let Some(p) = slash.filter(|&p| p < close) {
+        if behind_name(source, p) {
+            count += 1;
+        }
+        slash = memchr_from(source, b'\\', p + 2);
+    }
+    count
+}
+
+/// C2-W-125 case six: the backslash at `at` stands directly behind a tag or mention name, not in a hyphen run.
+fn behind_name(source: &str, at: usize) -> bool {
+    match source.as_bytes().get(at + 1) {
+        Some(b'_' | b'.') => {}
+        Some(b'-') if !in_hyphen_run(source, at) => {}
+        _ => return false,
+    }
+    let head = source.get(..at).unwrap_or("");
+    let name: usize = head
+        .chars()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .map(char::len_utf8)
+        .sum();
+    name > 0 && matches!(head.as_bytes().get(at - name - 1), Some(b'#' | b'@'))
+}
+
+/// The backslashes of `source` that escape a construct in text: a code span, a destination or an attribute value
+/// holds its backslashes as they are.
+fn text_backslashes(source: &str, parsed: V<'_>) -> usize {
+    let mut nodes = Vec::new();
+    node::descendants(parsed, &mut nodes);
+    let mut ranges: Vec<(usize, usize)> = nodes
+        .into_iter()
+        .filter(|n| ty(n) == "text")
+        .filter_map(span)
+        .collect();
+    ranges.sort_unstable();
+    let b = source.as_bytes();
+    let mut count = 0;
+    let mut range = 0;
+    let mut slash = memchr_from(source, b'\\', 0);
+    while let Some(p) = slash {
+        while ranges.get(range).is_some_and(|r| r.1 <= p) {
+            range += 1;
+        }
+        let in_text = ranges.get(range).is_some_and(|r| r.0 <= p);
+        if in_text
+            && b.get(p + 1)
+                .is_some_and(|&n| n != b'\\' && n.is_ascii_punctuation())
+        {
+            count += 1;
+        }
+        slash = memchr_from(source, b'\\', p + 2);
+    }
+    count
 }
 
 /// The spans of `source` that hold a verbatim reference, sorted and merged for [`in_raw`]. Each reference
