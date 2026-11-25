@@ -549,7 +549,9 @@ impl<'s> Parser<'s> {
         self.input.lexer = lex::Lexer::new(&self.input.src.as_bytes()[state.end_attr..line_end]);
 
         if attrs.is_empty() {
-            if matches!(state.elem_ty, AttributesElementType::Container { .. }) {
+            if let AttributesElementType::Container { e_placeholder } = state.elem_ty {
+                // carve-rs: a valid empty block (`{}`, a comment) still makes the span (djot.js).
+                self.close_span(e_placeholder);
                 let last = self.events.len() - 1;
                 self.events[last].span.end = self.input.span.end;
             }
@@ -564,28 +566,14 @@ impl<'s> Parser<'s> {
                 span: self.input.span.clone(),
             };
             match state.elem_ty {
-                AttributesElementType::Container { mut e_placeholder } => {
+                AttributesElementType::Container { e_placeholder } => {
                     self.events[e_placeholder] = attr_event;
-                    let mut last = self.events.len() - 1;
-                    if matches!(self.events[e_placeholder + 1].kind, EventKind::Str) {
-                        let range = self.events[e_placeholder + 1].span.clone();
-                        if &self.input.src[range] == "![" {
-                            // Lexed as image link, but actually just a span preceeded by an exclamation mark
-                            let start = self.events[e_placeholder + 1].span.start;
-                            self.events.insert(
-                                e_placeholder,
-                                Event {
-                                    kind: EventKind::Str,
-                                    span: start..start + 1,
-                                },
-                            );
-                            e_placeholder += 1;
-                            last += 1;
-                            self.events[e_placeholder + 1].span.start += 1;
-                        }
-                        self.events[e_placeholder + 1].kind = EventKind::Enter(Span);
-                        self.events[last].kind = EventKind::Exit(Span);
-                    }
+                    let e_placeholder = self.close_span(e_placeholder);
+                    debug_assert!(matches!(
+                        self.events[e_placeholder].kind,
+                        EventKind::Attributes { .. }
+                    ));
+                    let last = self.events.len() - 1;
                     self.events[last].span.end = self.input.span.end;
                 }
                 AttributesElementType::Word => {
@@ -776,12 +764,23 @@ impl<'s> Parser<'s> {
                     return None;
                 }
                 // carve-rs: a `]` with no `(`, `[` or `{` behind it closes no bracket; it stays text and the
-                // `[` stays open (djot.js).
+                // `[` stays open (djot.js). A `{` lexed with the next character (`{=`, `{_`) counts too.
                 if matches!(opener, Opener::Span(..))
                     && !matches!(
                         self.input.peek().map(|t| t.kind),
                         Some(lex::Kind::Open(
-                            Delimiter::Paren | Delimiter::Bracket | Delimiter::Brace
+                            Delimiter::Paren
+                                | Delimiter::Bracket
+                                | Delimiter::Brace
+                                | Delimiter::BraceAsterisk
+                                | Delimiter::BraceCaret
+                                | Delimiter::BraceEqual
+                                | Delimiter::BraceHyphen
+                                | Delimiter::BracePlus
+                                | Delimiter::BraceTilde
+                                | Delimiter::BraceUnderscore
+                                | Delimiter::BraceQuote1
+                                | Delimiter::BraceQuote2
                         ))
                     )
                 {
@@ -794,6 +793,7 @@ impl<'s> Parser<'s> {
                 }
 
                 self.truncate_openers(o);
+                let mut e_attr = e_attr;
                 let closed = match DelimEventKind::from(opener) {
                     DelimEventKind::Container(cont) => {
                         self.events[e_opener].kind = EventKind::Enter(cont);
@@ -820,7 +820,17 @@ impl<'s> Parser<'s> {
                             self.input.eat(); // [ or (
                             return Some(self.push(EventKind::Str));
                         }
-                        Some(self.push(EventKind::Str)) // ]
+                        let closed = self.push(EventKind::Str); // ]
+                        // carve-rs: a `{` that opens a delimiter (`{=`, `{_`) starts no attribute block, so
+                        // `]` closes the span at once (djot.js); a plain `{` makes the span only when its
+                        // block is valid (jgm/djot.js 00eb258, as carve-js).
+                        if !matches!(
+                            self.input.peek().map(|t| t.kind),
+                            Some(lex::Kind::Open(Delimiter::Brace))
+                        ) {
+                            e_attr = self.close_span(e_attr);
+                        }
+                        Some(closed)
                     }
                     DelimEventKind::Link {
                         event_span,
@@ -979,6 +989,33 @@ impl<'s> Parser<'s> {
                     _ => EventKind::Str,
                 }))
             })
+    }
+
+    /// Turns a span opener still held as text, with the `]` as the last event, into a span; returns the
+    /// placeholder index, moved when a leading `!` of `![` is split off as text.
+    fn close_span(&mut self, mut e_placeholder: usize) -> usize {
+        if !matches!(self.events[e_placeholder + 1].kind, EventKind::Str) {
+            return e_placeholder;
+        }
+        let mut last = self.events.len() - 1;
+        let range = self.events[e_placeholder + 1].span.clone();
+        if &self.input.src[range] == "![" {
+            // Lexed as image link, but actually just a span preceeded by an exclamation mark
+            let start = self.events[e_placeholder + 1].span.start;
+            self.events.insert(
+                e_placeholder,
+                Event {
+                    kind: EventKind::Str,
+                    span: start..start + 1,
+                },
+            );
+            e_placeholder += 1;
+            last += 1;
+            self.events[e_placeholder + 1].span.start += 1;
+        }
+        self.events[e_placeholder + 1].kind = EventKind::Enter(Span);
+        self.events[last].kind = EventKind::Exit(Span);
+        e_placeholder
     }
 
     fn parse_atom(&mut self, first: &lex::Token) -> Option<ControlFlow> {
