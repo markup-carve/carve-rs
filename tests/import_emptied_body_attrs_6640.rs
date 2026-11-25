@@ -4,7 +4,10 @@
 
 use carve::api::{self, ImportOptions};
 
-fn import(html: &str) -> (String, Vec<(String, String, String, Option<usize>)>) {
+/// Code, severity, channel and byte offset of one report.
+type Entry = (String, String, String, Option<usize>);
+
+fn import(html: &str) -> (String, Vec<Entry>) {
     let got = api::import_document(html, &ImportOptions::default()).unwrap();
     let entries = got
         .diagnostics
@@ -21,7 +24,7 @@ fn import(html: &str) -> (String, Vec<(String, String, String, Option<usize>)>) 
     (got.source, entries)
 }
 
-fn dropped_at(offset: usize) -> (String, String, String, Option<usize>) {
+fn dropped_at(offset: usize) -> Entry {
     (
         "import-attribute-dropped".into(),
         "warning".into(),
