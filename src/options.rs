@@ -142,6 +142,9 @@ pub struct Options {
     /// C2-H-208: added to every heading level of the render view, 0 to 5.
     pub heading_shift: u8,
     pub social: Option<Social>,
+    /// C2-H-126: the `resolveMention`, `resolveTag` and `context` fields of
+    /// `social`, kept beside the templates of [`Social`].
+    pub social_resolvers: Option<SocialResolvers>,
     /// C2-N-003: the resolver and limits of include expansion; `None` expands nothing.
     pub includes: Option<crate::include::Includes>,
     /// C2-H-206, C2-H-207: the host's renderer of ordinary code blocks.
@@ -197,6 +200,88 @@ pub struct Social {
     pub tag_url: Option<String>,
 }
 
+/// C2-H-126: the resolvers of `social`. A resolver is final: where it is
+/// given, the template of its pair is not read, and a name it returns `None`
+/// or an empty URL for, or panics on, renders as the inert span.
+///
+/// ```
+/// use carve::options::{Options, SocialKind, SocialResolver, SocialResolvers};
+///
+/// let opts = Options {
+///     social_resolvers: Some(SocialResolvers {
+///         resolve_mention: Some(SocialResolver::new(|request| {
+///             assert_eq!(request.kind, SocialKind::Mention);
+///             (request.name == "alice").then(|| "/u/alice".to_string())
+///         })),
+///         ..SocialResolvers::default()
+///     }),
+///     ..Options::default()
+/// };
+/// let html = carve::api::render("@alice @bob\n", &opts)?;
+/// assert_eq!(
+///     html,
+///     "<p><a class=\"mention\" href=\"/u/alice\">@alice</a> <span class=\"mention\"><strong>@bob</strong></span></p>"
+/// );
+/// # Ok::<(), carve::api::Error>(())
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct SocialResolvers {
+    pub resolve_mention: Option<SocialResolver>,
+    pub resolve_tag: Option<SocialResolver>,
+    /// A host value passed to the resolvers unchanged and never read.
+    pub context: Option<serde_json::Value>,
+}
+
+/// The `kind` of a [`SocialRequest`]: which resolver is called.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocialKind {
+    Mention,
+    Tag,
+}
+
+impl SocialKind {
+    /// The string of C2-H-126, `mention` or `tag`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mention => "mention",
+            Self::Tag => "tag",
+        }
+    }
+}
+
+/// What a social resolver is called with (C2-H-126).
+#[derive(Debug, Clone, Copy)]
+pub struct SocialRequest<'a> {
+    pub kind: SocialKind,
+    /// The name as written, without its sigil.
+    pub name: &'a str,
+    /// The `context` of [`SocialResolvers`], absent where it has none.
+    pub context: Option<&'a serde_json::Value>,
+}
+
+/// A host function from a [`SocialRequest`] to a URL, or `None`.
+#[derive(Clone)]
+pub struct SocialResolver(pub std::sync::Arc<SocialFn>);
+
+/// The host function of a [`SocialResolver`].
+pub type SocialFn = dyn Fn(&SocialRequest<'_>) -> Option<String> + Send + Sync;
+
+impl SocialResolver {
+    /// The resolver of a host function.
+    pub fn new(
+        resolve: impl Fn(&SocialRequest<'_>) -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        Self(std::sync::Arc::new(resolve))
+    }
+}
+
+impl std::fmt::Debug for SocialResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SocialResolver(..)")
+    }
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -220,6 +305,7 @@ impl Default for Options {
             max_losses: DEFAULT_MAX_LOSSES,
             heading_shift: 0,
             social: None,
+            social_resolvers: None,
             includes: None,
             code_block_renderer: None,
         }
