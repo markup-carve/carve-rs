@@ -746,22 +746,21 @@ impl JsonFacts {
         }
     }
 
-    /// The checks on one object, its type returned. Its keys are read once: a lookup by key reads several.
+    /// The checks on one object, its type returned. Only the keys its type needs are looked up: each key
+    /// compared is a read of its own allocation.
     fn read<'v>(&mut self, map: &'v serde_json::Map<String, Value>) -> &'v str {
-        let (mut kind, mut attrs, mut value, mut children) = ("", None, None, None);
-        let (mut colspan, mut rowspan, mut span) = (None, None, false);
-        for (k, v) in map {
-            match k.as_str() {
-                "type" => kind = v.as_str().unwrap_or(""),
-                "attrs" => attrs = Some(v),
-                "value" => value = v.as_str(),
-                "children" => children = Some(v),
-                "colspan" => colspan = Some(v),
-                "rowspan" => rowspan = Some(v),
-                "span" => span = true,
-                _ => {}
-            }
-        }
+        let field = |key: &str| map.iter().find(|(k, _)| k.as_str() == key).map(|(_, v)| v);
+        let kind = map
+            .iter()
+            .rev()
+            .find(|(k, _)| k.as_str() == "type")
+            .and_then(|(_, v)| v.as_str())
+            .unwrap_or("");
+        let attrs = if self.attribute_lines {
+            None
+        } else {
+            field("attrs")
+        };
         if !self.attribute_lines {
             self.attribute_lines = attrs
                 .and_then(|a| a.get("keyValues"))
@@ -776,19 +775,18 @@ impl JsonFacts {
         }
         match kind {
             "text" => {
-                if let Some(text) = value {
+                if let Some(text) = field("value").and_then(Value::as_str) {
                     self.spaced_text |= text.ends_with([' ', '\t']);
                     self.mark_text |= text.bytes().any(pairs::is_asked_byte);
                 }
             }
             "table_cell" => {
-                let counted =
-                    |field: Option<&Value>| field.and_then(Value::as_i64).unwrap_or(1) > 1;
-                self.counts |= counted(colspan) || counted(rowspan);
-                self.span_marks |= span;
+                let counted = |v: Option<&Value>| v.and_then(Value::as_i64).unwrap_or(1) > 1;
+                self.counts |= counted(field("colspan")) || counted(field("rowspan"));
+                self.span_marks |= field("span").is_some();
             }
             "link" => {
-                self.caret_link |= children
+                self.caret_link |= field("children")
                     .and_then(|c| c.get(0))
                     .and_then(|t| t.get("value"))
                     .and_then(Value::as_str)
