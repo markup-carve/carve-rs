@@ -13,6 +13,7 @@ use html5ever::tree_builder::{
 use html5ever::{Attribute, LocalName, Namespace, QualName, local_name, ns};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -340,11 +341,8 @@ impl TreeSink for Sink {
             ..
         }) = self.nodes.borrow_mut().get_mut(*target)
         {
-            let missing: Vec<Attribute> = attrs
-                .into_iter()
-                .filter(|a| !existing.iter().any(|e| e.name == a.name))
-                .collect();
-            existing.extend(missing);
+            let names: HashSet<QualName> = existing.iter().map(|e| e.name.clone()).collect();
+            existing.extend(attrs.into_iter().filter(|a| !names.contains(&a.name)));
         }
     }
     fn remove_from_parent(&self, target: &Id) {
