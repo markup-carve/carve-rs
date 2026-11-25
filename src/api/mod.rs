@@ -541,6 +541,12 @@ impl Carve {
                 extensions::WikilinksOptions::default(),
             ));
         }
+        // C2-X-058: with its renderer, `carve.cite` is the citations bundle.
+        if name == "carve.cite" && renderer {
+            return self.register(extensions::citations(
+                extensions::CitationsOptions::default(),
+            ));
+        }
         if let Some(bundle) = extensions::standard(name) {
             return self.register(if renderer {
                 bundle
