@@ -946,22 +946,7 @@ fn scan_text_note_closers<'t>(kids: Arr<'t>, found: &mut Vec<(N<'t>, usize)>) {
     let mut closers = Vec::new();
     for k in kids {
         if ty(k) == "text" {
-            let b = text(k).as_bytes();
-            let mut at = 0;
-            while at < b.len() {
-                if depth == 0 && b.get(at..at + 2) == Some(b"^[") {
-                    depth = 1;
-                    closers.clear();
-                    at += 1;
-                } else if depth > 0 && b.get(at) == Some(&b'[') {
-                    depth += 1;
-                } else if depth == 1 && b.get(at) == Some(&b']') {
-                    closers.push((k, at));
-                } else if depth > 1 && b.get(at) == Some(&b']') {
-                    depth -= 1;
-                }
-                at += 1;
-            }
+            scan_note_text(k, &mut depth, &mut closers);
         } else if ty(k) == "link"
             && super::inline::leading_caret(k)
             && !super::inline::key_is_content(k)
@@ -970,6 +955,27 @@ fn scan_text_note_closers<'t>(kids: Arr<'t>, found: &mut Vec<(N<'t>, usize)>) {
             found.append(&mut closers);
             depth = 0;
         }
+    }
+}
+
+/// Walks one text node of `scan_text_note_closers`: `depth` counts the brackets of an open `^[`, and each `]` at
+/// depth one is a closer.
+fn scan_note_text<'t>(k: N<'t>, depth: &mut usize, closers: &mut Vec<(N<'t>, usize)>) {
+    let b = text(k).as_bytes();
+    let mut at = 0;
+    while at < b.len() {
+        if *depth == 0 && b.get(at..at + 2) == Some(b"^[") {
+            *depth = 1;
+            closers.clear();
+            at += 1;
+        } else if *depth > 0 && b.get(at) == Some(&b'[') {
+            *depth += 1;
+        } else if *depth == 1 && b.get(at) == Some(&b']') {
+            closers.push((k, at));
+        } else if *depth > 1 && b.get(at) == Some(&b']') {
+            *depth -= 1;
+        }
+        at += 1;
     }
 }
 

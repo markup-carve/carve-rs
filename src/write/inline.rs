@@ -1775,7 +1775,6 @@ fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: 
     let mut line_start = true;
     let mut last: Option<char> = None;
     let mut note = TextNoteScan::default();
-    let mut scanned = 0;
     let mut at = 0;
     while at < nodes.len() {
         let Some(&node) = nodes.get(at) else { break };
@@ -1800,16 +1799,7 @@ fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: 
                 .is_some_and(|o| o.ends_with('\\'));
         place_escapes(w, nodes, at, end, flags, after_bang);
         let start = out.len();
-        let mut part_flags = flags;
-        if ty(node) == "link" && leading_caret(node) {
-            for n in nodes.get(scanned..at).unwrap_or(&[]) {
-                note.advance(*n);
-            }
-            scanned = at;
-            if note.closer {
-                part_flags |= AFTER_TEXT_NOTE_CLOSER;
-            }
-        }
+        let part_flags = flags | note.flag_at(nodes, at);
         inline_part_into(w, nodes, (at, end), part_flags, (line_start, last), out);
         let part = out.get(start..).unwrap_or("");
         if let Some(c) = part.chars().last() {
@@ -1825,9 +1815,27 @@ fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: 
 struct TextNoteScan {
     open: bool,
     closer: bool,
+    scanned: usize,
 }
 
 impl TextNoteScan {
+    /// The flag for the part at `at`: set on a caret link behind a closed text note.
+    fn flag_at(&mut self, nodes: &[N<'_>], at: usize) -> u32 {
+        let Some(&node) = nodes.get(at) else { return 0 };
+        if ty(node) != "link" || !leading_caret(node) {
+            return 0;
+        }
+        for n in nodes.get(self.scanned..at).unwrap_or(&[]) {
+            self.advance(*n);
+        }
+        self.scanned = at;
+        if self.closer {
+            AFTER_TEXT_NOTE_CLOSER
+        } else {
+            0
+        }
+    }
+
     fn advance(&mut self, node: V<'_>) {
         if ty(node) != "text" {
             return;
