@@ -3983,14 +3983,10 @@ mod caret_link_test {
             ),
         ] {
             let arena = crate::Arena::for_input(src);
-            let mut found = Vec::new();
-            let Ok((doc, _, None)) =
-                crate::prepare(src, &crate::Options::default(), &arena, &mut found)
-            else {
-                panic!("a parse of {src:?}");
-            };
-            let typed = holds_caret_link(V::Doc(arena.alloc(doc)));
-            let json = super::super::parse_plain(src).expect("a tree");
+            let doc = crate::parse_resolved_in(src, &crate::Options::default(), &arena)
+                .unwrap_or_default();
+            let typed = holds_caret_link(V::Doc(&doc));
+            let json = super::super::parse_plain(src).unwrap_or_default();
             assert_eq!(typed, holds_caret_link(V::Json(&json)), "{src:?}");
             assert_eq!(typed, expected, "{src:?}");
         }
