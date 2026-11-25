@@ -1291,8 +1291,9 @@ fn fmt_output(args: &Args, path: &str, before: &str, after: &str) -> Result<i32,
 }
 
 /// C2-T-034: the CLI gates the file. Under `--strict-losses` any loss fails
-/// it with `render-loss`; without it a C2-W-134 writer loss, allowed or not,
-/// fails it with `writer-refused`. A failed file writes no source.
+/// it with `render-loss`; without it a C2-W-134 writer loss fails it with
+/// `writer-refused`. An allowed code is no loss (C2-T-025, carve#6746) and
+/// fails neither. A failed file writes no source.
 fn import_file(
     args: &Args,
     path: &str,
@@ -1320,17 +1321,17 @@ fn import_file(
     let imported = host
         .import_from(input, format, &settings, &every)
         .map_err(api_fail)?;
-    let writer_loss = imported.diagnostics.iter().any(|e| {
-        matches!(
-            e.code.as_str(),
-            "writer-refused" | "structure-unspellable" | "field-unspellable"
-        )
-    });
     let (mut shown, losses): (Vec<Entry>, Vec<Entry>) = imported
         .diagnostics
         .into_iter()
         .filter(|e| !(e.channel == "render-loss" && opts.allow_losses.contains(&e.code)))
         .partition(|e| e.channel != "render-loss");
+    let writer_loss = losses.iter().any(|e| {
+        matches!(
+            e.code.as_str(),
+            "writer-refused" | "structure-unspellable" | "field-unspellable"
+        )
+    });
     let lost = !losses.is_empty();
     let suppressed = losses.len().saturating_sub(opts.max_losses);
     let retained: Vec<Entry> = losses
