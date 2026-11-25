@@ -162,6 +162,35 @@ assert!(ansi.output.contains("\x1b[1mthis\x1b[0m"));
 
 The `codeBlockRenderer` render option is `Options::code_block_renderer`: a `CodeBlockRenderer` wrapping a host function from a code block node (its JSON value) and the block's default HTML to the HTML written in its place, or `None` for the default (C2-H-206, C2-H-207). It runs for every ordinary code block, in containers and expanded includes too, but not for a raw block, a code span or a block outside the profile.
 
+## ProseMirror / Tiptap bridge
+
+`carve::api::prosemirror` converts a 0.2 tree to a ProseMirror document and back, in the schema of the carve-grammars Tiptap kit (`tiptap/tree.js`). It ports the carve-php bridge function for function: for the same tree both engines write the same ProseMirror document (as JSON values; this crate writes object keys in sorted order) and save the same source.
+
+```rust
+use carve::api::{self, Options, WriteOptions};
+use carve::api::prosemirror::{from_prosemirror_with_report, prosemirror_to_carve, to_prosemirror, ProseMirrorOptions};
+
+let tree = api::parse("== Notes\n\nSome *bold* text.\n", &Options::default())?;
+let doc = to_prosemirror(&tree)?; // doc.json for the editor's setContent()
+assert_eq!(doc.doc["content"][1]["content"][1]["marks"][0]["type"], "bold");
+
+let source = prosemirror_to_carve(&doc.json, &WriteOptions::default())?; // from editor.getJSON()
+assert_eq!(source, "== Notes\n\nSome *bold* text.\n");
+
+let report = from_prosemirror_with_report(&doc.json, &ProseMirrorOptions::default())?;
+assert!(report.ignored.is_empty());
+assert_eq!(report.pointer_for("/children/1/children/1"), Some("/content/1/content/1/marks/0"));
+# Ok::<(), carve::api::prosemirror::ProseMirrorError>(())
+```
+
+- `to_prosemirror` / `to_prosemirror_with` render a tree; a node the editor content model cannot hold becomes a `carveBlock` or `carveInline` atom carrying it whole. A link or image destination the URL policy denies is null in the attribute the editor renders and kept in `carve`; `ProseMirrorDoc::blanked` lists them.
+- `from_prosemirror` saves a document as a checked `Tree`; `prosemirror_to_carve` writes it as canonical source. A node or mark with no Carve node is `ProseMirrorError::Invalid`, not a skip.
+- `from_prosemirror_with_report` also returns the report: `origins` (the loaded block each top-level block came from), `pointers` (tree path to the JSON pointer of the editor node, for placing lint findings; `pointer_for` walks up to the nearest ancestor) and `ignored` (each attribute the save did not read, such as a `textAlign`).
+- `ProseMirrorOptions::mapping` gives the application's own nodes and marks a Carve node: a declared entry (`Mapping::from_json` of `{"nodes": {"name": {"as": "span", "class": "...", "attributes": [...]}}}`, as the kit takes it) or a pair of `ToTree` / `FromTree` closures.
+- `carve_type_for` and `prosemirror_names` give the tree type of each kit node and mark name.
+
+Content from a stock Tiptap editor saves too: `colspan` and `rowspan` become the Carve spans, leading header rows become the head, a block-level `image` is an image paragraph, and an image with no alt text saves as `![](src)`.
+
 ## Extensions (provisional)
 
 `api::extension` is the extension host of `extensions.md`. A host registers an `Extension`: its `ExtensionDeclaration`, renderers per `Channel` and an optional `DocumentTransform`. The types may change before 0.2 is final.
@@ -332,7 +361,7 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `merge_ast`, `merge_ast_with_resolver` | gone: no merge API in 0.2 |
 | `parse_snapshot`, `parse_snapshot_with_identity`, `reparse` | same names in `api` and at the crate root: the snapshots hold 0.2 trees |
 | `try_render_html_streaming` | same name in `api` and at the crate root |
-| `to_prosemirror`, `from_prosemirror` | not in 0.2; carve-rs#4830 tracks whether it comes back |
+| `to_prosemirror`, `from_prosemirror`, `from_prosemirror_with_report` | `api::prosemirror` (the kit's 0.2 schema; see the ProseMirror section) |
 | `decision_trace` | gone: a 0.1 debugging aid |
 | `parse_locator`, `ParsedLocator` | gone: 0.1 split the text after the comma in a citation into a CSL label and value. In 0.2 the locator is the `locator` attribute, `:cite[doe]{locator="p. 4"}` (C2-X-058), and the citations renderer writes it as given |
 | `stamp_carve`, `read_stamp`, `needs_review` | gone: version stamps belong to the 0.1 upgrade flow; the rewrite tool is part of carve-js |
