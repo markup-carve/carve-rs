@@ -806,23 +806,7 @@ impl Walk<'_> {
             .and_then(Value::as_array)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let kinds: Vec<(u8, usize)> = groups
-            .iter()
-            .filter_map(|group| {
-                let kind = match group.get("type").and_then(Value::as_str)? {
-                    "table_head" => 0,
-                    "table_body" => 1,
-                    "table_foot" => 2,
-                    _ => return None,
-                };
-                let rows = group.get("children").and_then(Value::as_array)?;
-                let count = rows
-                    .iter()
-                    .filter(|row| row.get("type").and_then(Value::as_str) == Some("table_row"))
-                    .count();
-                Some((kind, count))
-            })
-            .collect();
+        let kinds = group_rows(groups);
         // C2-B-184: a fragment under a span mark is a piece of the cell that covers it.
         crate::tree::table::join_span_pieces(&mut data.rows, &kinds);
         let mut row_index = 0;
@@ -928,6 +912,27 @@ impl Walk<'_> {
             json!({"path":path,"startByte":origin.start,"endByte":cell_end.max(origin.end),"wraps":wraps}),
         );
     }
+}
+
+/// The kind (0 head, 1 body, 2 foot) and row count of each group of a table node.
+fn group_rows(groups: &[Value]) -> Vec<(u8, usize)> {
+    groups
+        .iter()
+        .filter_map(|group| {
+            let kind = match group.get("type").and_then(Value::as_str)? {
+                "table_head" => 0,
+                "table_body" => 1,
+                "table_foot" => 2,
+                _ => return None,
+            };
+            let rows = group.get("children").and_then(Value::as_array)?;
+            let count = rows
+                .iter()
+                .filter(|row| row.get("type").and_then(Value::as_str) == Some("table_row"))
+                .count();
+            Some((kind, count))
+        })
+        .collect()
 }
 
 fn skip_layout_space(source: &str, mut at: usize) -> usize {
