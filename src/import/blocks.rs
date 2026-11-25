@@ -1578,24 +1578,9 @@ impl Cx {
         out
     }
 
-    fn table_columns(&mut self, children: &[Value], id: Id) -> Vec<Value> {
-        let width = children
-            .iter()
-            .filter(|g| ty(g) != "comment")
-            .flat_map(|g| g["children"].as_array().into_iter().flatten())
-            .filter(|r| ty(r) == "table_row")
-            .map(|r| {
-                r["children"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|c| c["colspan"].as_u64().unwrap_or(1))
-                    .sum::<u64>()
-            })
-            .max()
-            .unwrap_or(0);
+    fn table_columns(&mut self, width: usize, id: Id) -> Vec<Value> {
         let widths = self.column_widths(id);
-        (0..usize::try_from(width).unwrap_or(0))
+        (0..width)
             .map(|i| match widths.get(i).copied().flatten() {
                 Some(w) => json!({ "type": "table_column", "width": w }),
                 None => json!({ "type": "table_column" }),
@@ -1633,7 +1618,8 @@ impl Cx {
             }
         }
         let caption = captions.first().map(|&c| self.figure_caption(c));
-        let columns = self.table_columns(&children, id);
+        let cells = super::align::placed(&children);
+        let columns = self.table_columns(super::align::grid_width(&cells), id);
         let mut m = node("table");
         m.insert("children".into(), Value::Array(children));
         m.insert("columns".into(), Value::Array(columns));
@@ -1642,7 +1628,7 @@ impl Cx {
         }
         self.plain_attrs(id).apply(&mut m);
         let mut v = Value::Object(m);
-        super::align::resolve(&mut v);
+        super::align::resolve(&mut v, &cells);
         v
     }
 

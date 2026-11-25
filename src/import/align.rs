@@ -4,25 +4,24 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-struct Placed {
+pub(crate) struct Placed {
     at: (usize, usize, usize),
     column: usize,
+    colspan: usize,
     head: bool,
 }
 
-fn placed(table: &Value) -> Vec<Placed> {
+/// The cells of a table's groups with the column each starts in, as a render places them (C2-H-056).
+pub(crate) fn placed(groups: &[Value]) -> Vec<Placed> {
     let mut out = Vec::new();
-    for (g, group) in table["children"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .enumerate()
-    {
+    for (g, group) in groups.iter().enumerate() {
         if group["type"] == "comment" {
             continue;
         }
         let head = group["type"] == "table_head";
-        let mut covered: Vec<u64> = Vec::new();
+        // Per column, the first row of the group that a row span from above no longer covers.
+        let mut free_at: Vec<u64> = Vec::new();
+        let mut index = 0u64;
         for (r, row) in group["children"]
             .as_array()
             .into_iter()
@@ -34,31 +33,39 @@ fn placed(table: &Value) -> Vec<Placed> {
             }
             let mut column = 0usize;
             for (c, cell) in row["children"].as_array().into_iter().flatten().enumerate() {
-                while let Some(left) = covered.get_mut(column).filter(|l| **l > 0) {
-                    *left -= 1;
+                while free_at.get(column).is_some_and(|f| *f > index) {
                     column += 1;
                 }
+                let colspan = usize::try_from(cell["colspan"].as_u64().unwrap_or(1)).unwrap_or(1);
                 out.push(Placed {
                     at: (g, r, c),
                     column,
+                    colspan,
                     head,
                 });
-                let colspan = usize::try_from(cell["colspan"].as_u64().unwrap_or(1)).unwrap_or(1);
-                let rowspan = cell["rowspan"].as_u64().unwrap_or(1);
-                for more in 0..colspan {
-                    let i = column + more;
-                    if covered.len() <= i {
-                        covered.resize(i + 1, 0);
-                    }
-                    if let Some(slot) = covered.get_mut(i) {
-                        *slot = rowspan.saturating_sub(1);
-                    }
+                let end = index.saturating_add(cell["rowspan"].as_u64().unwrap_or(1));
+                if free_at.len() < column + colspan {
+                    free_at.resize(column + colspan, 0);
+                }
+                for slot in free_at.iter_mut().skip(column).take(colspan) {
+                    *slot = (*slot).max(end);
                 }
                 column += colspan;
             }
+            index += 1;
         }
     }
     out
+}
+
+/// C2-M-039: the columns a parse counts (C2-B-172), with the slots that row
+/// spans from above take in each row.
+pub(crate) fn grid_width(cells: &[Placed]) -> usize {
+    cells
+        .iter()
+        .map(|p| p.column + p.colspan)
+        .max()
+        .unwrap_or(0)
 }
 
 fn cell_mut(
@@ -92,10 +99,9 @@ fn mark(table: &Value, (g, r, c): (usize, usize, usize), axis: &str) -> Option<S
 /// mark of its column's head cell takes it from there; without a head mark,
 /// a column whose cells all show one alignment has it as its column entry,
 /// while every column before it has one on that axis.
-pub(crate) fn resolve(table: &mut Value) {
-    let cells = placed(table);
-    resolve_axis(table, &cells, "align");
-    resolve_axis(table, &cells, "valign");
+pub(crate) fn resolve(table: &mut Value, cells: &[Placed]) {
+    resolve_axis(table, cells, "align");
+    resolve_axis(table, cells, "valign");
 }
 
 fn resolve_axis(table: &mut Value, cells: &[Placed], axis: &str) {
