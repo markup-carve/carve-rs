@@ -1489,9 +1489,15 @@ fn glued_part_into<'t>(
 }
 
 /// C2-W-069: the braced form of an emphasis or strong `node` whose bare mark cannot pair where it stands.
-fn mark_form(w: &mut Writer<'_>, node: N<'_>, mark: char, next: Option<N<'_>>, before: Option<char>) {
+fn mark_form(
+    w: &mut Writer<'_>,
+    node: N<'_>,
+    mark: char,
+    next: Option<N<'_>>,
+    before: Option<char>,
+) {
     let touches_closer = plain_block(node).is_empty();
-    let next_text = next.filter(|n| ty(*n) == "text").map(|n| text(n));
+    let next_text = next.filter(|n| ty(*n) == "text").map(text);
     if touches_closer && next_text.is_some_and(|t| t.starts_with(mark)) {
         w.brace(node);
     // C2-I-047, C2-I-048: behind a word character a bare mark cannot open, and before one it cannot close. That
