@@ -268,7 +268,10 @@ impl<'a> Builder<'_, 'a> {
             }
         }
         let first = rows.get(lo).map_or(0, |r| r.start);
-        let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| r.end);
+        // C2-A-144: a comment under the last row is a child of the group.
+        let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| {
+            r.comments.iter().fold(r.end, |end, (_, e, _)| end.max(*e))
+        });
         let pos = (lo < hi).then(|| self.src.pos(first, last));
         let children = self.arena.nodes(&mut children);
         match kind {
