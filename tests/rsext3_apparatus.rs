@@ -236,3 +236,32 @@ fn standard_cite_renderer_takes_the_host_mode() {
     );
     assert!(Carve::new().enable_standard_cite_renderer("other").is_err());
 }
+
+#[test]
+fn pool_only_entry_closes_the_last_directive() {
+    let out = html(
+        "See :cite[c].\n\n::: references\n:: a\n: A.\n:::\n\n::: references\n:: b\n: B.\n:::\n",
+        extensions::citations(extensions::CitationsOptions {
+            mode: extensions::CitationMode::Numbered,
+            bibliography: Some(vec![serde_json::json!({"id":"c", "title":"Pool."})]),
+        }),
+    );
+    assert_eq!(
+        out.trim_end(),
+        [
+            "<p>See [<a id=\"cite-c-1\" href=\"#ref-c\" data-cite-key=\"c\">3</a>].</p>",
+            "<div class=\"references\">",
+            "  <ol class=\"references\">",
+            "    <li id=\"ref-a\">A.</li>",
+            "  </ol>",
+            "</div>",
+            "<div class=\"references\">",
+            "  <ol start=\"2\" class=\"references\">",
+            "    <li id=\"ref-b\">B.</li>",
+            "    <li id=\"ref-c\">Pool.. <a href=\"#cite-c-1\" class=\"ref-backref\">↩</a></li>",
+            "  </ol>",
+            "</div>",
+        ]
+        .join("\n")
+    );
+}
