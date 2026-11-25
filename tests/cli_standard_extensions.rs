@@ -39,37 +39,58 @@ fn c2_t_010_standard_extension_cli_clause_cases() {
             })
             .cloned()
             .collect();
-    assert_eq!(cases.len(), 7);
+    assert_eq!(cases.len(), 13);
+    let mut failures = Vec::new();
     for case in cases {
         let id = case["id"].as_str().unwrap();
-        let dir = dir(id);
-        for (name, file) in case["files"].as_object().unwrap() {
-            std::fs::write(dir.join(name), file["text"].as_str().unwrap()).unwrap();
-        }
-        let args: Vec<&str> = case["args"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
-        let out = carve(&dir, &args);
-        let want = &case["expected"];
-        assert_eq!(
-            out.status.code().map(i64::from),
-            want["status"].as_i64(),
-            "{id}"
-        );
-        if let Some(text) = want["stdout"].as_str() {
-            assert_eq!(String::from_utf8_lossy(&out.stdout), text, "{id}");
-        }
-        if let Some(category) = want["stderrCategory"].as_str() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(
-                stderr.starts_with(&format!("carve[{category}]:")),
-                "{id}: {stderr}"
-            );
+        let problem = run_case(&case);
+        let held = HELD.iter().any(|(h, _)| *h == id);
+        match (problem, held) {
+            (Some(p), false) => failures.push(format!("{id}: {p}")),
+            (None, true) => failures.push(format!("{id}: held but passes; drop the hold")),
+            _ => {}
         }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Cases of a ruling this engine has not ported yet; a held case that passes fails the run.
+const HELD: &[(&str, &str)] = &[
+    ("CC-2128", "carve#6752: cite mode, carve-rs#4839"),
+    ("CC-2146", "carve#6766: 0.1 CLI catalog keys"),
+    ("CC-2147", "carve#6766: 0.1 CLI catalog keys"),
+];
+
+fn run_case(case: &Value) -> Option<String> {
+    let id = case["id"].as_str().unwrap();
+    let dir = dir(id);
+    for (name, file) in case["files"].as_object().unwrap() {
+        std::fs::write(dir.join(name), file["text"].as_str().unwrap()).unwrap();
+    }
+    let args: Vec<&str> = case["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    let out = carve(&dir, &args);
+    let want = &case["expected"];
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.code().map(i64::from) != want["status"].as_i64() {
+        return Some(format!("status {:?}: {stderr}", out.status.code()));
+    }
+    if let Some(text) = want["stdout"].as_str() {
+        let got = String::from_utf8_lossy(&out.stdout);
+        if got != text {
+            return Some(format!("stdout\n{got}\nwant\n{text}"));
+        }
+    }
+    if let Some(category) = want["stderrCategory"].as_str()
+        && !stderr.starts_with(&format!("carve[{category}]:"))
+    {
+        return Some(format!("stderr {stderr}"));
+    }
+    None
 }
 
 #[test]
