@@ -435,7 +435,12 @@ fn escape_attribute_lines_above<'t>(
             return false;
         }
     }
-    escape_at(w, c, first, 0)
+    // C2-W-088: the bare parse held these braces as paragraph text, so the backslash reports no kind.
+    let placed = escape_at(w, c, first, 0);
+    if placed {
+        c.own_escapes.insert((id(first), 0));
+    }
+    placed
 }
 
 fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
