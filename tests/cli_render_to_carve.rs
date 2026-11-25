@@ -89,6 +89,23 @@ fn strict_losses_fails_a_writer_loss_as_a_render_loss() {
     );
     assert_eq!((status, stdout.as_str()), (1, ""));
     assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
+    assert!(stderr.contains(" error structure-unspellable "), "{stderr}");
+
+    let (status, stdout, stderr) = run(
+        &[
+            "render",
+            "--from-ast",
+            "--to",
+            "carve",
+            "--strict-losses",
+            "--max-render-losses",
+            "0",
+            "-",
+        ],
+        HEAD_OF_DATA_CELLS,
+    );
+    assert_eq!((status, stdout.as_str()), (1, ""));
+    assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
 }
 
 #[test]

@@ -1438,8 +1438,16 @@ fn render_file(
         .iter()
         .filter(|e| !opts.allow_losses.contains(&e.code))
         .collect();
-    let suppressed = rendered.suppressed_diagnostics + counted.len().saturating_sub(room);
-    retained.extend(counted.into_iter().take(room).cloned());
+    let strict_losses = bool_value(args, "strict-losses", false);
+    let writer_lost = !counted.is_empty();
+    let writer_suppressed = counted.len().saturating_sub(room);
+    let suppressed = rendered.suppressed_diagnostics + writer_suppressed;
+    retained.extend(counted.into_iter().take(room).cloned().map(|mut e| {
+        if strict_losses {
+            e.severity = "error".into();
+        }
+        e
+    }));
     if str_value(args, "report-losses").is_some() {
         loss_reports.push(loss_report(
             path,
@@ -1452,12 +1460,12 @@ fn render_file(
     if str_value(args, "report-includes").is_some() {
         include_reports.push(include_report(path, resolved_tree.unwrap()));
     }
-    let strict = bool_value(args, "strict-losses", false) && !retained.is_empty();
+    let strict = strict_losses && (writer_lost || !retained.is_empty());
     if strict {
         eprintln!(
             "carve[render-loss]: {}: {} render losses under --strict-losses",
             display(path),
-            retained.len()
+            retained.len() + writer_suppressed
         );
     }
     let refused = !strict && !writer_losses.is_empty();
