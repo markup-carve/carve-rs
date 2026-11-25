@@ -146,32 +146,10 @@ fn wraps(value: &Value, path: &str, span: u64) -> Result<(), Error> {
     let mut previous = (0, 0, 0);
     for (index, item) in items.iter().enumerate() {
         let at = format!("{path}/{index}");
-        let wrap = object(item, &at)?;
-        for key in wrap.keys() {
-            if !["line", "path", "offset", "row", "col"].contains(&key.as_str()) {
-                return Err(fail(format!("{at}/{key}"), "is not a field of a wrap"));
-            }
-        }
-        let line = count(wrap.get("line"), &format!("{at}/line"), 1)?;
+        let (line, row, col) = wrap(item, &at, span)?;
         if line < previous.0 {
             return Err(fail(format!("{at}/line"), "is not sorted by line"));
         }
-        pointer(wrap.get("path"), &format!("{at}/path"))?;
-        let offset = count(wrap.get("offset"), &format!("{at}/offset"), 0)?;
-        if span > 0 && offset > span {
-            return Err(fail(
-                format!("{at}/offset"),
-                "is past the source span of its cell",
-            ));
-        }
-        let row = match wrap.get("row") {
-            Some(_) => count(wrap.get("row"), &format!("{at}/row"), 0)?,
-            None => 0,
-        };
-        let col = match wrap.get("col") {
-            Some(_) => count(wrap.get("col"), &format!("{at}/col"), 0)?,
-            None => 0,
-        };
         // C2-L-048: those of one line by row, and those of one row by col.
         if line == previous.0 && row < previous.1 {
             return Err(fail(format!("{at}/row"), "is not sorted by row"));
@@ -182,6 +160,34 @@ fn wraps(value: &Value, path: &str, span: u64) -> Result<(), Error> {
         previous = (line, row, col);
     }
     Ok(())
+}
+
+/// One wrap's fields; returns its line, row and col (row and col 0 when absent).
+fn wrap(item: &Value, at: &str, span: u64) -> Result<(u64, u64, u64), Error> {
+    let wrap = object(item, at)?;
+    for key in wrap.keys() {
+        if !["line", "path", "offset", "row", "col"].contains(&key.as_str()) {
+            return Err(fail(format!("{at}/{key}"), "is not a field of a wrap"));
+        }
+    }
+    let line = count(wrap.get("line"), &format!("{at}/line"), 1)?;
+    pointer(wrap.get("path"), &format!("{at}/path"))?;
+    let offset = count(wrap.get("offset"), &format!("{at}/offset"), 0)?;
+    if span > 0 && offset > span {
+        return Err(fail(
+            format!("{at}/offset"),
+            "is past the source span of its cell",
+        ));
+    }
+    let row = match wrap.get("row") {
+        Some(_) => count(wrap.get("row"), &format!("{at}/row"), 0)?,
+        None => 0,
+    };
+    let col = match wrap.get("col") {
+        Some(_) => count(wrap.get("col"), &format!("{at}/col"), 0)?,
+        None => 0,
+    };
+    Ok((line, row, col))
 }
 
 fn entry(value: &Value, path: &str, length: usize) -> Result<String, Error> {

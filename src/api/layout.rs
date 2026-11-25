@@ -841,27 +841,14 @@ impl Walk<'_> {
         }
     }
 
-    fn table_cell(
-        &mut self,
+    /// Each fragment of a joined cell that is not empty: its source range, line, row and
+    /// covered column.
+    fn cell_fragments(
+        &self,
         origin: &crate::block::table::Cell,
         rows: &[Row],
         home: usize,
-        node: &Value,
-        path: &str,
-    ) {
-        if !origin.joined {
-            return;
-        }
-        if node
-            .pointer("/children/0/children")
-            .and_then(Value::as_array)
-            .is_none_or(Vec::is_empty)
-        {
-            return;
-        }
-        let spans_rows = node.get("rowspan").and_then(Value::as_u64).unwrap_or(1) > 1;
-        let spans_columns = node.get("colspan").and_then(Value::as_u64).unwrap_or(1) > 1;
-        // Each fragment that is not empty: its source range, line, row and covered column.
+    ) -> Vec<((usize, usize), usize, usize, usize)> {
         let mut kept = Vec::new();
         let mut at = home;
         for (index, piece) in origin.pieces.iter().enumerate() {
@@ -883,6 +870,30 @@ impl Walk<'_> {
             let col = origin.piece_cols.get(index).copied().unwrap_or(0);
             kept.push(((start, end), line, at - home, col));
         }
+        kept
+    }
+
+    fn table_cell(
+        &mut self,
+        origin: &crate::block::table::Cell,
+        rows: &[Row],
+        home: usize,
+        node: &Value,
+        path: &str,
+    ) {
+        if !origin.joined {
+            return;
+        }
+        if node
+            .pointer("/children/0/children")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+        {
+            return;
+        }
+        let spans_rows = node.get("rowspan").and_then(Value::as_u64).unwrap_or(1) > 1;
+        let spans_columns = node.get("colspan").and_then(Value::as_u64).unwrap_or(1) > 1;
+        let kept = self.cell_fragments(origin, rows, home);
         let ranges: Vec<(usize, usize)> = kept.iter().map(|k| k.0).collect();
         let kids: Vec<crate::view::V<'_>> = node
             .pointer("/children/0/children")
