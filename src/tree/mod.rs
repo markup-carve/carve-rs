@@ -2,7 +2,7 @@
 //! pass for each content (C2-I-001).
 
 mod delimited;
-mod table;
+pub(crate) mod table;
 
 use crate::Arena;
 use crate::ast::{self, Node, owned::Attrs};

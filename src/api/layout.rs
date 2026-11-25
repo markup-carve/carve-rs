@@ -798,17 +798,35 @@ impl Walk<'_> {
     }
 
     fn table_rows(&mut self, table: &Value, path: &str, start: usize, end: usize) {
-        let Some(data) = self.tables.find(start, end).cloned() else {
+        let Some(mut data) = self.tables.find(start, end).cloned() else {
             return;
         };
-        let mut row_index = 0;
-        for (group_index, group) in table
+        let groups = table
             .get("children")
             .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let kinds: Vec<(u8, usize)> = groups
+            .iter()
+            .filter_map(|group| {
+                let kind = match group.get("type").and_then(Value::as_str)? {
+                    "table_head" => 0,
+                    "table_body" => 1,
+                    "table_foot" => 2,
+                    _ => return None,
+                };
+                let rows = group.get("children").and_then(Value::as_array)?;
+                let count = rows
+                    .iter()
+                    .filter(|row| row.get("type").and_then(Value::as_str) == Some("table_row"))
+                    .count();
+                Some((kind, count))
+            })
+            .collect();
+        // C2-B-184: a fragment under a span mark is a piece of the cell that covers it.
+        crate::tree::table::join_span_pieces(&mut data.rows, &kinds);
+        let mut row_index = 0;
+        for (group_index, group) in groups.iter().enumerate() {
             let Some(rows) = group.get("children").and_then(Value::as_array) else {
                 continue;
             };
@@ -833,7 +851,7 @@ impl Walk<'_> {
                         continue;
                     };
                     let cell_path = format!("{row_path}/children/{column}");
-                    self.table_cell(origin, row, cell, &cell_path);
+                    self.table_cell(origin, &data.rows, row_index - 1, cell, &cell_path);
                 }
             }
         }
@@ -842,31 +860,45 @@ impl Walk<'_> {
     fn table_cell(
         &mut self,
         origin: &crate::block::table::Cell,
-        row: &Row,
+        rows: &[Row],
+        home: usize,
         node: &Value,
         path: &str,
     ) {
         if !origin.joined {
             return;
         }
-        let Some(inlines) = node
+        if node
             .pointer("/children/0/children")
             .and_then(Value::as_array)
-        else {
+            .is_none_or(Vec::is_empty)
+        {
             return;
-        };
-        let Some(first) = inlines.first() else {
-            return;
-        };
+        }
+        let spans_rows = node.get("rowspan").and_then(Value::as_u64).unwrap_or(1) > 1;
+        let spans_columns = node.get("colspan").and_then(Value::as_u64).unwrap_or(1) > 1;
         let mut wraps = Vec::new();
         let mut offset = 0;
+        let mut at = home;
         for (index, piece) in origin.pieces.iter().enumerate() {
-            let line = continuation_lines(self.source, row.start, piece.start);
+            // A piece moved in from a span mark can stand in a row below the cell's own.
+            if rows[at].start > piece.start {
+                at = home;
+            }
+            while at + 1 < rows.len() && rows[at].end < piece.start {
+                at += 1;
+            }
+            let line = continuation_lines(self.source, rows[at].start, piece.start);
             if line > 0 {
                 if index > 0 && offset > 0 && piece.join == crate::inline::Join::Cell {
                     offset += 1;
                 }
-                wraps.push(json!({"line":line,"path":format!("{path}/children/0/children/0"),"offset":offset}));
+                let mut wrap = json!({"line":line,"path":format!("{path}/children/0/children/0"),"offset":offset});
+                // C2-L-020: a wrap in a cell that spans rows names the row of its fragment.
+                if spans_rows {
+                    wrap["row"] = (at - home).into();
+                }
+                wraps.push(wrap);
             }
             offset += self
                 .source
@@ -878,13 +910,23 @@ impl Walk<'_> {
         if wraps.is_empty() {
             return;
         }
-        let last = origin.pieces.last().map_or(origin.end, |p| p.end);
+        // C2-L-048: by line, and the wraps of one line by row.
+        if spans_rows || spans_columns {
+            wraps.sort_by_key(|w| w["line"].as_u64());
+        }
+        // C2-L-013: the range ends at the last piece in the source.
+        let last = origin
+            .pieces
+            .iter()
+            .map(|p| p.end)
+            .max()
+            .unwrap_or(origin.end);
         let cell_end = self.source[last..line_end(self.source, last)]
             .find('|')
             .map_or(last, |n| last + n);
-        self.nodes
-            .push(json!({"path":path,"startByte":origin.start,"endByte":cell_end,"wraps":wraps}));
-        let _ = first;
+        self.nodes.push(
+            json!({"path":path,"startByte":origin.start,"endByte":cell_end.max(origin.end),"wraps":wraps}),
+        );
     }
 }
 
