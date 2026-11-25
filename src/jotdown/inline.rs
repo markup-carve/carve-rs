@@ -777,9 +777,7 @@ impl<'s> Parser<'s> {
                 }
                 // carve-rs: in a link destination a delimiter does not close an opener from before the
                 // link; it stays text (djot.js 713a417).
-                if !matches!(opener, Opener::Span(..) | Opener::Link { .. })
-                    && self.opener_classes[1].last().is_some_and(|&link| o < link)
-                {
+                if self.opener_classes[1].last().is_some_and(|&link| o < link) {
                     return Some(self.push(EventKind::Str));
                 }
 
