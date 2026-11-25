@@ -398,7 +398,7 @@ pub fn label_key(
     let mut s = String::new();
     let sym = symbols.map_or(Symbols::Nothing, Symbols::Written);
     plain::inline_text(before, sym, &mut s);
-    s.trim_end().to_string()
+    s.trim_end_matches(crate::chars::is_ws).to_string()
 }
 
 /// The lookup tables the references of a tree read.

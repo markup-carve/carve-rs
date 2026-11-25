@@ -750,17 +750,17 @@ fn columns<'a>(
     };
     let aligns = a.get("aligns").and_then(|v| {
         v.split(',')
-            .map(|entry| ast::TableColumnAlign::from_name(entry.trim()))
+            .map(|entry| ast::TableColumnAlign::from_name(entry.trim_matches(crate::chars::is_ws)))
             .collect::<Option<Vec<_>>>()
     });
     let valigns = a.get("valigns").and_then(|v| {
         v.split(',')
-            .map(|entry| ast::TableColumnValign::from_name(entry.trim()))
+            .map(|entry| ast::TableColumnValign::from_name(entry.trim_matches(crate::chars::is_ws)))
             .collect::<Option<Vec<_>>>()
     });
     let widths = a.get("widths").and_then(|v| {
         v.split(',')
-            .map(|entry| width(entry.trim()))
+            .map(|entry| width(entry.trim_matches(crate::chars::is_ws)))
             .collect::<Option<Vec<_>>>()
     });
     if let Some(values) = aligns.as_ref() {

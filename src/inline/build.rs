@@ -140,7 +140,9 @@ fn set_pos(node: &mut Node<'_>, pos: Option<Pos>) {
 fn apply_attrs<'a>(a: &'a Arena, node: &mut Node<'a>, attrs: Option<Box<AttrBlock>>) {
     let Some(block) = attrs else { return };
     let mut block = *block;
-    if !matches!(node, Node::Span(_)) {
+    if matches!(node, Node::Span(_)) {
+        crate::ast::owned::dedupe_keys_semantic(&mut block.attrs.key_values);
+    } else {
         crate::ast::owned::dedupe_keys(&mut block.attrs.key_values);
     }
     if !block.attrs.is_empty()

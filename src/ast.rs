@@ -172,8 +172,52 @@ pub mod owned {
             }
             self.classes.extend(later.classes);
             self.key_values.extend(later.key_values);
-            dedupe_keys_semantic(&mut self.key_values);
+            merge_keys_ordered(&mut self.key_values);
         }
+    }
+
+    /// Like [`dedupe_keys_semantic`], but a semantic key written after its other
+    /// spelling is kept again at the end, so a later fold for a non-span node
+    /// still sees the last value written (C2-A-035). Spans fold with
+    /// [`dedupe_keys_semantic`], everything else with [`dedupe_keys`].
+    pub fn merge_keys_ordered(kv: &mut Vec<(String, String)>) {
+        let collides = kv.iter().any(|(k, _)| {
+            ["abbr", "time", "kbd"]
+                .iter()
+                .any(|s| k.eq_ignore_ascii_case(s))
+                && k.bytes().any(|b| b.is_ascii_uppercase())
+        }) && kv
+            .iter()
+            .any(|(k, _)| ["abbr", "time", "kbd"].contains(&k.as_str()));
+        if !collides {
+            dedupe_keys_semantic(kv);
+            return;
+        }
+        let mut out: Vec<(String, String)> = Vec::with_capacity(kv.len());
+        // The last place of each spelling class; a semantic key's other class is `~`-marked.
+        let mut last: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (key, value) in kv.drain(..) {
+            let folded = key.to_ascii_lowercase();
+            let semantic = ["abbr", "time", "kbd"].contains(&folded.as_str());
+            let marked = format!("{folded}~");
+            let (class, other) = match (semantic, key == folded) {
+                (false, _) => (folded, None),
+                (true, true) => (folded, Some(marked)),
+                (true, false) => (marked, Some(folded)),
+            };
+            let at = last.get(&class).copied();
+            let other_at = other.and_then(|o| last.get(&o).copied());
+            if let Some(slot) = at
+                .filter(|&i| other_at.is_none_or(|o| o < i))
+                .and_then(|i| out.get_mut(i))
+            {
+                slot.1 = value;
+            } else {
+                last.insert(class, out.len());
+                out.push((key, value));
+            }
+        }
+        *kv = out;
     }
 
     /// A lower-case semantic span key is distinct from its ordinary upper-case spelling (C2-H-013).

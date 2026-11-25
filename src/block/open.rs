@@ -38,8 +38,9 @@ impl Frame<'_> {
 
 impl Parser<'_> {
     /// A refused div opener is text at the depth cap (C2-B-190), so it cannot
-    /// end the paragraph above it. A bare run that closes an open div can.
-    pub(super) fn fence_interrupts(&self, k: &Cursor<'_>) -> bool {
+    /// end the paragraph above it. A bare run that closes an open div can,
+    /// once the `matched` containers the line continues are all that stay open.
+    pub(super) fn fence_interrupts(&self, k: &Cursor<'_>, matched: usize) -> bool {
         if shapes::code_fence_opener(k).is_some() || shapes::fence_run(k, b'%') >= 3 {
             return true;
         }
@@ -54,6 +55,8 @@ impl Parser<'_> {
                 && info.label.is_none()
                 && self
                     .stack
+                    .get(..matched)
+                    .unwrap_or(&self.stack)
                     .iter()
                     .rev()
                     .take_while(|c| matches!(c.kind, Kind::Div { .. }))
@@ -111,7 +114,7 @@ impl Parser<'_> {
             return shapes::list_marker(&k)
                 .is_some_and(|marker| self.marker_interrupts(&self.frame(walk, m), m, &marker));
         }
-        if self.fence_interrupts(&k)
+        if self.fence_interrupts(&k, walk.matched)
             || shapes::table_row_shape(&k).is_some()
             || shapes::thematic_break(&k)
         {

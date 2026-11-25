@@ -325,6 +325,8 @@ fn add_attrs<'a>(host: &mut Tok<'a>, block: AttrBlock, arena: &'a Arena) {
                 a.merge(block.attrs);
                 if ordinary {
                     crate::ast::owned::dedupe_keys(&mut a.key_values);
+                } else {
+                    crate::ast::owned::dedupe_keys_semantic(&mut a.key_values);
                 }
                 *slot = (!a.is_empty()).then(|| arena.attrs(&a));
             }
