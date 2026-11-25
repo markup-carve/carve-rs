@@ -28,6 +28,7 @@ mod math;
 mod navigation;
 mod semantic_span;
 mod smart_quotes;
+mod svg_sanitize;
 mod transforms;
 mod wikilinks;
 
@@ -56,6 +57,7 @@ pub use smart_quotes::{
     QuoteCharacters, SMART_QUOTE_LOCALES, SmartQuotesOptions, is_smart_quote_locale_supported,
     smart_quote_locales, smart_quotes,
 };
+pub use svg_sanitize::{SanitizeResult, SanitizeSvgOptions, sanitize_svg};
 pub use transforms::{
     DefaultAttributes, default_attributes, inline_footnotes_to_parentheses, tab_normalize,
 };

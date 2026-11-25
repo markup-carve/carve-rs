@@ -265,6 +265,7 @@ The same call enables the other standard extensions, all provisional:
 - `carve.cite` with its standard renderer: the citations bundle (C2-X-058). A `:cite[key]` whose keys all have an entry in a `references` or `bibliography` directive renders as a numbered link (`[1]`), and the directive lists every entry in source order. A key without an entry keeps its text. `citations` takes the mode (`numbered` or `author-date`) and a CSL-JSON pool.
 - `carve.listTable`: a `list-table` div whose body is a list of row lists as a `<table>`; `header-rows`, `header-cols`, `footer-rows`, `aligns`, `valigns` and `widths` on the div, `header-row`, `header`, `align` and `valign` on a cell, `<` and `^` cells join the cell to their left or above.
 - `carve.colorSwatch`: `:color[value]` as a swatch beside the value when the value is a hex color, an `rgb`/`hsl` function or a named color; `{contrast}` writes the value on its color instead. `color_swatch` takes the chip position, shape, `tint` and `reveal`.
+- `sanitize_svg` is no extension but the standalone sanitizer the 0.1 crate exported: it takes SVG source and `SanitizeSvgOptions` (`allow_style`, `allow_links`, `allow_animation`, `allow_external_images`, `url_policy`) and returns the sanitized SVG with `ok` false when the input is not one well-formed `<svg>` root. Its output bytes equal carve-php `SvgSanitizer`.
 - `carve.tabNormalize` (tabs in code as two spaces; `tab_normalize(width)` for another width) and `carve.inlineFootnotesToParentheses`: document transforms of the render view. `default_attributes` adds attributes per node type under the authored ones and has no JSON form.
 
 These come from `api::extensions`, the matcher surface of C2-X-005 to C2-X-031 with the ported carve-js standard extensions. A factory returns a `Bundle` of extensions and matchers that `Carve::register` adds; the factories take the options the JSON form cannot carry, such as a build-time renderer for `static` mode (`build`), a highlighter or the `aria` mode of `code_group`. Without a build-time renderer, `static` mode writes the fallback code block (C2-X-052). Two matchers of one source name fail at registration (C2-X-014).
@@ -365,7 +366,7 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `decision_trace` | gone: a 0.1 debugging aid |
 | `parse_locator`, `ParsedLocator` | gone: 0.1 split the text after the comma in a citation into a CSL label and value. In 0.2 the locator is the `locator` attribute, `:cite[doe]{locator="p. 4"}` (C2-X-058), and the citations renderer writes it as given |
 | `stamp_carve`, `read_stamp`, `needs_review` | gone: version stamps belong to the 0.1 upgrade flow; the rewrite tool is part of carve-js |
-| `sanitize_svg` | gone from the core; an extension renderer's job under the extension host |
+| `sanitize_svg` | `api::extensions::sanitize_svg`; `SanitizeSvgOptions` gains `url_policy` and is no longer `Copy` |
 
 Option types: `carve::Options::new()` and `Options::default()` become `api::Options::default()`. `Profile`, `Mode` and the heading-id setting (`AsciiHeadingIds` in 0.1, `HeadingIds` in 0.2) keep their roles. `IncludeOptions`, `IncludeContext` and `IncludeResolved` become `api::Includes` with an `api::Resolver`.
 
