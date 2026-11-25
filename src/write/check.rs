@@ -872,35 +872,37 @@ fn has_attribute_opener(value: &str) -> bool {
 /// text and cannot consume the closer (C2-I-118).
 pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     let mut pending: Vec<N<'t>> = group.iter().collect();
+    let mut bracketed = Vec::new();
     while let Some(node) = pending.pop() {
         // Pair, note and attribute-block repairs choose escapes by round. Their
         // spelling can depend on when a bracket was escaped.
-        if matches!(ty(node), "emphasis" | "strong")
-            || (ty(node) == "text"
-                && (text(node).contains(['*', '/'])
+        match ty(node) {
+            "emphasis" | "strong" => return,
+            "text"
+                if text(node).contains(['*', '/'])
                     || text(node).contains("^[")
-                    || has_attribute_opener(text(node))))
-        {
-            return;
+                    || has_attribute_opener(text(node)) =>
+            {
+                return;
+            }
+            "span" | "inline_footnote" | "inline_extension" => bracketed.push(node),
+            _ => {}
         }
         super::node::for_each_slot(node, false, &mut |kids, _, _| {
             pending.extend(kids.iter());
         });
     }
+    if bracketed.is_empty() {
+        return;
+    }
     count_open_above(w, group);
-    let mut pending: Vec<N<'t>> = group.iter().collect();
     let c = Check::default();
-    while let Some(node) = pending.pop() {
-        if matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
-            && w.open_above.get(&id(node)).copied().unwrap_or(0) < 200
-        {
+    for node in bracketed {
+        if w.open_above.get(&id(node)).copied().unwrap_or(0) < 200 {
             for (text, at, _) in scan_lone_brackets(w, &c, node) {
                 w.add_escape(text, at);
             }
         }
-        super::node::for_each_slot(node, false, &mut |kids, _, _| {
-            pending.extend(kids.iter());
-        });
     }
 }
 
