@@ -1163,9 +1163,7 @@ fn write_tree<'t>(
     read_abbreviations(&mut w, doc);
     let written = write_document(&mut w, doc);
     let source = controls::keep_above(&w, written, settings.source.as_deref());
-    let mut entries = locate(doc, &w);
-    root_metadata_losses(doc, &mut entries);
-    (source, entries)
+    (source, located(doc, &w))
 }
 
 /// C2-B-085: the first definition of a term wins.
@@ -1184,9 +1182,10 @@ fn read_abbreviations(w: &mut Writer<'_>, doc: V<'_>) {
     w.abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
 }
 
-fn locate(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
+/// C2-W-158: the record in document order of its paths. Entries at one place keep the order they were found in.
+fn located(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
     let wanted: AddrSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
-    let found = node::pointers(doc, &wanted);
+    let found = node::places(doc, &wanted);
     let mut nodes: AddrMap<usize, V<'_>> = AddrMap::default();
     if !wanted.is_empty() {
         let mut all = vec![doc];
@@ -1197,22 +1196,48 @@ fn locate(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
             }
         }
     }
-    w.sp.losses
-        .iter()
-        .map(|l| {
-            let place = l.node.and_then(|n| found.get(&n));
-            let path = place.cloned().unwrap_or_default() + l.step.as_deref().unwrap_or("");
-            let range = place
-                .and(l.node)
-                .and_then(|n| nodes.get(&n).copied())
-                .and_then(span)
-                .map(|(start_offset, end_offset)| Range {
-                    start_offset,
-                    end_offset,
-                });
-            loss_entry(l.code, l.message.clone(), path, range)
-        })
-        .collect()
+    let mut keys = Vec::new();
+    let mut entries: Vec<Entry> =
+        w.sp.losses
+            .iter()
+            .map(|l| {
+                let place = l.node.and_then(|n| found.get(&n));
+                keys.push(place.map(|(_, rank)| (*rank, usize::from(l.step.is_some()))));
+                let path = place.map(|(p, _)| p.clone()).unwrap_or_default()
+                    + l.step.as_deref().unwrap_or("");
+                let range = place
+                    .and(l.node)
+                    .and_then(|n| nodes.get(&n).copied())
+                    .and_then(span)
+                    .map(|(start_offset, end_offset)| Range {
+                        start_offset,
+                        end_offset,
+                    });
+                loss_entry(l.code, l.message.clone(), path, range)
+            })
+            .collect();
+    root_metadata_losses(doc, &mut entries);
+    // The fields of the document stand before its blocks.
+    keys.resize(entries.len(), Some((0, 1)));
+    if entries.len() < 2 {
+        return entries;
+    }
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    if keys.iter().all(Option::is_some) {
+        order.sort_by_key(|&i| keys[i]);
+    } else {
+        // A node the walk did not find: its path alone places the entry.
+        let paths: Vec<Vec<usize>> = entries
+            .iter()
+            .map(|e| node::path_key(doc, e.path.as_deref().unwrap_or("")))
+            .collect();
+        order.sort_by(|&a, &b| paths[a].cmp(&paths[b]));
+    }
+    if order.iter().enumerate().all(|(at, &i)| at == i) {
+        return entries;
+    }
+    let mut slots: Vec<Option<Entry>> = entries.into_iter().map(Some).collect();
+    order.into_iter().filter_map(|i| slots[i].take()).collect()
 }
 
 fn loss_entry(code: &str, message: String, path: String, range: Option<Range>) -> Entry {

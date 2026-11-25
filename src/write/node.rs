@@ -758,33 +758,82 @@ pub fn plain_text(nodes: Arr<'_>) -> String {
     out
 }
 
-/// The JSON pointer of each wanted node in the document, by identity.
-pub fn pointers(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
+/// The JSON pointer of each wanted node in the document, by identity, and its rank in the document
+/// order of C2-L-011: a node before the nodes inside it, the slots in source order.
+pub fn places(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, (String, usize)> {
     let mut found = AddrMap::default();
     if wanted.is_empty() {
         return found;
     }
     let mut stack: Vec<(V<'_>, String)> = vec![(doc, String::new())];
+    let mut rank = 0;
+    let mut inner = Vec::new();
     while let Some((n, path)) = stack.pop() {
         if wanted.contains(&id(n)) {
-            found.insert(id(n), path.clone());
+            found.insert(id(n), (path.clone(), rank));
             if found.len() == wanted.len() {
                 break;
             }
         }
-        for_each_slot(n, false, &mut |nodes, step, single| {
+        rank += 1;
+        for_each_slot(n, true, &mut |nodes, step, single| {
             if single {
                 if let Some(c) = nodes.first() {
-                    stack.push((c, format!("{path}/{step}")));
+                    inner.push((c, format!("{path}/{step}")));
                 }
             } else {
                 for (i, c) in nodes.iter().enumerate() {
-                    stack.push((c, format!("{path}/{step}/{i}")));
+                    inner.push((c, format!("{path}/{step}/{i}")));
                 }
             }
         });
+        stack.extend(inner.drain(..).rev());
     }
     found
+}
+
+/// The C2-L-011 order of `path` in `doc`: per node on the way down 1, its slot rank and its index, then a
+/// 0 when the rest names a field of the last node, which so stands before the nodes in its slots.
+pub fn path_key(doc: V<'_>, path: &str) -> Vec<usize> {
+    let segments: Vec<&str> = path.split('/').skip(1).collect();
+    let mut key = Vec::new();
+    let mut node = doc;
+    let mut at = 0;
+    while at < segments.len() {
+        let mut next = None;
+        let mut slot = 0;
+        for_each_slot(node, true, &mut |nodes, step, single| {
+            slot += 1;
+            if next.is_some() {
+                return;
+            }
+            let steps: Vec<&str> = step.split('/').collect();
+            if segments.get(at..at + steps.len()) != Some(&steps[..]) {
+                return;
+            }
+            let index = if single {
+                Some(0)
+            } else {
+                segments
+                    .get(at + steps.len())
+                    .filter(|t| *t == &"0" || !t.starts_with('0'))
+                    .and_then(|t| t.parse::<usize>().ok())
+            };
+            if let Some(index) = index
+                && let Some(c) = nodes.get(index)
+            {
+                next = Some((c, steps.len() + usize::from(!single), slot, index));
+            }
+        });
+        let Some((c, used, rank, index)) = next else {
+            key.push(0);
+            break;
+        };
+        key.extend([1, rank, index]);
+        node = c;
+        at += used;
+    }
+    key
 }
 
 #[cfg(test)]

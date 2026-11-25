@@ -10,10 +10,7 @@ use carve::api::{
 use serde_json::Value;
 
 /// `(entry id, reason)`.
-const HELD: &[(&str, &str)] = &[(
-    "CC-2045",
-    "C2-W-158 record order, ruling of carve#6619 (carve-rs line), not ported yet",
-)];
+const HELD: &[(&str, &str)] = &[];
 
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
