@@ -228,13 +228,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
+    /// A text node; in a line-block line it keeps its whitespace (C2-H-043).
+    fn text(&mut self, s: &str, out: &mut String) {
+        if let Some(lead) = self.verse {
+            self.verse = Some(false);
+            esc::verse(s, lead, out);
+        } else {
+            esc::text(s, out);
+        }
+    }
+
     /// The nodes without children or attributes of their own.
     fn simple_inline(&mut self, n: &Node, out: &mut String) -> bool {
         match n {
-            Node::Text(t) if self.verse.is_some() => {
-                esc::verse(t.value, self.verse.replace(false) == Some(true), out);
-            }
-            Node::Text(t) => esc::text(t.value, out),
+            Node::Text(t) => self.text(t.value, out),
             Node::SoftBreak(_) => out.push_str(soft_break(self.opts.soft_break)),
             Node::HardBreak(_) => out.push_str("<br>\n"),
             Node::NonBreakingSpace(_) => out.push_str("&nbsp;"),
