@@ -116,17 +116,7 @@ impl<'a> Builder<'_, 'a> {
         let foot = footer_count(attrs.as_ref()).min(n - head);
         let plan = body_plan(attrs.as_ref(), n - head - foot);
         let body_starts = body_starts(head, plan.as_ref());
-        let spans = marked.then(|| resolve_spans(&data.rows, head, n - foot, &body_starts));
-        if let Some(spans) = &spans {
-            for (row, resolved) in data.rows.iter_mut().zip(spans.rows()) {
-                for (cell, mark) in row.cells.iter_mut().zip(resolved) {
-                    if mark.mark.is_some() && !cell.pieces.is_empty() {
-                        cell.pieces.remove_first();
-                    }
-                }
-            }
-            move_joined_marks(&mut data.rows, spans);
-        }
+        let spans = marked.then(|| join_spans(&mut data.rows, head, n - foot, &body_starts));
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let (columns, attrs) = columns(self.arena, ncols, attrs, false, plan.is_some());
         let mut groups: Vec<Node<'a>> = Vec::new();
@@ -278,7 +268,10 @@ impl<'a> Builder<'_, 'a> {
             }
         }
         let first = rows.get(lo).map_or(0, |r| r.start);
-        let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| r.end);
+        // C2-A-144: a comment under the last row is a child of the group.
+        let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| {
+            r.comments.iter().fold(r.end, |end, (_, e, _)| end.max(*e))
+        });
         let pos = (lo < hi).then(|| self.src.pos(first, last));
         let children = self.arena.nodes(&mut children);
         match kind {
@@ -543,6 +536,47 @@ fn resolve_spans(
         }
     }
     out
+}
+
+/// Resolves the span marks and moves the fragments under a mark into the cell that covers it
+/// (C2-B-184).
+fn join_spans(
+    rows: &mut [Row],
+    head: usize,
+    foot_start: usize,
+    body_starts: &[usize],
+) -> Grid<Resolved> {
+    let spans = resolve_spans(rows, head, foot_start, body_starts);
+    for (row, resolved) in rows.iter_mut().zip(spans.rows()) {
+        for (cell, mark) in row.cells.iter_mut().zip(resolved) {
+            if mark.mark.is_some() && !cell.pieces.is_empty() {
+                cell.pieces.remove_first();
+            }
+        }
+    }
+    move_joined_marks(rows, &spans);
+    spans
+}
+
+/// The cell pieces of a scanned table as the tree holds them: `groups` gives the row count and
+/// kind (0 head, 1 body, 2 foot) of each group of the table node.
+pub(crate) fn join_span_pieces(rows: &mut [Row], groups: &[(u8, usize)]) {
+    if !has_marks(rows) {
+        return;
+    }
+    let mut head = 0;
+    let mut foot_start = rows.len();
+    let mut body_starts = Vec::new();
+    let mut at = 0;
+    for &(kind, count) in groups {
+        match kind {
+            0 => head = at + count,
+            1 => body_starts.push(at),
+            _ => foot_start = foot_start.min(at),
+        }
+        at += count;
+    }
+    join_spans(rows, head, foot_start, &body_starts);
 }
 
 fn move_joined_marks(rows: &mut [Row], spans: &Grid<Resolved>) {
