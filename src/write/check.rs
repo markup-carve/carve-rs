@@ -967,11 +967,37 @@ pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 
 /// Whether a link below `doc` has text that starts with a caret.
 pub fn holds_caret_link(doc: V<'_>) -> bool {
+    // An arena tree is walked through its typed slots: the generic slot walk costs a share of every `fmt`.
+    match doc {
+        V::Doc(d) => return d.children.iter().any(typed_caret_link),
+        V::Node(n) => return typed_caret_link(n),
+        _ => {}
+    }
     let mut nodes = Vec::new();
     super::node::descendants(doc, &mut nodes);
     nodes
         .into_iter()
         .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
+}
+
+/// [`super::inline::leading_caret`] of every link below `n`, on the typed tree.
+fn typed_caret_link(n: &crate::ast::Node<'_>) -> bool {
+    use crate::ast::Node;
+    if let Node::Link(l) = n
+        && let Some(Node::Text(t)) = l.children.first()
+        && let Some(rest) = t.value.strip_prefix('^')
+        && rest
+            .chars()
+            .next()
+            .map_or(l.children.len() == 1, char::is_whitespace)
+    {
+        return true;
+    }
+    let mut found = false;
+    n.for_each_child(&mut |c| {
+        found = found || (!matches!(c, Node::Text(_)) && typed_caret_link(c));
+    });
+    found
 }
 
 fn scan_text_note_closers<'t>(
@@ -3906,5 +3932,37 @@ mod resync_break_test {
         assert!(check.losses.iter().any(|(node, field)| {
             id(*node) == id(V::Json(&expected[1])) && field.as_deref() == Some("dir")
         }));
+    }
+}
+
+#[cfg(test)]
+mod caret_link_test {
+    use super::*;
+
+    #[test]
+    fn the_typed_walk_finds_the_caret_links_the_slot_walk_finds() {
+        for (src, expected) in [
+            ("^[\\] [^](u)\n", true),
+            ("| a [\\^ b](u) | c |\n", true),
+            ("> - x [\\^](u)\n", true),
+            ("| a | b |\n^ cap [\\^](u)\n", true),
+            ("[^a](u) [b](u) [^b][n]\n\n[n]: /x\n", false),
+            (
+                "{table aligns=left}\n```csv\nA,B\n^,x\n```\n^ Stock\n",
+                false,
+            ),
+        ] {
+            let arena = crate::Arena::for_input(src);
+            let mut found = Vec::new();
+            let Ok((doc, _, None)) =
+                crate::prepare(src, &crate::Options::default(), &arena, &mut found)
+            else {
+                panic!("a parse of {src:?}");
+            };
+            let typed = holds_caret_link(V::Doc(arena.alloc(doc)));
+            let json = super::super::parse_plain(src).expect("a tree");
+            assert_eq!(typed, holds_caret_link(V::Json(&json)), "{src:?}");
+            assert_eq!(typed, expected, "{src:?}");
+        }
     }
 }
