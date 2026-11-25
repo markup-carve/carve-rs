@@ -4,7 +4,6 @@
 
 use carve::api::{self, ImportOptions};
 
-/// Byte offset of each report of `code`.
 fn import(html: &str) -> (String, Vec<(String, String, String, Option<usize>)>) {
     let got = api::import_document(html, &ImportOptions::default()).unwrap();
     let entries = got
