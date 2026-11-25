@@ -792,6 +792,9 @@ pub(super) struct Lookup {
     pub field: Path,
     /// Lookups over the same records with the same key share one index per call.
     pub site: usize,
+    /// The parts of a key that read the record being tested instead of `item`; their values tag the
+    /// index, which is built with them (C2-W-141). `None` when one of them cannot be told apart.
+    pub context: Option<Vec<Expr>>,
 }
 
 impl Lookup {
@@ -1091,6 +1094,11 @@ impl Scope<'_> {
                     .and_then(Value::as_str)
                     .map_or_else(Box::default, path),
                 site: lookup_site(arg),
+                context: arg.get("key").map_or(Some(Vec::new()), |key| {
+                    let mut parts = Vec::new();
+                    key_context(key, &mut parts)
+                        .then(|| parts.into_iter().map(|part| self.compile(part)).collect())
+                }),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
             "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
@@ -1922,11 +1930,33 @@ impl<'a> Eval<'_, 'a> {
     }
 
     fn lookup(&mut self, lookup: &Lookup) -> Val<'a> {
-        let id = lookup.site;
-        if !self.records.has_lookup(id) {
-            let built = self.build_lookup(lookup);
-            self.records.store_lookup(id, built);
-        }
+        let id = match &lookup.context {
+            Some(parts) if parts.is_empty() => {
+                if !self.records.has_lookup(lookup.site) {
+                    let built = self.build_lookup(lookup, false);
+                    self.records.store_lookup(lookup.site, built);
+                }
+                lookup.site
+            }
+            parts => {
+                let tag = parts.as_ref().and_then(|parts| {
+                    parts
+                        .iter()
+                        .map(|part| {
+                            let value = self.value(part);
+                            matches!(value, Val::Null | Val::Bool(_) | Val::Num(_) | Val::Str(_))
+                                .then(|| LookupKey::of(&value))
+                        })
+                        .collect()
+                });
+                let (id, build) = self.records.tagged_lookup(lookup.site, tag, site_count());
+                if build {
+                    let built = self.build_lookup(lookup, true);
+                    self.records.store_lookup(id, built);
+                }
+                id
+            }
+        };
         let value = match (&lookup.key, &lookup.value) {
             (Some(_), Some(value)) => self.value(value),
             _ => Val::Null,
@@ -1959,8 +1989,14 @@ impl<'a> Eval<'_, 'a> {
     }
 
     /// The records of a lookup in document order with their starts, by key (C2-W-141).
-    fn build_lookup(&mut self, lookup: &Lookup) -> LookupIndex {
-        let saved = (self.item.take(), std::mem::take(&mut self.spans));
+    /// With `context` the key reads the record being tested too, so its groups stay in place.
+    fn build_lookup(&mut self, lookup: &Lookup, context: bool) -> LookupIndex {
+        let spans = if context {
+            self.spans.clone()
+        } else {
+            std::mem::take(&mut self.spans)
+        };
+        let saved = (self.item.take(), spans);
         let mut index = LookupIndex::default();
         for (at, start) in self.records.lookup_records(lookup.over, &lookup.types) {
             let key = match &lookup.key {
@@ -2317,14 +2353,13 @@ fn lookup_site(arg: &'static Value) -> usize {
             _ => true,
         }
     }
-    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let key = &arg["key"];
     let signature = if item_only(key) {
         format!("{} {} {}", arg["over"], arg["types"], key)
     } else {
         format!("{:p}", std::ptr::from_ref(arg))
     };
-    let mut sites = SITES
+    let mut sites = lookup_site_table()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     sites
@@ -2334,6 +2369,66 @@ fn lookup_site(arg: &'static Value) -> usize {
             sites.push(signature);
             sites.len() - 1
         })
+}
+
+fn lookup_site_table() -> &'static std::sync::Mutex<Vec<String>> {
+    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    &SITES
+}
+
+/// The number of shared lookup sites the model compiled; tagged indexes are numbered after them.
+fn site_count() -> usize {
+    lookup_site_table().lock().map_or(0, |sites| sites.len())
+}
+
+/// Collects the largest parts of a lookup key that read the record being tested (`f` of the subject,
+/// `v` or `match`) and no `item`; false where such a read sits in a part that also reads `item`
+/// through a list path, which no tag can stand for.
+fn key_context(value: &'static Value, parts: &mut Vec<&'static Value>) -> bool {
+    fn reads_item(value: &Value) -> bool {
+        match value {
+            Value::String(text) => text == "item" || text.starts_with("item."),
+            Value::Object(map) => map.values().any(reads_item),
+            Value::Array(items) => items.iter().any(reads_item),
+            _ => false,
+        }
+    }
+    fn reads_subject(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.contains_key("v")
+                    || map.contains_key("match")
+                    || map
+                        .get("f")
+                        .and_then(Value::as_str)
+                        .is_some_and(|field| field != "item" && !field.starts_with("item."))
+                    || map
+                        .get("in")
+                        .and_then(Value::as_str)
+                        .is_some_and(|field| field != "item" && !field.starts_with("item."))
+                    || map.values().any(reads_subject)
+            }
+            Value::Array(items) => items.iter().any(reads_subject),
+            _ => false,
+        }
+    }
+    if !reads_subject(value) {
+        return true;
+    }
+    if !reads_item(value) {
+        parts.push(value);
+        return true;
+    }
+    match value {
+        Value::Object(map) => {
+            !map.get("in")
+                .and_then(Value::as_str)
+                .is_some_and(|field| field != "item" && !field.starts_with("item."))
+                && map.values().all(|part| key_context(part, parts))
+        }
+        Value::Array(items) => items.iter().all(|part| key_context(part, parts)),
+        _ => true,
+    }
 }
 
 /// The field a `let` value is a slice of, where it is that slice or the empty text: `slice` of a field,

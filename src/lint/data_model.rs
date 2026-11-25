@@ -8,6 +8,9 @@ use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
+/// A lookup site and the tag of the record values its key reads; `None` builds a fresh index.
+type TaggedSite = (usize, Option<Vec<LookupKey>>);
+
 fn text_at(source: &str, from: usize, to: usize) -> &str {
     source
         .get(from.min(source.len())..to.min(source.len()))
@@ -471,6 +474,8 @@ pub(super) struct Records<'a> {
     nodes: &'a dyn NodeTree,
     /// The lookup indexes of this call, by site.
     lookups: RefCell<Vec<Option<LookupIndex>>>,
+    /// The index ids of the lookups whose key reads the record being tested, by site and tag.
+    tagged: RefCell<HashMap<TaggedSite, usize>>,
     /// The attribute records of this call (C2-W-148).
     pub attributes: super::data_attrs::Table,
     tree: TreeFacts<'a>,
@@ -969,6 +974,7 @@ impl<'a> Records<'a> {
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
             nodes,
             lookups: RefCell::new(Vec::new()),
+            tagged: RefCell::new(HashMap::new()),
             attributes: super::data_attrs::Table::default(),
             tree,
             extensions,
@@ -1686,6 +1692,21 @@ impl<'a> Records<'a> {
 
     pub fn has_lookup(&self, id: usize) -> bool {
         self.lookups.borrow().get(id).is_some_and(Option::is_some)
+    }
+
+    /// The index id of a site under a tag, numbered after the `sites` shared ones; `true` when that
+    /// index has to be built.
+    pub fn tagged_lookup(
+        &self,
+        site: usize,
+        tag: Option<Vec<LookupKey>>,
+        sites: usize,
+    ) -> (usize, bool) {
+        let rebuild = tag.is_none();
+        let mut tagged = self.tagged.borrow_mut();
+        let next = sites + tagged.len();
+        let id = *tagged.entry((site, tag)).or_insert(next);
+        (id, rebuild || !self.has_lookup(id))
     }
 
     pub fn store_lookup(&self, id: usize, index: LookupIndex) {
