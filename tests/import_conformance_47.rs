@@ -74,6 +74,21 @@ fn imports_follow_the_source_format() {
         ),
         (ImportFormat::Djot, "`c`\\\nc\n", "`c`\\\nc\n"),
         (ImportFormat::Djot, "{'b\n", "‘b\n"),
+        (
+            ImportFormat::Djot,
+            "{#id .class\nstyle=\"color:red\"}\nA paragraph\n",
+            "{\\#id .class\nstyle=\u{201c}color:red\u{201d}\nA paragraph\n",
+        ),
+        (
+            ImportFormat::Djot,
+            "- x\n  y\n\n  para\n",
+            "- x\n  y\n\n  para\n",
+        ),
+        (
+            ImportFormat::Djot,
+            "- {#id\n  .b}\n  para\n",
+            "- {\\#id\n  .b}\n  para\n",
+        ),
     ];
     for (format, source, expected) in cases {
         assert_eq!(import(source, format), expected, "{source:?}");
