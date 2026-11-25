@@ -5,13 +5,14 @@
 //! with its subtree, an attribute off the allowlist and every `on*` handler is
 //! dropped, URL and style values are checked, and only the survivors are
 //! written again. Output bytes equal carve-php on the same input, which takes
-//! carve-js output except for the fixes of carve#6755, carve#6760 and
-//! carve#6761.
+//! carve-js output except for the fixes of carve#6755, carve#6760,
+//! carve#6761 and carve#6774.
 // Every index sits on an ASCII byte the scan has just checked.
 #![allow(clippy::indexing_slicing)]
 
 use crate::options::UrlPolicy;
 use crate::tables::{DEFAULT_DENIED_SCHEMES, PROBE_REMOVES, STYLE_PATTERNS};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
@@ -300,7 +301,18 @@ struct State<'o> {
 
 impl State<'_> {
     fn run(&mut self, source: &str) -> Option<String> {
-        let src = trim(source);
+        // carve#6764: dropped before any check, so a check never sees a value
+        // the output does not hold. The byte scan finds C0 controls and the
+        // 0xEF lead byte of U+FFFE / U+FFFF.
+        let suspect = source
+            .bytes()
+            .any(|b| (b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r')) || b == 0xEF);
+        let cleaned: Cow<str> = if suspect && source.contains(non_xml_char) {
+            Cow::Owned(source.chars().filter(|&c| !non_xml_char(c)).collect())
+        } else {
+            Cow::Borrowed(source)
+        };
+        let src = trim(&cleaned);
         let mut cursor = 0;
         while let Some(found) = src[cursor..].find('<') {
             let start = cursor + found;
@@ -932,8 +944,8 @@ fn value_has_external_ref(value: &str) -> bool {
     non_local_url(&decoded) || !scheme_is_safe(&decoded)
 }
 
-/// Keeps the entities XML defines (the five names and numeric references)
-/// and escapes every other `&`.
+/// Keeps the entities XML defines (the five names and numeric references to
+/// an XML `Char`, carve#6764) and escapes every other `&`.
 fn escape_amp(text: &str, out: &mut String) {
     let mut rest = text;
     while let Some(at) = rest.find('&') {
@@ -960,7 +972,15 @@ fn xml_entity_follows(rest: &str) -> bool {
                 }
             })
             .count();
-        n > 0 && b.get(from + n) == Some(&b';')
+        if n == 0 || b.get(from + n) != Some(&b';') {
+            return false;
+        }
+        let digits = rest[from..from + n].trim_start_matches('0');
+        if digits.len() > if hex { 6 } else { 7 } {
+            return false;
+        }
+        let cp = u32::from_str_radix(digits, if hex { 16 } else { 10 }).unwrap_or(0);
+        xml_char(cp)
     };
     match b.first() {
         Some(b'#') if b.get(1) == Some(&b'x') => numeric(2, true),
@@ -969,6 +989,16 @@ fn xml_entity_follows(rest: &str) -> bool {
             .iter()
             .any(|name| rest.starts_with(name)),
     }
+}
+
+fn xml_char(cp: u32) -> bool {
+    matches!(cp, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x1_0000..=0x10_FFFF)
+}
+
+/// A raw character outside the XML 1.0 `Char` production; a `str` holds no
+/// surrogates.
+fn non_xml_char(c: char) -> bool {
+    !xml_char(u32::from(c))
 }
 
 fn escape_text(text: &str) -> String {
