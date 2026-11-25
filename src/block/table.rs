@@ -20,6 +20,8 @@ pub struct Cell {
     pub end: usize,
     /// A continuation row joined a fragment into this cell (C2-A-158).
     pub joined: bool,
+    /// C2-L-020: the covered column of each piece, counted from the cell's own; empty when all are 0.
+    pub piece_cols: Vec<usize>,
 }
 
 /// The source pieces of a cell: almost always one, kept without a heap block.

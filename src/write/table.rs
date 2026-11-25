@@ -416,29 +416,46 @@ fn segment(prefix: &str, content: &str) -> String {
     out
 }
 
-fn fragment_lines(w: &Writer<'_>, row: V<'_>, cell: V<'_>, count: usize) -> Option<Vec<i64>> {
+/// For each fragment of `cell` behind the first, in content order, its continuation row and
+/// covered column as the record gives them (C2-W-067). C2-L-006: a wrap past the continuation
+/// rows of its row or the columns of its cell, or not behind the one before it in the order the
+/// reader joins fragments (C2-B-184), contradicts the record.
+fn fragment_places(
+    w: &Writer<'_>,
+    row: V<'_>,
+    cell: V<'_>,
+    count: usize,
+) -> Option<Vec<(i64, i64)>> {
     let wraps = w.fact(cell)?.wraps.as_ref()?;
     let below = w.fact(row).and_then(|f| f.continuation_lines).unwrap_or(0);
     if wraps.len() != count {
         return None;
     }
-    let mut lines = Vec::new();
-    for wrap in wraps {
-        let previous = lines.last().copied().unwrap_or(0);
-        if wrap.row.unwrap_or(0) != 0 || wrap.line < 1 || wrap.line > below || wrap.line <= previous
+    let columns = cell.get("colspan").and_then(V::as_i64).unwrap_or(1);
+    let mut places: Vec<(i64, i64)> = Vec::with_capacity(count);
+    for wrap in super::state::content_order(wraps).iter() {
+        let (line, col) = (wrap.line, wrap.col.unwrap_or(0));
+        let (last_line, last_col) = places.last().copied().unwrap_or((0, 0));
+        if wrap.row.unwrap_or(0) != 0
+            || line < 1
+            || line > below
+            || col < 0
+            || col >= columns
+            || col < last_col
+            || (col == last_col && line <= last_line)
         {
             return None;
         }
-        lines.push(wrap.line);
+        places.push((line, col));
     }
-    Some(lines)
+    Some(places)
 }
 
 struct WrittenCell {
     prefix: String,
     first: String,
     extra: Vec<String>,
-    places: Vec<i64>,
+    places: Vec<(i64, i64)>,
 }
 
 struct WrittenRow {
@@ -478,7 +495,7 @@ fn written_cell<'t>(
         };
     }
     let mut parts: Vec<String> = content.split('\n').map(str::to_string).collect();
-    if let Some(places) = fragment_lines(w, row, cell, parts.len() - 1) {
+    if let Some(places) = fragment_places(w, row, cell, parts.len() - 1) {
         return WrittenCell {
             prefix: cell_prefix(w, cell, bare),
             first: parts.remove(0),
@@ -517,7 +534,7 @@ fn written_row<'t>(
         .collect();
     let mut below = w.fact(row).and_then(|f| f.continuation_lines).unwrap_or(0);
     for c in &cells {
-        below = below.max(c.places.last().copied().unwrap_or(0));
+        below = c.places.iter().fold(below, |b, &(line, _)| b.max(line));
     }
     let count = usize::try_from(below).unwrap_or(0) + 1;
     let attribute = plain_block(row);
@@ -560,8 +577,10 @@ fn written_row<'t>(
         lines.resize(count, vec![" ".to_string(); cells.len()]);
     }
     for (column, cell) in cells.iter().enumerate() {
-        for (at, &line) in cell.places.iter().enumerate() {
+        for (at, &(line, col)) in cell.places.iter().enumerate() {
             let line = usize::try_from(line).unwrap_or(0);
+            // C2-W-067: the covered columns of a wide cell are the span cells written behind it.
+            let column = column + usize::try_from(col).unwrap_or(0);
             if let Some(slot) = lines.get_mut(line).and_then(|l| l.get_mut(column)) {
                 *slot = segment("", cell.extra.get(at).map_or("", String::as_str));
             }

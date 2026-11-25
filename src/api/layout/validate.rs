@@ -143,20 +143,19 @@ fn wraps(value: &Value, path: &str, span: u64) -> Result<(), Error> {
     let items = value
         .as_array()
         .ok_or_else(|| fail(path, "is not a list"))?;
-    let mut previous = 0;
+    let mut previous = (0, 0, 0);
     for (index, item) in items.iter().enumerate() {
         let at = format!("{path}/{index}");
         let wrap = object(item, &at)?;
         for key in wrap.keys() {
-            if !["line", "path", "offset", "row"].contains(&key.as_str()) {
+            if !["line", "path", "offset", "row", "col"].contains(&key.as_str()) {
                 return Err(fail(format!("{at}/{key}"), "is not a field of a wrap"));
             }
         }
         let line = count(wrap.get("line"), &format!("{at}/line"), 1)?;
-        if line < previous {
+        if line < previous.0 {
             return Err(fail(format!("{at}/line"), "is not sorted by line"));
         }
-        previous = line;
         pointer(wrap.get("path"), &format!("{at}/path"))?;
         let offset = count(wrap.get("offset"), &format!("{at}/offset"), 0)?;
         if span > 0 && offset > span {
@@ -165,9 +164,22 @@ fn wraps(value: &Value, path: &str, span: u64) -> Result<(), Error> {
                 "is past the source span of its cell",
             ));
         }
-        if wrap.contains_key("row") {
-            count(wrap.get("row"), &format!("{at}/row"), 0)?;
+        let row = match wrap.get("row") {
+            Some(_) => count(wrap.get("row"), &format!("{at}/row"), 0)?,
+            None => 0,
+        };
+        let col = match wrap.get("col") {
+            Some(_) => count(wrap.get("col"), &format!("{at}/col"), 0)?,
+            None => 0,
+        };
+        // C2-L-048: those of one line by row, and those of one row by col.
+        if line == previous.0 && row < previous.1 {
+            return Err(fail(format!("{at}/row"), "is not sorted by row"));
         }
+        if line == previous.0 && row == previous.1 && col < previous.2 {
+            return Err(fail(format!("{at}/col"), "is not sorted by col"));
+        }
+        previous = (line, row, col);
     }
     Ok(())
 }

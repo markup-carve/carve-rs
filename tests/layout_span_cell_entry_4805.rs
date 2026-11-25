@@ -25,8 +25,8 @@ fn a_colspan_cell_takes_the_fragment_under_its_mark() {
         vec![
             json!({"path":"/children/0/children/0/children/0","startByte":0,"endByte":19,"continuationLines":1}),
             json!({"path":CELL,"startByte":1,"endByte":18,"wraps":[
-                {"line":1,"path":TEXT,"offset":2},
-                {"line":1,"path":TEXT,"offset":4},
+                {"line":1,"path":TEXT,"offset":2,"col":0},
+                {"line":1,"path":TEXT,"offset":4,"col":1},
             ]}),
         ]
     );
@@ -38,10 +38,10 @@ fn the_wraps_of_a_colspan_cell_sort_by_line() {
     assert_eq!(
         nodes[1],
         json!({"path":CELL,"startByte":1,"endByte":28,"wraps":[
-            {"line":1,"path":TEXT,"offset":2},
-            {"line":1,"path":TEXT,"offset":6},
-            {"line":2,"path":TEXT,"offset":4},
-            {"line":2,"path":TEXT,"offset":8},
+            {"line":1,"path":TEXT,"offset":2,"col":0},
+            {"line":1,"path":TEXT,"offset":6,"col":1},
+            {"line":2,"path":TEXT,"offset":4,"col":0},
+            {"line":2,"path":TEXT,"offset":8,"col":1},
         ]})
     );
 }

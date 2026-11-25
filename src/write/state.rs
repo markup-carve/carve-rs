@@ -14,6 +14,18 @@ pub struct Wrap {
     pub path: String,
     pub offset: usize,
     pub row: Option<i64>,
+    pub col: Option<i64>,
+}
+
+/// C2-B-184: the wraps of a cell in the order the reader joins their fragments: by row, then by
+/// covered column, then by line; the sidecar lists them by line (C2-L-048).
+pub fn content_order(wraps: &[Wrap]) -> std::borrow::Cow<'_, [Wrap]> {
+    if wraps.iter().all(|w| w.row.is_none() && w.col.is_none()) {
+        return std::borrow::Cow::Borrowed(wraps);
+    }
+    let mut sorted = wraps.to_vec();
+    sorted.sort_by_key(|w| (w.row.unwrap_or(0), w.col.unwrap_or(0), w.line));
+    std::borrow::Cow::Owned(sorted)
 }
 
 /// The facts of the sidecar that the writer reads (C2-L-046), by node.

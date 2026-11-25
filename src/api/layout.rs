@@ -861,8 +861,8 @@ impl Walk<'_> {
         }
         let spans_rows = node.get("rowspan").and_then(Value::as_u64).unwrap_or(1) > 1;
         let spans_columns = node.get("colspan").and_then(Value::as_u64).unwrap_or(1) > 1;
-        let mut wraps = Vec::new();
-        let mut offset = 0;
+        // Each fragment that is not empty: its source range, line, row and covered column.
+        let mut kept = Vec::new();
         let mut at = home;
         for (index, piece) in origin.pieces.iter().enumerate() {
             // A piece moved in from a span mark can stand in a row below the cell's own.
@@ -872,31 +872,54 @@ impl Walk<'_> {
             while at + 1 < rows.len() && rows[at].end < piece.start {
                 at += 1;
             }
-            let line = continuation_lines(self.source, rows[at].start, piece.start);
-            if line > 0 {
-                if index > 0 && offset > 0 && piece.join == crate::inline::Join::Cell {
-                    offset += 1;
-                }
-                let mut wrap = json!({"line":line,"path":format!("{path}/children/0/children/0"),"offset":offset});
-                // C2-L-020: a wrap in a cell that spans rows names the row of its fragment.
-                if spans_rows {
-                    wrap["row"] = (at - home).into();
-                }
-                wraps.push(wrap);
+            let text = self.source.get(piece.start..piece.end).unwrap_or("");
+            let trimmed = text.trim_start_matches([' ', '\t']);
+            let start = piece.start + text.len() - trimmed.len();
+            let end = start + trimmed.trim_end_matches([' ', '\t']).len();
+            if start == end {
+                continue;
             }
-            offset += self
-                .source
-                .get(piece.start..piece.end)
-                .unwrap_or("")
-                .trim_end_matches([' ', '\t'])
-                .len();
+            let line = continuation_lines(self.source, rows[at].start, piece.start);
+            let col = origin.piece_cols.get(index).copied().unwrap_or(0);
+            kept.push(((start, end), line, at - home, col));
+        }
+        let ranges: Vec<(usize, usize)> = kept.iter().map(|k| k.0).collect();
+        let kids: Vec<crate::view::V<'_>> = node
+            .pointer("/children/0/children")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().map(crate::view::V::Json).collect())
+            .unwrap_or_default();
+        let located = crate::write::locate_wraps(self.source, &ranges, &kids);
+        let mut wraps = Vec::new();
+        for (n, &(_, line, row, col)) in kept.iter().enumerate() {
+            if line == 0 {
+                continue;
+            }
+            // C2-L-021: a cell whose first fragment stands in a continuation row starts there,
+            // at its first inline whatever its type; a later one at its joining space (C2-L-020).
+            let Some((child, offset)) = (match n.checked_sub(1) {
+                None => Some((0, 0)),
+                Some(m) => located.get(m).copied().flatten(),
+            }) else {
+                continue;
+            };
+            let mut wrap = json!({"line":line,"path":format!("{path}/children/0/children/{child}"),"offset":offset});
+            // C2-L-020: a wrap in a cell that spans rows names the row of its fragment, and one in
+            // a cell over several columns its covered column, the cell's own being 0.
+            if spans_rows {
+                wrap["row"] = row.into();
+            }
+            if spans_columns {
+                wrap["col"] = col.into();
+            }
+            wraps.push(wrap);
         }
         if wraps.is_empty() {
             return;
         }
-        // C2-L-048: by line, and the wraps of one line by row.
+        // C2-L-048: by line, those of one line by row, and those of one row by col.
         if spans_rows || spans_columns {
-            wraps.sort_by_key(|w| w["line"].as_u64());
+            wraps.sort_by_key(|w| (w["line"].as_u64(), w["row"].as_u64(), w["col"].as_u64()));
         }
         // C2-L-013: the range ends at the last piece in the source.
         let last = origin

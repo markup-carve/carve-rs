@@ -13,6 +13,7 @@ mod check;
 mod controls;
 mod extension;
 mod facts;
+pub(crate) use facts::locate_wraps;
 mod inline;
 mod kinds;
 mod node;
