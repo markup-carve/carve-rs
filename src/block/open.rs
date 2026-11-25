@@ -348,7 +348,7 @@ impl Parser<'_> {
         let ev = ContainerKind::Item { task: mk.task };
         let item = Kind::Item {
             marker_col: m,
-            content_col: mk.content_col - (k.col - m),
+            content_col: mk.item_col - (k.col - m),
         };
         self.push_container(item, ev, start, mk.attrs.clone());
         let mut c = *k;

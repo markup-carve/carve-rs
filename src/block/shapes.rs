@@ -50,6 +50,8 @@ pub struct ListMarker {
     /// The cursor at the first content character.
     pub content: usize,
     pub content_col: usize,
+    /// The item's content column: a task box is item text and does not move it (C2-B-027).
+    pub item_col: usize,
 }
 
 fn roman_value(s: &str) -> Option<u64> {
@@ -150,6 +152,7 @@ pub fn list_marker(c: &Cursor<'_>) -> Option<ListMarker> {
         task: None,
         content: pos,
         content_col: col,
+        item_col: col,
     };
     if let MarkerKind::Ordered { value: None, .. } = kind {
         // C2-B-043: `. . . and then silence` is a paragraph.
