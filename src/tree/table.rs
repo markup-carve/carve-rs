@@ -580,17 +580,17 @@ pub(crate) fn join_span_pieces(rows: &mut [Row], groups: &[(u8, usize)]) {
 }
 
 fn move_joined_marks(rows: &mut [Row], spans: &Grid<Resolved>) {
-    let mut moves: Vec<(Origin, Pieces)> = Vec::new();
+    let mut moves: Vec<(Origin, usize, Pieces)> = Vec::new();
     for (r, row) in rows.iter_mut().enumerate() {
         for (c, cell) in row.cells.iter_mut().enumerate() {
             let origin = spans.get(r, c).and_then(|sp| sp.origin);
             if let Some(origin) = origin.filter(|_| !cell.pieces.is_empty()) {
-                moves.push((origin, std::mem::take(&mut cell.pieces)));
+                moves.push((origin, c, std::mem::take(&mut cell.pieces)));
                 cell.joined = false;
             }
         }
     }
-    for (origin, mut pieces) in moves {
+    for (origin, c, mut pieces) in moves {
         if let Some(cell) = rows
             .get_mut(origin.row)
             .and_then(|r| r.cells.get_mut(origin.col))
@@ -599,6 +599,12 @@ fn move_joined_marks(rows: &mut [Row], spans: &Grid<Resolved>) {
                 if let Some(first) = pieces.first_mut() {
                     first.join = Join::Cell;
                 }
+            }
+            let col = c.saturating_sub(origin.col);
+            if col > 0 || !cell.piece_cols.is_empty() {
+                cell.piece_cols.resize(cell.pieces.len(), 0);
+                cell.piece_cols
+                    .resize(cell.pieces.len() + pieces.len(), col);
             }
             cell.pieces.append(&mut pieces);
             cell.joined = true;

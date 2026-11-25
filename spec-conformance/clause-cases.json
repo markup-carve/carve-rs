@@ -83342,6 +83342,608 @@
    "diagnosticsComplete": true
   },
   "from": []
+ },
+ {
+  "id": "CC-2077",
+  "clauses": [
+   "C2-M-040",
+   "C2-B-211"
+  ],
+  "why": "C2-M-040: A column gives it only on an axis where every column before it gives one too, as an `aligns` or `valigns` list has no empty entry (C2-B-211); the cells of the other columns keep their own marks. C2-B-211: an empty or malformed entry makes the whole value invalid, so that it sets no column.",
+  "summary": "a right-aligned second column of a table with no head keeps the cell mark when the first column has no alignment",
+  "kind": "import",
+  "html": "<table><tbody><tr><td>a</td><td style=\"text-align: right;\">b</td></tr></tbody></table>",
+  "options": {},
+  "expected": {
+   "carve": "| a |{>} b |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2078",
+  "clauses": [
+   "C2-M-040",
+   "C2-B-211"
+  ],
+  "why": "C2-M-040: A column gives it only on an axis where every column before it gives one too, as an `aligns` or `valigns` list has no empty entry (C2-B-211); the cells of the other columns keep their own marks. C2-B-211: an empty or malformed entry makes the whole value invalid, so that it sets no column.",
+  "summary": "each axis on its own: both columns take the right alignment, and the bottom mark stays on its cell",
+  "kind": "import",
+  "html": "<table><tr><td align=\"right\">a</td><td align=\"right\" valign=\"bottom\">b</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{aligns=right,right}\n| a |{?v} b |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2079",
+  "clauses": [
+   "C2-W-088",
+   "C2-W-125"
+  ],
+  "why": "C2-W-088: For each kind reported in a block, the round escapes every potential opener of that kind in that block, not only the reported ones, and the text is then parsed again. C2-W-125: A round of C2-W-088 that reports a construct the tree does not hold may also place the backslash of one of these cases in the same round, beside the escapes of its kinds ... A case backslash does not cancel a kind that the same parse reports.",
+  "summary": "an outer link on the text `[foo` reports the kind `[`, and the case-five backslash on the inner link's closer does not cancel its escape (CommonMark example 526)",
+  "kind": "format",
+  "input": "[foo[https://example.com/?search=\\](uri)](https://example.com/?search=%5D(uri))",
+  "options": {},
+  "expected": {
+   "carve": "\\[foo[https://example.com/?search=\\](uri)](https://example.com/?search=%5D(uri))\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2080",
+  "clauses": [
+   "C2-W-088",
+   "C2-W-125"
+  ],
+  "why": "C2-W-088: For each kind reported in a block, the round escapes every potential opener of that kind in that block, not only the reported ones, and the text is then parsed again. C2-W-125: A round of C2-W-088 that reports a construct the tree does not hold may also place the backslash of one of these cases in the same round, beside the escapes of its kinds ... A case backslash does not cancel a kind that the same parse reports.",
+  "summary": "the reported kind `[` also escapes the text `[ref` inside the link, beside the case-five backslash (CommonMark example 538)",
+  "kind": "format",
+  "input": "[foo[https://example.com/?search=\\][ref]](https://example.com/?search=%5D%5Bref%5D)",
+  "options": {},
+  "expected": {
+   "carve": "\\[foo[https://example.com/?search=\\]\\[ref\\]](https://example.com/?search=%5D%5Bref%5D)\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2081",
+  "clauses": [
+   "C2-B-130",
+   "C2-B-027"
+  ],
+  "why": "C2-B-130: A line of a line block keeps the spaces that lead it after the strip (C2-B-027) as content. C2-B-027: In a task item, the task mark is item text, and the content column is the task mark’s column after the list marker and any spaces before it, regardless of the task state.",
+  "summary": "a line block behind a task box keeps the spaces its line has past the task mark column, not stripped to the opener column (carve#6670)",
+  "input": "- [ ] ::: |\n      a\n  :::",
+  "options": {},
+  "expected": {
+   "html": "<ul class=\"task-list\">\n  <li class=\"task\" style=\"list-style: none\"><input type=\"checkbox\" disabled> \n    <div class=\"line-block\">\n      <p>&nbsp;&nbsp;&nbsp;&nbsp;a</p>\n    </div>\n  </li>\n</ul>",
+   "children": [
+    {
+     "type": "list",
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "line_block",
+         "children": [
+          {
+           "type": "line",
+           "children": [
+            {
+             "type": "text",
+             "value": "    a"
+            }
+           ]
+          }
+         ]
+        }
+       ],
+       "task": {
+        "mark": " "
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2082",
+  "clauses": [
+   "C2-B-130",
+   "C2-B-027"
+  ],
+  "why": "C2-B-130: A line of a line block keeps the spaces that lead it after the strip (C2-B-027) as content. C2-B-027: In a task item, the task mark is item text, and the content column is the task mark’s column after the list marker and any spaces before it, regardless of the task state.",
+  "summary": "a line block in a div behind a task box keeps the spaces its line has past the task mark column (carve#6670)",
+  "input": "- [ ] ::: note\n      ::: |\n      a\n      :::\n  :::",
+  "options": {},
+  "expected": {
+   "html": "<ul class=\"task-list\">\n  <li class=\"task\" style=\"list-style: none\"><input type=\"checkbox\" disabled> \n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <div class=\"line-block\">\n        <p>&nbsp;&nbsp;&nbsp;&nbsp;a</p>\n      </div>\n    </aside>\n  </li>\n</ul>",
+   "children": [
+    {
+     "type": "list",
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "admonition",
+         "kind": "note",
+         "children": [
+          {
+           "type": "line_block",
+           "children": [
+            {
+             "type": "line",
+             "children": [
+              {
+               "type": "text",
+               "value": "    a"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ],
+       "task": {
+        "mark": " "
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2083",
+  "clauses": [
+   "C2-B-130",
+   "C2-B-027"
+  ],
+  "why": "C2-B-130: A line of a line block keeps the spaces that lead it after the strip (C2-B-027) as content. C2-B-027: In a task item, the task mark is item text, and the content column is the task mark’s column after the list marker and any spaces before it, regardless of the task state.",
+  "summary": "a line block behind the task box of a nested item keeps the spaces its line has past that task mark column (carve#6670)",
+  "input": "- a\n  - [ ] ::: |\n        a\n    :::",
+  "options": {},
+  "expected": {
+   "html": "<ul>\n  <li>a\n    <ul class=\"task-list\">\n      <li class=\"task\" style=\"list-style: none\"><input type=\"checkbox\" disabled> \n        <div class=\"line-block\">\n          <p>&nbsp;&nbsp;&nbsp;&nbsp;a</p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+   "children": [
+    {
+     "type": "list",
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ]
+        },
+        {
+         "type": "list",
+         "marker": {
+          "kind": "bullet",
+          "char": "-"
+         },
+         "spacing": "tight",
+         "children": [
+          {
+           "type": "list_item",
+           "children": [
+            {
+             "type": "line_block",
+             "children": [
+              {
+               "type": "line",
+               "children": [
+                {
+                 "type": "text",
+                 "value": "    a"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "task": {
+            "mark": " "
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2084",
+  "clauses": [
+   "C2-B-130"
+  ],
+  "why": "C2-B-130: A line of a line block keeps the spaces that lead it after the strip (C2-B-027) as content.",
+  "summary": "a top-level line block keeps every space that leads its line, also those under the opener indent (carve#6670)",
+  "input": "  ::: |\n      a\n  :::",
+  "options": {},
+  "expected": {
+   "html": "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a</p>\n</div>",
+   "children": [
+    {
+     "type": "line_block",
+     "children": [
+      {
+       "type": "line",
+       "children": [
+        {
+         "type": "text",
+         "value": "      a"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2085",
+  "clauses": [
+   "C2-H-009"
+  ],
+  "why": "C2-H-009: A generated `style` merged with an authored `style` stands at the place of the authored `style` key, wherever the `align` key stands; without an authored `style`, the `style` of an `align` key stands at the place of the `align` key",
+  "summary": "the merged style stands at the authored style key when align comes first with a key between (carve#6688)",
+  "kind": "render",
+  "input": "{align=center k=v style=\"c: d\"}\nText.\n",
+  "options": {},
+  "expected": {
+   "html": "<p k=\"v\" style=\"c: d; text-align: center;\">Text.</p>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2086",
+  "clauses": [
+   "C2-H-009"
+  ],
+  "why": "C2-H-009: A generated `style` merged with an authored `style` stands at the place of the authored `style` key, wherever the `align` key stands; without an authored `style`, the `style` of an `align` key stands at the place of the `align` key",
+  "summary": "the merged style stands at the authored style key when style comes first with a key between",
+  "kind": "render",
+  "input": "{style=\"c: d\" k=v align=center}\nText.\n",
+  "options": {},
+  "expected": {
+   "html": "<p style=\"c: d; text-align: center;\" k=\"v\">Text.</p>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2087",
+  "clauses": [
+   "C2-H-009"
+  ],
+  "why": "C2-H-009: A generated `style` merged with an authored `style` stands at the place of the authored `style` key, wherever the `align` key stands; without an authored `style`, the `style` of an `align` key stands at the place of the `align` key",
+  "summary": "without an authored style the align style stands at the align key's place",
+  "kind": "render",
+  "input": "{align=center k=v}\nText.\n",
+  "options": {},
+  "expected": {
+   "html": "<p style=\"text-align: center;\" k=\"v\">Text.</p>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2088",
+  "clauses": [
+   "C2-B-184"
+  ],
+  "why": "C2-B-184: A cell that covers several grid positions holds its fragments position by position: the positions it covers in row-major order, its own first, and the fragments of one position in the order of their rows, as in 0.1.",
+  "summary": "continuation fragments under a column span join the cell column by column (carve#6691)",
+  "kind": "render",
+  "input": "| a | < |\n+ b | c |\n+ d | e |",
+  "options": {},
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a b d c e</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2089",
+  "clauses": [
+   "C2-A-094"
+  ],
+  "why": "C2-A-094: In a cell that covers several grid positions the fragments stand in the order of C2-B-184, position by position, and not in source order.",
+  "summary": "the text of a spanned cell with two continuation rows follows column order in the tree (carve#6691)",
+  "kind": "parse",
+  "input": "| a | < |\n+ b | c |\n+ d | e |",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "table",
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ],
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "a b d c e"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          },
+          {
+           "type": "table_cell",
+           "header": false,
+           "span": "colspan",
+           "children": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2090",
+  "clauses": [
+   "C2-L-020",
+   "C2-L-048"
+  ],
+  "why": "C2-L-020: A wrap in a cell that covers more than one column also has `col`, the index of the covered column that holds the fragment, counted from the cell's own column, which is 0. C2-L-048: The `wraps` of a cell are sorted by `line`, those of one line by `row`, and those of one row by `col`",
+  "summary": "a cell that covers two columns records the column of each wrap (carve#6712)",
+  "kind": "layout",
+  "input": "| a | < |\n+ | b |\n+ e | |\n",
+  "options": {},
+  "expected": {
+   "layout": {
+    "nodes": [
+     {
+      "path": "/children/0/children/0/children/0/children/0",
+      "startByte": 1,
+      "endByte": 22,
+      "wraps": [
+       {
+        "line": 1,
+        "path": "/children/0/children/0/children/0/children/0/children/0/children/0",
+        "offset": 4,
+        "col": 1
+       },
+       {
+        "line": 2,
+        "path": "/children/0/children/0/children/0/children/0/children/0/children/0",
+        "offset": 2,
+        "col": 0
+       }
+      ]
+     }
+    ]
+   },
+   "children": [
+    {
+     "type": "table",
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ],
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "a e b"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          },
+          {
+           "type": "table_cell",
+           "header": false,
+           "span": "colspan",
+           "children": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2091",
+  "clauses": [
+   "C2-L-020",
+   "C2-W-067"
+  ],
+  "why": "C2-L-020: A wrap in a cell that covers more than one column also has `col`, the index of the covered column that holds the fragment, counted from the cell's own column, which is 0. C2-W-067: Continuation rows are written at the places the sidecar records (C2-L-019, C2-L-020).",
+  "summary": "the formatter writes each fragment of a cell that covers two columns under its column (carve#6712)",
+  "kind": "format",
+  "input": "| a | < |\n+ | b |\n+ e | |\n",
+  "options": {},
+  "expected": {
+   "carve": "| a | < |\n+ | b |\n+ e | |\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2092",
+  "clauses": [
+   "C2-L-020",
+   "C2-L-048"
+  ],
+  "why": "C2-L-020: A wrap in a cell that covers more than one column also has `col`, the index of the covered column that holds the fragment, counted from the cell's own column, which is 0. C2-L-048: The `wraps` of a cell are sorted by `line`, those of one line by `row`, and those of one row by `col`",
+  "summary": "two wraps of one continuation row in a cell that covers two columns are sorted by col (carve#6712)",
+  "kind": "layout",
+  "input": "| a | < |\n+ b | c |\n",
+  "options": {},
+  "expected": {
+   "layout": {
+    "nodes": [
+     {
+      "path": "/children/0/children/0/children/0/children/0",
+      "startByte": 1,
+      "endByte": 18,
+      "wraps": [
+       {
+        "line": 1,
+        "path": "/children/0/children/0/children/0/children/0/children/0/children/0",
+        "offset": 2,
+        "col": 0
+       },
+       {
+        "line": 1,
+        "path": "/children/0/children/0/children/0/children/0/children/0/children/0",
+        "offset": 4,
+        "col": 1
+       }
+      ]
+     }
+    ]
+   },
+   "children": [
+    {
+     "type": "table",
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ],
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "a b c"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          },
+          {
+           "type": "table_cell",
+           "header": false,
+           "span": "colspan",
+           "children": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2093",
+  "clauses": [
+   "C2-L-020",
+   "C2-W-067"
+  ],
+  "why": "C2-L-020: A wrap in a cell that covers more than one column also has `col`, the index of the covered column that holds the fragment, counted from the cell's own column, which is 0. C2-W-067: Continuation rows are written at the places the sidecar records (C2-L-019, C2-L-020).",
+  "summary": "the formatter keeps a continuation row of a cell that covers two columns as written (carve#6712)",
+  "kind": "format",
+  "input": "| a | < |\n+ b | c |\n",
+  "options": {},
+  "expected": {
+   "carve": "| a | < |\n+ b | c |\n"
+  },
+  "from": []
  }
  ]
 }

@@ -30,6 +30,7 @@ pub fn from_layout(layout: V<'_>) -> Vec<Entry> {
                             path: s(w, "path")?.to_string(),
                             offset: usize::try_from(w.get("offset")?.as_u64()?).ok()?,
                             row: w.get("row").and_then(V::as_i64),
+                            col: w.get("col").and_then(V::as_i64),
                         })
                     })
                     .collect()
@@ -99,7 +100,12 @@ fn read_wraps<'t>(
 ) {
     let mut cursors: AddrMap<usize, Vec<usize>> = AddrMap::default();
     let mut starts: AddrSet<usize> = AddrSet::default();
-    for wrap in entry.facts.wraps.iter().flatten() {
+    let wraps = entry
+        .facts
+        .wraps
+        .as_deref()
+        .map(super::state::content_order);
+    for wrap in wraps.iter().flat_map(|w| w.iter()) {
         let ok = node_at(doc, &wrap.path).is_some_and(|node| {
             if ty(node) != "text" {
                 if wrap.offset != 0
@@ -520,42 +526,58 @@ fn row_facts(
         if inlines.is_empty() {
             continue;
         }
-        let mut parts = vec![first.get(c).map_or("", |f| content_fragment(f))];
-        parts.extend(
-            more.iter()
-                .map(|m| m.get(c).map_or("", |f| f.trim_matches([' ', '\t']))),
-        );
+        // C2-B-184: a cell over several columns takes its own column first, then each covered one.
+        let span = cell
+            .get("colspan")
+            .and_then(V::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .filter(|&n| n > 1);
+        // Each fragment with its continuation row and covered column.
+        let mut parts = vec![(first.get(c).map_or("", |f| content_fragment(f)), 0, 0)];
+        for col in 0..span.unwrap_or(1) {
+            for (k, m) in more.iter().enumerate() {
+                let part = m.get(c + col).map_or("", |f| f.trim_matches([' ', '\t']));
+                parts.push((part, k + 1, col));
+            }
+        }
+        parts.retain(|p| !p.0.is_empty());
+        if parts.iter().all(|p| p.1 == 0) {
+            continue;
+        }
         let base = format!("{path}/children/{c}/children/0/children");
+        let ranges: Vec<(usize, usize)> = parts
+            .iter()
+            .map(|p| {
+                let at = offset_in(src, p.0);
+                (at, at + p.0.len())
+            })
+            .collect();
+        let kids: Vec<V<'_>> = if parts.len() > 1 {
+            inlines.iter().collect()
+        } else {
+            Vec::new()
+        };
+        let located = locate_wraps(src, &ranges, &kids);
         let mut wraps = Vec::new();
-        let mut seen = false;
-        for (k, part) in parts.iter().enumerate() {
-            if part.is_empty() {
+        for (n, &(_, k, col)) in parts.iter().enumerate() {
+            if k == 0 {
                 continue;
             }
-            if k > 0 {
-                // C2-L-021: a cell whose first piece stands in a continuation row starts there,
-                // whatever its first inline; a later piece is a break in a text child (C2-L-020).
-                let wrap = if seen {
-                    text_wrap(
-                        src,
-                        &inlines,
-                        parts.get(..k).unwrap_or(&[]),
-                        offset_in(src, part),
-                        &base,
-                    )
-                } else {
-                    Some((format!("{base}/0"), 0))
-                };
-                if let Some((path, offset)) = wrap {
-                    wraps.push(Wrap {
-                        line: i64::try_from(k).unwrap_or(0),
-                        path,
-                        offset,
-                        row: None,
-                    });
-                }
+            // C2-L-021: a cell whose first piece stands in a continuation row starts there,
+            // whatever its first inline; a later piece is a break in a text child (C2-L-020).
+            let wrap = match n.checked_sub(1) {
+                None => Some((0, 0)),
+                Some(m) => located.get(m).copied().flatten(),
+            };
+            if let Some((child, offset)) = wrap {
+                wraps.push(Wrap {
+                    line: i64::try_from(k).unwrap_or(0),
+                    path: format!("{base}/{child}"),
+                    offset,
+                    row: None,
+                    col: span.map(|_| i64::try_from(col).unwrap_or(0)),
+                });
             }
-            seen = true;
         }
         if !wraps.is_empty() {
             out.push(Entry {
@@ -572,47 +594,6 @@ fn row_facts(
 /// The byte offset of `part`, a slice of `src`, in `src`.
 fn offset_in(src: &str, part: &str) -> usize {
     (part.as_ptr() as usize).saturating_sub(src.as_ptr() as usize)
-}
-
-/// The text child of a cell's paragraph that the piece starting at `at` continues, and the byte
-/// offset of that break in its value: the pieces before it read into the value with one joining
-/// space each.
-fn text_wrap(
-    src: &str,
-    inlines: &Arr<'_>,
-    before: &[&str],
-    at: usize,
-    base: &str,
-) -> Option<(String, usize)> {
-    // A text child can carry no position; it fills the gap between its siblings.
-    let nodes: Vec<V<'_>> = inlines.iter().collect();
-    let (index, node, start) = nodes.iter().enumerate().find_map(|(i, &n)| {
-        if ty(n) != "text" {
-            return None;
-        }
-        let start = span(n).map(|(a, _)| a).or_else(|| {
-            i.checked_sub(1)
-                .and_then(|p| nodes.get(p))
-                .and_then(|&p| span(p))
-                .map(|(_, b)| b)
-        });
-        let end = nodes
-            .get(i + 1)
-            .and_then(|&n| span(n))
-            .map_or(usize::MAX, |(a, _)| a);
-        let start = start.unwrap_or(0);
-        (start < at && at <= end).then_some((i, n, start))
-    })?;
-    let mut offset = 0;
-    for piece in before.iter().filter(|p| !p.is_empty()) {
-        let from = offset_in(src, piece);
-        if from + piece.len() < start {
-            continue;
-        }
-        let clip = piece.get(start.saturating_sub(from)..)?;
-        offset += unescaped_len(clip) + 1;
-    }
-    (offset <= text(node).len()).then(|| (format!("{base}/{index}"), offset))
 }
 
 fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
@@ -707,4 +688,94 @@ fn option_spelling(node: V<'_>, src: &str, quotes: usize) -> Option<BTreeMap<Str
         at = v_end.max(at + 1);
     }
     (!out.is_empty()).then_some(out)
+}
+
+/// C2-L-020, C2-L-021: where each fragment of a cell behind its first starts among `kids`, the
+/// inline children of the cell's paragraph. `pieces` are the source ranges of the fragments that
+/// are not empty, in the order the reader joins them with one space each (C2-B-184), so the
+/// content is read in those coordinates and a node other than text is placed by its position.
+/// Gives, for each piece behind the first, the index of the text child that holds the joining
+/// space and the byte offset behind it, or `None` where no text child among `kids` holds it.
+pub(crate) fn locate_wraps(
+    src: &str,
+    pieces: &[(usize, usize)],
+    kids: &[V<'_>],
+) -> Vec<Option<(usize, usize)>> {
+    if pieces.len() < 2 {
+        return Vec::new();
+    }
+    let mut content = String::new();
+    let mut starts = Vec::with_capacity(pieces.len());
+    for (k, &(a, b)) in pieces.iter().enumerate() {
+        if k > 0 {
+            content.push(' ');
+        }
+        starts.push(content.len());
+        content.push_str(src.get(a..b).unwrap_or(""));
+    }
+    // Children come in content order, so the piece of each position is found moving forward.
+    let mut cursor = 0;
+    let mut to_content = |at: usize, end: bool| {
+        while let Some(&(a, b)) = pieces.get(cursor) {
+            let inside = if end {
+                a < at && at <= b
+            } else {
+                a <= at && at < b
+            };
+            if inside {
+                return starts.get(cursor).map(|&c| c + at - a);
+            }
+            cursor += 1;
+        }
+        None
+    };
+    // The content range of each child: a node other than text by its position, a text child
+    // the gap between its neighbors. A node without a position leaves the rest unknown.
+    let mut ranges: Vec<Option<(usize, usize)>> = Vec::with_capacity(kids.len());
+    let mut from = Some(0);
+    let mut open_text = None;
+    for (i, &kid) in kids.iter().enumerate() {
+        if ty(kid) == "text" {
+            ranges.push(None);
+            open_text = Some(i);
+            continue;
+        }
+        let range = span(kid).and_then(|(a, b)| {
+            let start = to_content(a, false)?;
+            Some((start, to_content(b, true)?))
+        });
+        if let (Some(t), Some(f), Some((start, _))) = (open_text.take(), from, range) {
+            if let Some(r) = ranges.get_mut(t) {
+                *r = Some((f, start));
+            }
+        }
+        from = range.map(|r| r.1);
+        ranges.push(range);
+    }
+    if let (Some(t), Some(f)) = (open_text, from) {
+        if let Some(r) = ranges.get_mut(t) {
+            *r = Some((f, content.len()));
+        }
+    }
+    let mut child = 0;
+    starts
+        .iter()
+        .skip(1)
+        .map(|&c| {
+            let space = c - 1;
+            while ranges
+                .get(child)
+                .is_some_and(|r| r.is_none_or(|(_, b)| b <= space))
+            {
+                child += 1;
+            }
+            let (a, b) = ranges.get(child).copied().flatten()?;
+            let kid = *kids.get(child)?;
+            if ty(kid) != "text" || !(a <= space && space < b) {
+                return None;
+            }
+            let offset = unescaped_len(content.get(a..space)?) + 1;
+            (text(kid).as_bytes().get(offset - 1) == Some(&b' ')).then_some((child, offset))
+        })
+        .collect()
 }
