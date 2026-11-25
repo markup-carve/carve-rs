@@ -809,7 +809,9 @@ struct StandardExtensions {
 impl StandardExtensions {
     fn from_args(args: &Args) -> Result<Self, i32> {
         let mut standard = Self::from_catalog(args)?;
-        if let Some(locale) = str_value(args, "quote-locale") {
+        // A listed `carve.smartQuotes` already took the locale.
+        let listed = standard.names.iter().any(|n| n == "carve.smartQuotes");
+        if let Some(locale) = str_value(args, "quote-locale").filter(|_| !listed) {
             let quotes = api::extensions::smart_quotes(&api::extensions::SmartQuotesOptions {
                 locale: Some(locale.to_string()),
                 ..Default::default()
@@ -880,17 +882,39 @@ impl StandardExtensions {
         let render = args.command == "render";
         let mut host = Carve::new();
         for name in &names {
-            // `carve.tab` has no matcher: the matcher of its parent claims it.
-            if row(name).is_some_and(|r| r.get("matcher").is_none()) {
+            // `carve.tab` has neither a matcher nor a transform: the matcher
+            // of its parent claims it. Transform rows register (C2-X-072).
+            if row(name).is_some_and(|r| r.get("matcher").is_none() && r["transform"] != true) {
                 continue;
             }
-            let mode = options
-                .get(name)
-                .and_then(|o| o.get("mode"))
-                .and_then(Value::as_str);
+            // C2-X-072: `carve.glossary` brings `carve.term`, `carve.index`
+            // brings `carve.indexTerm`; one bundle registers once.
+            let partner = match name.as_str() {
+                "carve.term" => Some("carve.glossary"),
+                "carve.indexTerm" => Some("carve.index"),
+                _ => None,
+            };
+            if partner.is_some_and(|p| names.iter().any(|n| n == p)) {
+                continue;
+            }
+            let setting = |key: &str| {
+                options
+                    .get(name)
+                    .and_then(|o| o.get(key))
+                    .and_then(Value::as_str)
+            };
+            let mode = setting("mode");
             let enabled = match (name.as_str(), mode) {
                 ("carve.tabs", Some(mode)) if render => host.enable_standard_tabs_renderer(mode),
                 ("carve.cite", Some(mode)) if render => host.enable_standard_cite_renderer(mode),
+                ("carve.smartQuotes", _) => host.register(api::extensions::smart_quotes(
+                    &api::extensions::SmartQuotesOptions {
+                        locale: setting("locale")
+                            .or_else(|| str_value(args, "quote-locale"))
+                            .map(str::to_string),
+                        ..api::extensions::SmartQuotesOptions::default()
+                    },
+                )),
                 // An extension with no standard renderer (C2-X-058) keeps its fallback.
                 _ if render => host
                     .enable_standard(name, true)

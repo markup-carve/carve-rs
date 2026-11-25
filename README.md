@@ -314,7 +314,10 @@ The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 ```sh
 carve render --extensions '["carve.tabs","carve.fencedRender.mermaid"]' doc.crv
 carve render --extensions '["carve.tabs"]' --extension-options '{"carve.tabs":{"mode":"aria"}}' doc.crv
+carve render --smart-typography --extensions '["carve.smartQuotes"]' --extension-options '{"carve.smartQuotes":{"locale":"de"}}' doc.crv
 ```
+
+The names include the 0.1 CLI keys: the diagram presets `carve.fencedRender.{abc,chart,d2,dot,graphviz,plantuml,puml,vega-lite,wavedrom}`, and the document extensions marked `transform` in the catalog, such as `carve.headingPermalinks`, `carve.toc` and `carve.smartQuotes` (C2-X-071 to C2-X-075). `carve.glossary` brings `carve.term` with it and `carve.index` brings `carve.indexTerm`.
 
 A name that is not a standard extension, an option the extension's renderer does not declare, or options for an extension that `--extensions` does not list are usage errors. Host extensions and renderers take Rust code and stay library-only. `carve <command> --help` lists the flags of a command.
 
