@@ -111,8 +111,8 @@ impl<'a> Builder<'_, 'a> {
             r.comments.split_off(split)
         });
         let marked = has_marks(&data.rows);
-        let head = head_rows(&data.rows, marked);
         let n = data.rows.len();
+        let head = end_head(head_rows(&data.rows, marked), n, attrs.as_ref());
         let foot = footer_count(attrs.as_ref()).min(n - head);
         let plan = body_plan(attrs.as_ref(), n - head - foot);
         let body_starts = body_starts(head, plan.as_ref());
@@ -816,6 +816,19 @@ fn width(e: &str) -> Option<f64> {
     }
     let v: f64 = e.parse().ok()?;
     (v > 0.0 && v <= 100.0).then_some(v / 100.0)
+}
+
+/// C2-B-187: an empty `body-rows` ends the head above a footer count smaller than the rows.
+fn end_head(head: usize, rows: usize, attrs: Option<&Attrs>) -> usize {
+    let foot = footer_count(attrs);
+    if foot < rows
+        && head > rows - foot
+        && body_plan(attrs, 0).is_some_and(|plan| plan.data_rows.is_empty())
+    {
+        rows - foot
+    } else {
+        head
+    }
 }
 
 fn footer_count(attrs: Option<&Attrs>) -> usize {
