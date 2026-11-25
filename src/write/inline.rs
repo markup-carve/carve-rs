@@ -503,12 +503,28 @@ fn reference_label(node: V<'_>, key: &str, pipes: bool) -> String {
     }
 }
 
+/// C2-W-117: a title with a line break has no spelling; the tail writes its breaks as spaces.
+fn lose_broken_title<'v>(w: &mut Writer<'_>, node: impl Into<V<'v>>) {
+    let node: V<'v> = node.into();
+    if !has(node, "key") && s(node, "tooltip").is_some_and(|t| t.contains(['\r', '\n'])) {
+        lose(w, node, Some("tooltip"));
+    }
+}
+
 /// C2-W-073, C2-W-074: the link tail, or the label of a reference.
 pub fn target(node: V<'_>, href: &str, pipes: bool) -> String {
     if let Some(key) = s(node, "key") {
         return reference_label(node, key, pipes);
     }
-    let title = s(node, "tooltip").map_or(String::new(), |t| format!(" {}", quoted(t, pipes)));
+    // C2-I-069: a link tail occupies one line. Keep the link when only its title cannot be spelled.
+    let title = s(node, "tooltip").map_or(String::new(), |t| {
+        if t.contains(['\r', '\n']) {
+            let t = t.replace("\r\n", " ").replace(['\r', '\n'], " ");
+            format!(" {}", quoted(&t, pipes))
+        } else {
+            format!(" {}", quoted(t, pipes))
+        }
+    });
     format!("({}{title})", destination(href, pipes))
 }
 
@@ -708,6 +724,7 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
         escape_leading_caret(w, children(node), flags);
     }
     w.saw_link = true;
+    lose_broken_title(w, node);
     if w.link_bracket_fallback {
         escape_lone_link_brackets(w, node);
     }
@@ -827,6 +844,7 @@ fn image_node(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
         return format!("!{raw}");
     }
     let pipes = flags & IN_CELL != 0;
+    lose_broken_title(w, node);
     let alt = image_alt(w, node);
     let alt = collapsed_alt(w, node, alt);
     let alt = if pipes { escape_pipes(&alt) } else { alt };
