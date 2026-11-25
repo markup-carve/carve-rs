@@ -92,6 +92,20 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             "-w" if ["fmt", "lint", "fix"].contains(&command) => {
                 parsed.values.insert("write".into(), json!(true));
             }
+            // Engine flag (C2-T-003), the 0.1 spelling of the `locale` of
+            // `carve.smartQuotes` (carve-rs#4838).
+            "--quote-locale" if command == "render" => {
+                at += 1;
+                let locale = arguments
+                    .get(at)
+                    .ok_or("--quote-locale requires a locale")?;
+                parsed.values.insert("quote-locale".into(), json!(locale));
+            }
+            arg if command == "render" && arg.starts_with("--quote-locale=") => {
+                parsed
+                    .values
+                    .insert("quote-locale".into(), json!(&arg[15..]));
+            }
             "--directory" if command == "import" => {
                 at += 1;
                 let path = arguments.get(at).ok_or("missing value for --directory")?;
@@ -250,6 +264,12 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
                 }
             }
         }
+    }
+    // Only the HTML renderer reads the quotes of `carve.smartQuotes`.
+    if parsed.values.contains_key("quote-locale")
+        && str_value(parsed, "to").is_some_and(|to| to != "html")
+    {
+        return Err("--quote-locale applies to HTML output only".into());
     }
     if yes("normalize") && yes("from-ast") {
         return Err("--normalize needs source input".into());
@@ -788,6 +808,20 @@ struct StandardExtensions {
 }
 impl StandardExtensions {
     fn from_args(args: &Args) -> Result<Self, i32> {
+        let mut standard = Self::from_catalog(args)?;
+        if let Some(locale) = str_value(args, "quote-locale") {
+            let quotes = api::extensions::smart_quotes(&api::extensions::SmartQuotesOptions {
+                locale: Some(locale.to_string()),
+                ..Default::default()
+            });
+            standard
+                .host
+                .register(quotes)
+                .map_err(|e| usage(format!("--quote-locale: {e}")))?;
+        }
+        Ok(standard)
+    }
+    fn from_catalog(args: &Args) -> Result<Self, i32> {
         if value(args, "extensions").is_none() && value(args, "extension-options").is_none() {
             return Ok(Self {
                 names: Vec::new(),
@@ -1559,7 +1593,7 @@ fn help(command: &str) -> String {
         let _ = writeln!(out, "  --{} {kind}", row["name"].as_str().unwrap_or(""));
     }
     if command == "render" {
-        out.push_str("  --to html|carve|markdown|plain|ansi\n");
+        out.push_str("  --to html|carve|markdown|plain|ansi\n  --quote-locale LOCALE\n");
     }
     out
 }
