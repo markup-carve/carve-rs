@@ -634,7 +634,7 @@ fn alert<'a>(arena: &'a comrak::Arena<'a>, quote: comrak::nodes::Node<'a>) {
 }
 
 /// Djot to HTML with jotdown; raw content of every format is carried as in
-/// Markdown, a start of 0 is kept (C2-B-041), and generated section ids are
+/// Markdown, a start of 0 is kept (C2-B-041), and generated ids are
 /// left out.
 fn djot_html(input: &str, sink: &mut Sink) -> String {
     use crate::jotdown::{Attributes, Container, Event, ListKind};
@@ -687,10 +687,16 @@ fn djot_html(input: &str, sink: &mut Sink) -> String {
             }
             Event::Start(Container::Section { .. }, attrs) => section_attrs = Some(attrs),
             Event::End(Container::Section { .. }) => {}
-            Event::Start(c @ Container::Heading { .. }, mut attrs) => {
+            // A heading outside a section carries the id jotdown generated; only an authored id is written.
+            Event::Start(Container::Heading { level, id, .. }, mut attrs) => {
                 if let Some(more) = section_attrs.take() {
                     attrs.extend(more);
                 }
+                let c = Container::Heading {
+                    level,
+                    has_section: true,
+                    id,
+                };
                 events.push(Event::Start(c, attrs));
             }
             Event::Start(c @ Container::List { kind, tight }, mut attrs) => {
@@ -728,11 +734,14 @@ pub(crate) fn finish(mut tree: Value, sink: &Sink) -> Value {
     tree
 }
 
-/// An empty source item is a marker plus a comment, as a parse of `- %%`
-/// gives (C2-A-186); a childless `list_item` has no spelling (C2-W-057).
+/// An empty source item or description is a marker plus a comment, as a
+/// parse of `- %%` gives (C2-A-186); a childless one has no spelling (C2-W-057).
 fn fill_empty_items(nodes: &mut [Value]) {
     for node in nodes {
-        let is_item = node.get("type").and_then(Value::as_str) == Some("list_item");
+        let is_item = matches!(
+            node.get("type").and_then(Value::as_str),
+            Some("list_item" | "definition_description")
+        );
         let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) else {
             continue;
         };

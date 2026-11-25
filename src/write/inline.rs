@@ -1464,10 +1464,8 @@ fn glued_part_into<'t>(
         "strong" => Some('*'),
         _ => None,
     };
-    if let (Some(m), Some(next)) = (mark, nodes.get(end)) {
-        if ty(next) == "text" && text(next).starts_with(m) {
-            w.brace(node);
-        }
+    if let Some(m) = mark {
+        mark_form(w, node, m, nodes.get(end).copied(), before);
     }
     let start = out.len();
     write_part_into(w, nodes, (at, end), flags, out);
@@ -1488,6 +1486,32 @@ fn glued_part_into<'t>(
     }
     w.brace(node);
     write_part_into(w, nodes, (at, end), flags, out);
+}
+
+/// C2-W-069: the braced form of an emphasis or strong `node` whose bare mark cannot pair where it stands.
+fn mark_form(
+    w: &mut Writer<'_>,
+    node: N<'_>,
+    mark: char,
+    next: Option<N<'_>>,
+    before: Option<char>,
+) {
+    let touches_closer = plain_block(node).is_empty();
+    let next_text = next.filter(|n| ty(*n) == "text").map(text);
+    if touches_closer && next_text.is_some_and(|t| t.starts_with(mark)) {
+        w.brace(node);
+    // C2-I-047, C2-I-048: behind a word character a bare mark cannot open, and before one it cannot close. That
+    // depends on the neighbors as written, so each write decides it again, as for a glued mark.
+    } else if (before.is_some_and(crate::chars::is_word)
+        || (touches_closer
+            && next_text
+                .and_then(|t| t.chars().next())
+                .is_some_and(crate::chars::is_word)))
+        && w.form(node) == 0
+    {
+        w.glued.insert(id(node));
+        w.brace(node);
+    }
 }
 
 /// C2-W-069: a bare pair whose opener cannot open or whose closer cannot close at its neighbors

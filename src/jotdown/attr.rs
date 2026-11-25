@@ -1,5 +1,17 @@
 use crate::jotdown::CowStr;
 
+/// carve-rs: the state after `src`, from `state`, as djot.js feeds an attribute block line by line.
+/// Also gives the bytes read.
+pub(crate) fn resume(mut state: State, src: &str) -> (State, usize) {
+    for (n, c) in src.bytes().enumerate() {
+        state = state.step(c);
+        if matches!(state, State::Done | State::Invalid) {
+            return (state, n + 1);
+        }
+    }
+    (state, src.len())
+}
+
 pub(crate) fn valid(src: &str) -> usize {
     use State::*;
 
@@ -300,6 +312,20 @@ impl<'s> Attributes<'s> {
             Ok(())
         } else {
             Err(n)
+        }
+    }
+
+    /// carve-rs: parses an attribute block given as its lines, in order.
+    pub(crate) fn parse_lines<I: IntoIterator<Item = &'s str>>(&mut self, lines: I) -> Result<(), usize> {
+        let mut parser = Parser::new(self.take());
+        for line in lines {
+            parser.parse(line)?;
+        }
+        if matches!(parser.state, State::Done) {
+            *self = parser.finish();
+            Ok(())
+        } else {
+            Err(0)
         }
     }
 
@@ -761,9 +787,7 @@ impl<'s> Parser<'s> {
                     )),
                     Value | ValueQuoted | ValueContinued => {
                         let last = self.attrs.len() - 1;
-                        self.attrs.0[last]
-                            .1
-                            .extend(&content[usize::from(matches!(st, ValueQuoted))..]);
+                        self.attrs.0[last].1.extend(value_part(st, content));
                     }
                     Comment | CommentNewline => {
                         let last = self.attrs.len() - 1;
@@ -798,7 +822,7 @@ impl<'s> Parser<'s> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
+pub(crate) enum State {
     Start,
     Whitespace,
     CommentFirst,
@@ -820,7 +844,7 @@ enum State {
 }
 
 impl State {
-    fn step(self, c: u8) -> State {
+    pub(crate) fn step(self, c: u8) -> State {
         use State::*;
 
         match self {
@@ -860,6 +884,16 @@ impl State {
             ValueNewline | ValueContinued => ValueContinued,
             Invalid | Done => panic!("{self:?}"),
         }
+    }
+}
+
+/// The part of a value that `content`, read in `state`, adds.
+fn value_part(state: State, content: &str) -> &str {
+    match state {
+        State::ValueQuoted => &content[1..],
+        // carve-rs: the indentation of a continued value is no part of it (djot.js).
+        State::ValueContinued => content.trim_start_matches(|c: char| c.is_ascii_whitespace()),
+        _ => content,
     }
 }
 

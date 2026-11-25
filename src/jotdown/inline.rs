@@ -217,6 +217,10 @@ pub struct Parser<'s> {
     openers: Vec<(Opener, usize)>,
     /// Per closer class, the indices into `openers` of the openers in that class, ascending.
     opener_classes: [Vec<usize>; OPENER_CLASSES],
+    /// carve-rs: the first byte of the current leaf.
+    leaf_start: Option<usize>,
+    /// carve-rs: the open parentheses inside each open link destination, by its opener.
+    destination_parens: Vec<(usize, usize)>,
     /// Buffer queue for next events. Events are buffered until no modifications due to future
     /// characters are needed.
     events: std::collections::VecDeque<Event<'s>>,
@@ -248,6 +252,8 @@ impl<'s> Parser<'s> {
             input: Input::new(src),
             openers: Vec::new(),
             opener_classes: Default::default(),
+            destination_parens: Vec::new(),
+            leaf_start: None,
             events: std::collections::VecDeque::new(),
             verbatim: None,
             attributes: None,
@@ -257,6 +263,7 @@ impl<'s> Parser<'s> {
     }
 
     pub fn feed_line(&mut self, line: std::ops::Range<usize>, last: bool) {
+        self.leaf_start.get_or_insert(line.start);
         self.input.feed_line(line, last);
     }
 
@@ -265,6 +272,8 @@ impl<'s> Parser<'s> {
         self.input.reset();
         self.openers.clear();
         self.opener_classes.iter_mut().for_each(Vec::clear);
+        self.destination_parens.clear();
+        self.leaf_start = None;
         debug_assert!(self.attributes.is_none());
         debug_assert!(self.verbatim.is_none());
         self.store_cowstrs.clear();
@@ -332,6 +341,9 @@ impl<'s> Parser<'s> {
                 }
                 self.push(EventKind::Exit(ty_opener));
                 self.input.lexer.verbatim = false;
+                // carve-rs: a token peeked inside the span is read again outside it, so a backslash
+                // behind the closer escapes (a hard break after code).
+                self.input.lexer.unpeek();
                 self.verbatim = None;
                 if raw_format.is_none()
                     && self
@@ -380,17 +392,11 @@ impl<'s> Parser<'s> {
                 .filter(|sp| {
                     sp.end == self.input.span.start
                         && self.input.src.as_bytes()[sp.start + sp.len() - 1] == b'$'
-                        && sp
-                            .end
-                            .checked_sub(2)
-                            .is_none_or(|i| self.input.src.as_bytes()[i] != b'\\')
+                        && !escaped_at(self.input.src.as_bytes(), sp.end - 1)
                 }) {
                 let (ty, num_dollar) = if sp.len() > 1
                     && self.input.src.as_bytes()[sp.start + sp.len() - 2] == b'$'
-                    && sp
-                        .end
-                        .checked_sub(3)
-                        .is_none_or(|i| self.input.src.as_bytes()[i] != b'\\')
+                    && !escaped_at(self.input.src.as_bytes(), sp.end - 2)
                 {
                     (DisplayMath, 2)
                 } else {
@@ -507,6 +513,16 @@ impl<'s> Parser<'s> {
         }
 
         if start_attr == state.end_attr {
+            return None;
+        }
+        // carve-rs: attributes over several lines at the start of a paragraph are a block attribute the
+        // block parser refused, and djot.js reads them as text.
+        if matches!(state.elem_ty, AttributesElementType::Word)
+            && state.valid_lines > 0
+            && self.leaf_start.is_some_and(|l| {
+                l <= start_attr && self.input.src[l..start_attr].trim_ascii().is_empty()
+            })
+        {
             return None;
         }
 
@@ -701,6 +717,7 @@ impl<'s> Parser<'s> {
 
     fn truncate_openers(&mut self, len: usize) {
         self.openers.truncate(len);
+        self.destination_parens.retain(|&(o, _)| o < len);
         for class in &mut self.opener_classes {
             while class.last().is_some_and(|&i| i >= len) {
                 class.pop();
@@ -716,6 +733,24 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_container(&mut self, first: &lex::Token) -> Option<ControlFlow> {
+        // carve-rs: parentheses inside a link destination nest, as in djot.js.
+        if let Some(&link) = self.opener_classes[1].last() {
+            let depth = match self.destination_parens.last_mut() {
+                Some((o, depth)) if *o == link => depth,
+                _ => {
+                    self.destination_parens.push((link, 0));
+                    &mut self.destination_parens.last_mut()?.1
+                }
+            };
+            match first.kind {
+                lex::Kind::Open(Delimiter::Paren) => *depth += 1,
+                lex::Kind::Close(Delimiter::Paren) if *depth > 0 => {
+                    *depth -= 1;
+                    return None;
+                }
+                _ => {}
+            }
+        }
         self.closable_opener(first.kind)
             .and_then(|o| {
                 let (opener, e) = self.openers[o];
@@ -837,6 +872,12 @@ impl<'s> Parser<'s> {
                         } else {
                             self.input.src[span_spec.clone()].into()
                         };
+                        // carve-rs: a backslash escape in a destination stands for its character, as in djot.js.
+                        let spec = if inline && spec.contains('\\') {
+                            unescape_destination(&spec).into()
+                        } else {
+                            spec
+                        };
 
                         let idx = self.store_cowstrs.len() as CowStrIndex;
                         self.store_cowstrs.push(spec);
@@ -909,9 +950,10 @@ impl<'s> Parser<'s> {
                 );
                 // use non-opener for now, replace if closed later
                 Some(self.push(match opener {
+                    // carve-rs: an explicit `{'` that pairs with nothing is a left quote (djot.js).
                     Opener::SingleQuoted => EventKind::Atom(Quote {
                         ty: QuoteType::Single,
-                        left: false,
+                        left: matches!(first.kind, lex::Kind::Open(Delimiter::BraceQuote1)),
                     }),
                     Opener::DoubleQuoted => EventKind::Atom(Quote {
                         ty: QuoteType::Double,
@@ -967,7 +1009,12 @@ impl<'s> Parser<'s> {
                 ty: QuoteType::Double,
                 left: true,
             },
-            lex::Kind::Sym(Symbol::Quote2) | lex::Kind::Close(Delimiter::BraceQuote2) => Quote {
+            // carve-rs: a double quote that pairs with nothing is a left quote, as in djot.js.
+            lex::Kind::Sym(Symbol::Quote2) => Quote {
+                ty: QuoteType::Double,
+                left: true,
+            },
+            lex::Kind::Close(Delimiter::BraceQuote2) => Quote {
                 ty: QuoteType::Double,
                 left: false,
             },
@@ -1293,3 +1340,21 @@ impl<'s> Iterator for Parser<'s> {
     }
 }
 
+/// carve-rs: the destination with each backslash before ASCII punctuation taken out.
+fn unescape_destination(spec: &str) -> String {
+    let mut out = String::with_capacity(spec.len());
+    let mut chars = spec.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek().is_some_and(char::is_ascii_punctuation) {
+            out.extend(chars.next());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// carve-rs: whether the byte at `at` is escaped, an odd run of backslashes standing before it.
+fn escaped_at(src: &[u8], at: usize) -> bool {
+    src[..at].iter().rev().take_while(|&&b| b == b'\\').count() % 2 == 1
+}

@@ -102,6 +102,14 @@ impl<'s> Lexer<'s> {
         self.next.as_ref()
     }
 
+    /// carve-rs: drops the peeked token, so it is lexed again in the current mode.
+    pub fn unpeek(&mut self) {
+        if let Some(t) = self.next.take() {
+            self.pos -= t.len;
+            self.escape = false;
+        }
+    }
+
     pub fn ahead(&self) -> &'s [u8] {
         &self.src[self.pos - self.next.as_ref().map_or(0, |t| t.len)..]
     }
@@ -153,6 +161,20 @@ impl<'s> Lexer<'s> {
         }
     }
 
+    /// The length of a run of spaces and tabs at `at` that a backslash hard break follows.
+    fn space_before_hardbreak(&self, at: usize) -> Option<usize> {
+        if self.verbatim {
+            return None;
+        }
+        let rest = &self.src[at..];
+        let n = rest.iter().take_while(|c| matches!(c, b' ' | b'\t')).count();
+        let after = rest.get(n + 1..)?;
+        (n > 0
+            && rest.get(n) == Some(&b'\\')
+            && after.iter().find(|c| !matches!(c, b' ' | b'\t')) == Some(&b'\n'))
+        .then_some(n)
+    }
+
     fn token(&mut self) -> Option<Token> {
         let start = self.pos;
 
@@ -172,8 +194,22 @@ impl<'s> Lexer<'s> {
                 b' ' => Nbsp,
                 _ => Text,
             }
+        } else if let Some(n) = self.space_before_hardbreak(self.pos) {
+            // carve-rs: spaces and tabs before a hard break are ignored, as in djot.js.
+            self.pos += n + 1;
+            self.escape = true;
+            Escape
         } else {
             self.eat_while(|c| !is_special(c));
+            let text = &self.src[start..self.pos];
+            let trailing = text
+                .iter()
+                .rev()
+                .take_while(|c| matches!(c, b' ' | b'\t'))
+                .count();
+            if trailing > 0 && self.space_before_hardbreak(self.pos - trailing).is_some() {
+                self.pos -= trailing;
+            }
             if start < self.pos {
                 Text
             } else {
