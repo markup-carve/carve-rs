@@ -110,3 +110,37 @@ fn fields_of_the_document_come_before_its_blocks() {
         ]
     );
 }
+
+#[test]
+fn an_attribute_line_feed_stands_at_its_node() {
+    let table = json!({ "type": "table", "columns": columns(),
+        "children": [{ "type": "table_body", "children": [row(&[plain(false), blocks()])] }] });
+    let para = json!({ "type": "paragraph", "attrs": { "keyValues": [["title", "a\nb"]] },
+        "children": [text("p")] });
+    assert_eq!(
+        entries(
+            &json!({ "type": "document", "astVersion": "2.0", "children": [table.clone(), para, table] })
+        ),
+        [
+            "structure-unspellable /children/0/children/0/children/0/children/1",
+            "field-unspellable /children/1/attrs/keyValues/0/1",
+            "structure-unspellable /children/2/children/0/children/0/children/1",
+        ]
+    );
+}
+
+#[test]
+fn a_title_comes_before_the_children_of_its_node() {
+    let lf = || json!({ "keyValues": [["title", "a\nb"]] });
+    let div = json!({ "type": "div",
+        "title": [{ "type": "span", "attrs": lf(), "children": [text("t")] }],
+        "children": [{ "type": "paragraph", "attrs": lf(), "children": [text("p")] }] });
+    assert_eq!(
+        entries(&json!({ "type": "document", "astVersion": "2.0", "children": [div] })),
+        [
+            "structure-unspellable /children/0/title/0",
+            "field-unspellable /children/0/title/0/attrs/keyValues/0/1",
+            "field-unspellable /children/0/children/0/attrs/keyValues/0/1",
+        ]
+    );
+}

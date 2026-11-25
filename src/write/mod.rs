@@ -775,14 +775,37 @@ fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry
                     }
                 }
             }
-            for (key, child) in map.iter_mut() {
-                if key != "attrs" {
-                    replace_attribute_lines(
-                        child,
-                        &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
-                        losses,
-                    );
-                }
+            // C2-W-158: the fields of a node, then its slots in C2-L-011 order, so the losses stand in document order.
+            let slots: Vec<&str> = map
+                .get("type")
+                .and_then(Value::as_str)
+                .map(|t| {
+                    let mut names = vec!["title", "children", "caption"];
+                    for p in node::slot_paths(t) {
+                        if let Some(first) = p.first()
+                            && !names.contains(&first.as_str())
+                        {
+                            names.push(first.as_str());
+                        }
+                    }
+                    names
+                })
+                .unwrap_or_default();
+            let mut order: Vec<(usize, &str, &mut Value)> = map
+                .iter_mut()
+                .filter(|(key, _)| key.as_str() != "attrs")
+                .map(|(key, child)| {
+                    let at = slots.iter().position(|s| s == key).map_or(0, |i| i + 1);
+                    (at, key.as_str(), child)
+                })
+                .collect();
+            order.sort_by_key(|(at, _, _)| *at);
+            for (_, key, child) in order {
+                replace_attribute_lines(
+                    child,
+                    &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                    losses,
+                );
             }
         }
         Value::Array(items) => {
@@ -1033,8 +1056,14 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
             entry.path = Some(coalesced.remap(path));
         }
     }
+    if written_losses.is_empty() {
+        return (source, losses);
+    }
+    if losses.is_empty() {
+        return (source, written_losses);
+    }
     written_losses.extend(losses);
-    (source, written_losses)
+    (source, in_document_order(V::Json(doc), written_losses))
 }
 
 /// [`write_value`] of a view; `pool` outlives the tree.
@@ -1120,6 +1149,9 @@ fn write_sized<'t>(
                 "Carve source cannot spell field rowspan of a table_cell node here".to_string();
             entries.push(loss_entry("field-unspellable", message, path, None));
         }
+    }
+    if !marks.unspelled.is_empty() {
+        entries = in_document_order(doc, entries);
     }
     (source, entries)
 }
@@ -1227,12 +1259,58 @@ fn located(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
         keyed.sort_by_key(|(key, _)| *key);
         return keyed.into_iter().map(|(_, e)| e).collect();
     }
-    // A node the walk did not find: its path alone places the entry.
-    let mut keyed: Vec<_> = entries
+    in_document_order(doc, entries)
+}
+
+/// C2-W-158 for entries that carry only their paths: each sorts on the node its path names. An entry
+/// resumes from the deepest node its path shares with the entry before it.
+fn in_document_order(doc: V<'_>, entries: Vec<Entry>) -> Vec<Entry> {
+    if entries.len() < 2 {
+        return entries;
+    }
+    // The nodes on the previous path, each with the byte length of its pointer.
+    let mut stack = vec![(0, doc)];
+    let mut previous = "";
+    let mut places = Vec::with_capacity(entries.len());
+    for e in &entries {
+        let path = e.path.as_deref().unwrap_or("");
+        let shared = previous
+            .bytes()
+            .zip(path.bytes())
+            .take_while(|(a, b)| a == b)
+            .count();
+        while stack.len() > 1
+            && stack.last().is_some_and(|(end, _)| {
+                *end > shared || !(*end == path.len() || path.as_bytes().get(*end) == Some(&b'/'))
+            })
+        {
+            stack.pop();
+        }
+        let (mut at, mut n) = stack.last().copied().unwrap_or((0, doc));
+        let rest: Vec<&str> = path.get(at..).unwrap_or("").split('/').skip(1).collect();
+        let mut used = 0;
+        while let Some((c, k)) = rest.get(used..).and_then(|s| node::descend(n, s)) {
+            at += rest
+                .iter()
+                .skip(used)
+                .take(k)
+                .map(|s| s.len() + 1)
+                .sum::<usize>();
+            used += k;
+            n = c;
+            stack.push((at, n));
+        }
+        places.push((id(n), used < rest.len()));
+        previous = path;
+    }
+    let wanted: AddrSet<usize> = places.iter().map(|(n, _)| *n).collect();
+    let ranks = node::places(doc, &wanted);
+    let mut keyed: Vec<_> = places
         .into_iter()
-        .map(|e| (node::path_key(doc, e.path.as_deref().unwrap_or("")), e))
+        .map(|(n, field)| (ranks.get(&n).map_or(0, |(_, rank)| *rank), field))
+        .zip(entries)
         .collect();
-    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.sort_by_key(|(key, _)| *key);
     keyed.into_iter().map(|(_, e)| e).collect()
 }
 
