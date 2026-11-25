@@ -161,6 +161,9 @@ pub struct Writer<'t> {
     pub saw_link: bool,
     /// Whether the document holds a link whose text starts with a caret (C2-W-125 case eight), found once.
     pub caret_links: Option<bool>,
+    /// C2-W-125 case eight: the links whose caret stays bare, as the early closers of a text note before them took
+    /// the backslash.
+    pub case_eight_links: AddrSet<usize>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -229,6 +232,7 @@ impl<'t> Writer<'t> {
             attempts_journal: None,
             saw_link: false,
             caret_links: None,
+            case_eight_links: AddrSet::default(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),
@@ -279,19 +283,6 @@ impl<'t> Writer<'t> {
     pub fn clear_starts(&mut self) {
         self.starts.clear();
         self.start_index.clear();
-    }
-
-    /// Removes `at` from the escapes of `n`.
-    pub fn drop_escape<'v>(&mut self, n: impl Into<V<'v>>, at: usize) {
-        let key = id(n);
-        if let Some(list) = self.sp.escapes.get_mut(&key)
-            && let Ok(place) = list.binary_search(&at)
-        {
-            list.remove(place);
-            if list.is_empty() {
-                self.sp.escapes.remove(&key);
-            }
-        }
     }
 
     /// Adds `at` to the escapes of `n`, keeping them sorted and unique.

@@ -20,8 +20,6 @@ pub const IN_BRACKET: u32 = 16;
 pub const IN_FIGURE_GROUP: u32 = 32;
 /// C2-I-089: inside an inline footnote, where a caret pair opens nothing.
 pub const IN_NOTE: u32 = 64;
-/// C2-W-125 case eight: an earlier text note took its early closer.
-const AFTER_TEXT_NOTE_CLOSER: u32 = 128;
 
 #[derive(Default)]
 struct BraceQuote {
@@ -589,11 +587,19 @@ pub fn key_is_content(node: V<'_>) -> bool {
         && s(node, "key").is_some_and(|k| k.starts_with('^'))
 }
 
-/// Whether the text of the link or span `node` starts with a caret.
+/// Whether the text of the link `node` is a caret that reads as no footnote key bare: the caret alone or before a
+/// space (C2-W-125 case eight).
 pub fn leading_caret(node: V<'_>) -> bool {
-    children(node)
-        .first()
-        .is_some_and(|f| ty(f) == "text" && text(f).starts_with('^'))
+    let kids = children(node);
+    kids.first().is_some_and(|f| {
+        ty(f) == "text"
+            && text(f)
+                .strip_prefix('^')
+                .is_some_and(|rest| match rest.chars().next() {
+                    None => kids.len() == 1,
+                    Some(c) => c.is_whitespace(),
+                })
+    })
 }
 
 /// C2-W-125 case five: an unescaped leading caret of link or span text reads as a footnote reference.
@@ -723,11 +729,8 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     }
     // A backslash before the caret would change the key; the check places it only where the link needs it.
     if !key_is_content(node) {
-        if flags & AFTER_TEXT_NOTE_CLOSER != 0 && leading_caret(node) {
-            if let Some(first) = children(node).first() {
-                w.drop_escape(first, 0);
-            }
-        } else {
+        // C2-W-125 case eight: the caret behind a text note whose closers took the backslash stays bare.
+        if !w.case_eight_links.contains(&id(node)) {
             escape_leading_caret(w, children(node), flags);
         }
     }
@@ -736,7 +739,6 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     if w.link_bracket_fallback {
         escape_lone_link_brackets(w, node);
     }
-    let flags = flags & !AFTER_TEXT_NOTE_CLOSER;
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
     let content = collapsed_content(w, node, content, flags);
     format!(
@@ -1774,7 +1776,6 @@ fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: 
     let base = out.len();
     let mut line_start = true;
     let mut last: Option<char> = None;
-    let mut note = TextNoteScan::default();
     let mut at = 0;
     while at < nodes.len() {
         let Some(&node) = nodes.get(at) else { break };
@@ -1799,59 +1800,13 @@ fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: 
                 .is_some_and(|o| o.ends_with('\\'));
         place_escapes(w, nodes, at, end, flags, after_bang);
         let start = out.len();
-        let part_flags = flags | note.flag_at(nodes, at);
-        inline_part_into(w, nodes, (at, end), part_flags, (line_start, last), out);
+        inline_part_into(w, nodes, (at, end), flags, (line_start, last), out);
         let part = out.get(start..).unwrap_or("");
         if let Some(c) = part.chars().last() {
             last = Some(c);
         }
         line_start = last == Some('\n') || (line_start && part.is_empty());
         at = end;
-    }
-}
-
-/// C2-W-125 case eight: whether a text `^[` before this point was closed by a `]`, which the first write escapes.
-#[derive(Default)]
-struct TextNoteScan {
-    open: bool,
-    closer: bool,
-    scanned: usize,
-}
-
-impl TextNoteScan {
-    /// The flag for the part at `at`: set on a caret link behind a closed text note.
-    fn flag_at(&mut self, nodes: &[N<'_>], at: usize) -> u32 {
-        let Some(&node) = nodes.get(at) else { return 0 };
-        if ty(node) != "link" || !leading_caret(node) {
-            return 0;
-        }
-        for n in nodes.get(self.scanned..at).unwrap_or(&[]) {
-            self.advance(*n);
-        }
-        self.scanned = at;
-        if self.closer {
-            AFTER_TEXT_NOTE_CLOSER
-        } else {
-            0
-        }
-    }
-
-    fn advance(&mut self, node: V<'_>) {
-        if ty(node) != "text" {
-            return;
-        }
-        let mut rest = text(node);
-        loop {
-            let found = if self.open {
-                rest.find(']').map(|p| (p + 1, false))
-            } else {
-                rest.find("^[").map(|p| (p + 2, true))
-            };
-            let Some((next, open)) = found else { break };
-            self.closer |= !open;
-            self.open = open;
-            rest = rest.get(next..).unwrap_or("");
-        }
     }
 }
 

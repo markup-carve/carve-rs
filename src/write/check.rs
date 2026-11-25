@@ -947,20 +947,22 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 }
 
 /// C2-W-125 case eight: a text `^[` stays bare before a later link whose text starts with a caret, so the `]`
-/// that closed it early takes the backslash before the first write. A reference whose key is its content
-/// writes its caret bare anyway and is left to the rounds.
+/// that closed it early takes the backslash before the first write. A collapsed or shortcut reference spells its
+/// caret through its key and is left to the rounds.
 pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     let mut found = Vec::new();
+    let mut links = Vec::new();
     let mut pending: Vec<N<'t>> = group.iter().collect();
     while let Some(node) = pending.pop() {
         super::node::for_each_slot(node, false, &mut |kids, _, _| {
-            scan_text_note_closers(kids, &mut found);
+            scan_text_note_closers(w, kids, &mut found, &mut links);
             pending.extend(kids.iter());
         });
     }
     for (n, at) in found {
         w.add_escape(n, at);
     }
+    w.case_eight_links.extend(links.into_iter().map(id));
 }
 
 /// Whether a link below `doc` has text that starts with a caret.
@@ -972,7 +974,12 @@ pub fn holds_caret_link(doc: V<'_>) -> bool {
         .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
 }
 
-fn scan_text_note_closers<'t>(kids: Arr<'t>, found: &mut Vec<(N<'t>, usize)>) {
+fn scan_text_note_closers<'t>(
+    w: &Writer<'_>,
+    kids: Arr<'t>,
+    found: &mut Vec<(N<'t>, usize)>,
+    links: &mut Vec<N<'t>>,
+) {
     if !kids
         .iter()
         .any(|k| ty(k) == "link" && super::inline::leading_caret(k))
@@ -987,13 +994,26 @@ fn scan_text_note_closers<'t>(kids: Arr<'t>, found: &mut Vec<(N<'t>, usize)>) {
             scan_note_text(k, &mut depth, &mut closers);
         } else if ty(k) == "link"
             && super::inline::leading_caret(k)
-            && !super::inline::key_is_content(k)
+            && !matches!(s(k, "refForm"), Some("collapsed" | "shortcut"))
+            && bare_authored_caret(w, k)
             && !closers.is_empty()
         {
             found.append(&mut closers);
+            links.push(k);
+            depth = 0;
+        } else if !is_break(Some(k)) {
+            // Another node between the closer and the link leaves case eight to the rounds.
+            closers.clear();
             depth = 0;
         }
     }
+}
+
+/// C2-W-075: a reference written as it was authored keeps its caret as spelled, so only a bare one takes case eight.
+fn bare_authored_caret(w: &Writer<'_>, link: V<'_>) -> bool {
+    w.fact(link)
+        .and_then(|f| f.raw_ref.as_deref())
+        .is_none_or(|raw| raw.starts_with("[^"))
 }
 
 /// Walks one text node of `scan_text_note_closers`: `depth` counts the brackets of an open `^[`, and each `]` at

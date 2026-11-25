@@ -65,3 +65,25 @@ fn every_early_closer_of_the_note_takes_the_backslash() {
     let src = "*^[\\]\\]\nx [\\^](u)*\n";
     assert_eq!(fmt(src), ("*^[\\]\\]\nx [^](u)*\n".to_string(), Vec::new()));
 }
+
+#[test]
+fn only_the_first_caret_link_behind_the_closer_stays_bare() {
+    let src = "^[\\] text [\\^](u) [\\^](v)\n";
+    assert_eq!(
+        fmt(src),
+        ("^[\\] text [^](u) [\\^](v)\n".to_string(), Vec::new())
+    );
+}
+
+#[test]
+fn a_caret_link_that_reads_as_a_footnote_key_bare_keeps_its_backslash() {
+    for src in [
+        "^[\\] [^a](u) [^](u)\n",
+        "^[\\] [^a](u) [\\^](u)\n",
+        "^[\\]\\] [\\^][] ^[\\] [^a](u)\n",
+    ] {
+        let (written, codes) = fmt(src);
+        assert!(codes.is_empty(), "{src:?}: {codes:?}");
+        assert_eq!(fmt(&written).0, written, "{src:?}");
+    }
+}
