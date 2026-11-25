@@ -604,10 +604,31 @@ fn a_paragraph_with_an_image_saves_with_its_role() {
             json!([image, {"type": "text", "text": " x"}]),
             "![a](a.png) x\n",
         ),
+        (
+            json!([image, {"type": "text", "text": " "}]),
+            "![a](a.png)\n",
+        ),
+        (
+            json!([{"type": "text", "text": " "}, image]),
+            "![a](a.png)\n",
+        ),
     ] {
         let doc = json!({"type": "doc", "content": [{"type": "paragraph", "content": content}]});
         assert_eq!(convert(&doc), source);
     }
+}
+
+#[test]
+fn an_edited_image_paragraph_loses_its_role() {
+    let mut doc = to_prosemirror(&parse("![a](a.png)\n")).expect("render").doc;
+    doc["content"][0]["content"] = json!([{"type": "text", "text": "plain"}]);
+    let tree = from_prosemirror(&doc.to_string()).expect("save");
+    assert_eq!(write(&tree), "plain\n");
+    assert!(
+        without_positions(&tree)["children"][0]
+            .get("role")
+            .is_none()
+    );
 }
 
 #[test]

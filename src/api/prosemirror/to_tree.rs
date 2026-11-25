@@ -1237,20 +1237,17 @@ pub(super) fn with_roles(node: &mut Value) {
 /// but blank text, reads as an image or math paragraph.
 fn with_role(node: &mut Node) {
     node.remove("role");
-    let kept: Vec<&Value> = match node.get("children") {
-        Some(Value::Array(children)) => children
-            .iter()
-            .filter(|child| {
-                let blank = child.get("type").and_then(Value::as_str) == Some("text")
-                    && child
-                        .get("value")
-                        .and_then(Value::as_str)
-                        .is_some_and(|v| v.trim_matches([' ', '\t']).is_empty());
-                !blank
-            })
-            .collect(),
-        _ => Vec::new(),
+    let Some(Value::Array(children)) = node.get_mut("children") else {
+        return;
     };
+    let blank = |child: &Value| {
+        child.get("type").and_then(Value::as_str) == Some("text")
+            && child
+                .get("value")
+                .and_then(Value::as_str)
+                .is_some_and(|v| v.trim_matches([' ', '\t']).is_empty())
+    };
+    let kept: Vec<&Value> = children.iter().filter(|c| !blank(c)).collect();
     let role = match kept.as_slice() {
         [only] => match only.get("type").and_then(Value::as_str) {
             Some("image") => Some("image"),
@@ -1260,7 +1257,9 @@ fn with_role(node: &mut Node) {
         _ => None,
     };
     if let Some(role) = role {
-        node.insert("type".into(), Value::String("paragraph".into()));
+        // The blank text around the one image or math is not part of the
+        // role paragraph's source.
+        children.retain(|c| !blank(c));
         node.insert("role".into(), Value::String(role.into()));
     }
 }

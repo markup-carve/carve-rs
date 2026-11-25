@@ -435,7 +435,9 @@ pub fn from_prosemirror_value(
     options: &ProseMirrorOptions,
 ) -> Result<ProseMirrorImport, ProseMirrorError> {
     options.mapping.check()?;
-    let saved = to_tree::Saver::new(options).save(doc)?;
+    let mut saved = to_tree::Saver::new(options).save(doc)?;
+    // A loaded role stays in `carve` after an edit; the content decides it.
+    to_tree::with_roles(&mut saved.tree);
     let tree = super::decode_tree(&saved.tree.to_string())?;
     Ok(ProseMirrorImport {
         tree,
