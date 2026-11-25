@@ -11,9 +11,42 @@ fn findings(source: &str, code: &str) -> Vec<carve::diagnostic::Diagnostic> {
 }
 
 #[test]
-fn c2_b_022_list_marker_inside_term_stays_lazy() {
+fn c2_b_234_list_marker_past_term_mark_ends_term() {
+    // carve#6758: inside an item a term ends where a heading ends.
+    let nested = "<ul>\n  <li>\n    <dl>\n      <dt>a</dt>\n    </dl>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>";
+    assert_eq!(carve::render("- :: a\n   - b", &Options::default()), nested);
     assert_eq!(
-        carve::render("- :: a\n   - b", &Options::default()),
+        carve::render("- :: a\n     - b", &Options::default()),
+        nested
+    );
+    assert_eq!(
+        carve::render("> - :: a\n>      * b", &Options::default()),
+        "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a</dt>\n      </dl>\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+    );
+    assert_eq!(
+        carve::render("1. :: a\n       1. b", &Options::default()),
+        "<ol>\n  <li>\n    <dl>\n      <dt>a</dt>\n    </dl>\n    <ol>\n      <li>b</li>\n    </ol>\n  </li>\n</ol>"
+    );
+    assert!(findings("- :: a\n     - b", "list-marker-without-blank-line").is_empty());
+}
+
+#[test]
+fn c2_b_234_term_keeps_markers_no_heading_takes() {
+    assert_eq!(
+        carve::render("- :: a\n     2. b", &Options::default()),
+        "<ul>\n  <li>\n    <dl>\n      <dt>a\n2. b</dt>\n    </dl>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::render(":: a\n   - b", &Options::default()),
+        "<dl>\n  <dt>a\n- b</dt>\n</dl>"
+    );
+    let escaped = "- :: a\n     \\- b\n";
+    let written = carve::api::Carve::new()
+        .format(escaped, &carve::api::WriteOptions::default())
+        .unwrap();
+    assert_eq!(written, escaped);
+    assert_eq!(
+        carve::render(escaped, &Options::default()),
         "<ul>\n  <li>\n    <dl>\n      <dt>a\n- b</dt>\n    </dl>\n  </li>\n</ul>"
     );
 }

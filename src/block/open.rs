@@ -143,45 +143,23 @@ impl Parser<'_> {
     }
 
     fn marker_interrupts(&self, f: &Frame, column: usize, marker: &ListMarker) -> bool {
-        if matches!(
-            self.leaf,
-            Some(OpenLeaf {
-                leaf: Leaf::Term { .. },
-                ..
-            })
-        ) && if f.lazy {
-            f.desc_lists().any(|owner| column >= owner)
-        } else {
-            self.term_keeps(column)
-        } {
+        // C2-B-234: a term ends on a heading's interrupters; only a line
+        // without a quote's mark keeps a marker past the list's column.
+        if f.lazy
+            && matches!(
+                self.leaf,
+                Some(OpenLeaf {
+                    leaf: Leaf::Term { .. },
+                    ..
+                })
+            )
+            && f.desc_lists().any(|owner| column >= owner)
+        {
             return false;
         }
         // C2-B-190: a nested marker that cannot open is paragraph text.
         let can_replace = f.lists().any(|owner| column <= owner);
         (can_replace || self.room(2)) && list_interrupts(f, column, marker)
-    }
-
-    /// C2-B-069, C2-B-075: below an open term, a list marker that the container
-    /// around the term's description list owns (C2-B-025) is term text; only a
-    /// marker that closes that container can end the term.
-    fn term_keeps(&self, column: usize) -> bool {
-        let mut outside = self
-            .stack
-            .iter()
-            .rev()
-            .take_while(|c| !matches!(c.kind, Kind::Quote))
-            .skip_while(|c| !matches!(c.kind, Kind::DescList { .. }));
-        let desc_column = outside.next().and_then(|c| match c.kind {
-            Kind::DescList { col, .. } => Some(col),
-            _ => None,
-        });
-        let outer_marker = outside.find_map(|c| c.kind.indent_cols().map(|(marker, _)| marker));
-        if let (Some(desc), Some(marker)) = (desc_column, outer_marker) {
-            if marker < column && column < desc {
-                return false;
-            }
-        }
-        outer_marker.is_none_or(|marker| column > marker)
     }
 
     /// Interrupter (d) and Exception C2-B-018.
