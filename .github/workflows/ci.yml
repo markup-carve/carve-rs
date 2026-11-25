@@ -86,6 +86,11 @@ jobs:
     name: ProseMirror schema map matches carve-grammars
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The last 0.1 tag, not carve-grammars `main`: carve-grammars 0.2 deletes
+    # tiptap/schema-map.json (markup-carve/carve-rs#4714). Same ref as
+    # schema-map-drift.yml; retarget both when a 0.2 schema map exists.
+    env:
+      GRAMMARS_REF: v0.1.24
     steps:
       - uses: actions/checkout@v6
       # Full history: the check asks which commits touched the map since the one
@@ -94,13 +99,15 @@ jobs:
         with:
           repository: markup-carve/carve-grammars
           path: .carve-grammars
+          ref: ${{ env.GRAMMARS_REF }}
           fetch-depth: 0
-      - run: python3 tools/check-schema-map.py --grammars .carve-grammars --github
+      - run: python3 tools/check-schema-map.py --grammars .carve-grammars --branch "$GRAMMARS_REF" --github
       # The reason gate, watched firing: it refuses a declaration whose claim
       # about upstream has gone false, which the difference check cannot see.
       - run: python3 -m unittest discover -s tools -p 'test_*.py'
         env:
           CARVE_GRAMMARS_DIR: .carve-grammars
+          CARVE_GRAMMARS_REF: ${{ env.GRAMMARS_REF }}
 
   test:
     name: Build and test (Rust ${{ matrix.toolchain }})

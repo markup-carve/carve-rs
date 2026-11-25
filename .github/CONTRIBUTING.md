@@ -119,7 +119,8 @@ reason goes false by itself. The decisions it compares include the
 `markCarrierNodes` and `preservationNodes` entries, which belong to no Carve type
 and which this engine's loader reads. `python3 -m unittest discover -s tools -p 'test_*.py'`
 covers those gates and the seam matrix's, with `CARVE_GRAMMARS_DIR` pointing at
-the checkout.
+the checkout and `CARVE_GRAMMARS_REF` naming the branch or tag the pin is checked
+against (default `main`; CI uses the last 0.1 tag, as `--branch` does).
 
 ## Conformance and the corpus
 
