@@ -1812,6 +1812,12 @@ fn repair_round<'t, 's>(
     let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
     if history.rounds == 0 {
         seed_first_write(w, group);
+        if *w
+            .caret_links
+            .get_or_insert_with(|| check::holds_caret_link(doc))
+        {
+            check::seed_text_note_closers(w, group);
+        }
     }
     check::seed_lone_brackets(w, group);
     reset_lines(w);

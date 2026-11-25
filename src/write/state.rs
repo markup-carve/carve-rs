@@ -159,6 +159,8 @@ pub struct Writer<'t> {
     /// The attempts a comparison replaced, oldest first, while the link fallback may compare its round again.
     pub attempts_journal: Option<Vec<(usize, Option<Attempt<'t>>)>>,
     pub saw_link: bool,
+    /// Whether the document holds a link whose text starts with a caret (C2-W-125 case eight), found once.
+    pub caret_links: Option<bool>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -226,6 +228,7 @@ impl<'t> Writer<'t> {
             link_bracket_fallback: false,
             attempts_journal: None,
             saw_link: false,
+            caret_links: None,
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),
@@ -276,6 +279,19 @@ impl<'t> Writer<'t> {
     pub fn clear_starts(&mut self) {
         self.starts.clear();
         self.start_index.clear();
+    }
+
+    /// Removes `at` from the escapes of `n`.
+    pub fn drop_escape<'v>(&mut self, n: impl Into<V<'v>>, at: usize) {
+        let key = id(n);
+        if let Some(list) = self.sp.escapes.get_mut(&key)
+            && let Ok(place) = list.binary_search(&at)
+        {
+            list.remove(place);
+            if list.is_empty() {
+                self.sp.escapes.remove(&key);
+            }
+        }
     }
 
     /// Adds `at` to the escapes of `n`, keeping them sorted and unique.

@@ -908,6 +908,71 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     }
 }
 
+/// C2-W-125 case eight: a text `^[` stays bare before a later link whose text starts with a caret, so the `]`
+/// that closed it early takes the backslash before the first write. A reference whose key is its content
+/// writes its caret bare anyway and is left to the rounds.
+pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    let mut found = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(node) = pending.pop() {
+        super::node::for_each_slot(node, false, &mut |kids, _, _| {
+            scan_text_note_closers(kids, &mut found);
+            pending.extend(kids.iter());
+        });
+    }
+    for (n, at) in found {
+        w.add_escape(n, at);
+    }
+}
+
+/// Whether a link below `doc` has text that starts with a caret.
+pub fn holds_caret_link(doc: V<'_>) -> bool {
+    let mut nodes = Vec::new();
+    super::node::descendants(doc, &mut nodes);
+    nodes
+        .into_iter()
+        .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
+}
+
+fn scan_text_note_closers<'t>(kids: Arr<'t>, found: &mut Vec<(N<'t>, usize)>) {
+    if !kids
+        .iter()
+        .any(|k| ty(k) == "link" && super::inline::leading_caret(k))
+    {
+        return;
+    }
+    // With its closers escaped the note stays open, so each `]` at its own depth closes it early.
+    let mut depth = 0usize;
+    let mut closers = Vec::new();
+    for k in kids {
+        if ty(k) == "text" {
+            let b = text(k).as_bytes();
+            let mut at = 0;
+            while at < b.len() {
+                if depth == 0 && b.get(at..at + 2) == Some(b"^[") {
+                    depth = 1;
+                    closers.clear();
+                    at += 1;
+                } else if depth > 0 && b.get(at) == Some(&b'[') {
+                    depth += 1;
+                } else if depth == 1 && b.get(at) == Some(&b']') {
+                    closers.push((k, at));
+                } else if depth > 1 && b.get(at) == Some(&b']') {
+                    depth -= 1;
+                }
+                at += 1;
+            }
+        } else if ty(k) == "link"
+            && super::inline::leading_caret(k)
+            && !super::inline::key_is_content(k)
+            && !closers.is_empty()
+        {
+            found.append(&mut closers);
+            depth = 0;
+        }
+    }
+}
+
 /// The first write of a group of one paragraph places the backslashes the rounds would reach there, where no other
 /// repair runs in the paragraph (C2-W-091 keeps a backslash an earlier round placed). Called on the first round of a
 /// pass; the result tells the writes of the pass to place the backslash of case nine.
