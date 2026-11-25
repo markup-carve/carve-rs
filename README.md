@@ -318,7 +318,7 @@ carve render --extensions '["carve.tabs"]' --extension-options '{"carve.tabs":{"
 
 A name that is not a standard extension, an option the extension's renderer does not declare, or options for an extension that `--extensions` does not list are usage errors. Host extensions and renderers take Rust code and stay library-only. `carve <command> --help` lists the flags of a command.
 
-`render --quote-locale LOCALE` registers `smartQuotes` with that locale, so `--quote-locale de` writes `„a“` (the 0.1 flag, kept as an engine flag under C2-T-003). The locale falls back to its language, then to English. It applies to HTML output; with `--to markdown`, `plain` or `ansi` it is a usage error.
+`render --quote-locale LOCALE` registers `smartQuotes` with that locale, so `--quote-locale de` writes `„a“` (the 0.1 flag, kept as an engine flag under C2-T-003). The locale falls back to its language, then to English. It applies to HTML output; with any other `--to` it is a usage error.
 
 ## WASI command
 

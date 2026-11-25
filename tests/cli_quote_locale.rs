@@ -76,6 +76,19 @@ fn a_missing_locale_and_an_export_target_are_usage_errors() {
     );
     assert_eq!(status, 2);
     assert!(stderr.starts_with("carve[usage]:"), "{stderr}");
+    let (status, _, _) = run(
+        &["render", "--quote-locale", "de", "--to", "carve", "-"],
+        "\"a\"\n",
+    );
+    assert_eq!(status, 2);
+    assert_eq!(
+        run(
+            &["render", "--quote-locale", "de", "--to", "html", "-"],
+            "\"a\"\n"
+        )
+        .1,
+        "<p>„a“</p>\n"
+    );
     let (status, _, _) = run(&["ast", "--quote-locale", "de", "-"], "\"a\"\n");
     assert_eq!(status, 2);
 }

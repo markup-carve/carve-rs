@@ -265,10 +265,9 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
             }
         }
     }
-    // The exports write the tree's glyphs; only the HTML renderer reads the
-    // quotes of `carve.smartQuotes`.
+    // Only the HTML renderer reads the quotes of `carve.smartQuotes`.
     if parsed.values.contains_key("quote-locale")
-        && matches!(str_value(parsed, "to"), Some("markdown" | "plain" | "ansi"))
+        && str_value(parsed, "to").is_some_and(|to| to != "html")
     {
         return Err("--quote-locale applies to HTML output only".into());
     }
