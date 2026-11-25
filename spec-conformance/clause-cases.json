@@ -83944,6 +83944,932 @@
    "carve": "| a | < |\n+ b | c |\n"
   },
   "from": []
+ },
+ {
+  "id": "CC-2094",
+  "clauses": [
+   "C2-A-082",
+   "C2-A-145"
+  ],
+  "why": "C2-A-082: Below a delimited table, whose closing fence stands before the comment line and which holds no comment children, it is likewise the sibling after the table (C2-A-145).",
+  "summary": "comment between delimited table and caption (carve#6702)",
+  "input": "{table}\n```csv\nName\nAda\n```\n%% source: survey\n^ Members",
+  "options": {},
+  "expected": {
+   "html": "<table>\n  <caption>Members</caption>\n  <thead>\n    <tr><th scope=\"col\">Name</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>Ada</td></tr>\n  </tbody>\n</table>",
+   "children": [
+    {
+     "type": "table",
+     "columns": [
+      {
+       "type": "table_column"
+      }
+     ],
+     "children": [
+      {
+       "type": "table_head",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": true,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "Name"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "Ada"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "caption": {
+      "type": "caption",
+      "children": [
+       {
+        "type": "paragraph",
+        "children": [
+         {
+          "type": "text",
+          "value": "Members"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "type": "comment",
+     "form": "line",
+     "value": "source: survey"
+    }
+   ]
+  },
+  "from": []
+ },
+  {
+   "id": "CC-2095",
+   "clauses": [
+    "C2-B-148",
+    "C2-B-234"
+   ],
+   "why": "C2-B-148: A caption of two lines indents its second line. C2-B-234: A label holds its marker line and every line directly below it that is indented past the column of its marker",
+   "summary": "the upgrade spelling of a 0.1 image caption of two lines (U-442)",
+   "input": "![a](a.png)\n^ cap one\n  continued\n",
+   "options": {},
+   "expected": {
+    "html": "<figure>\n  <img src=\"a.png\" alt=\"a\">\n  <figcaption>cap one\ncontinued</figcaption>\n</figure>",
+    "children": [
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "image",
+        "src": "a.png",
+        "alt": "a"
+       }
+      ],
+      "role": "image",
+      "caption": {
+       "type": "caption",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "cap one"
+          },
+          {
+           "type": "soft_break"
+          },
+          {
+           "type": "text",
+           "value": "continued"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2096",
+   "clauses": [
+    "C2-B-148",
+    "C2-B-234"
+   ],
+   "why": "C2-B-148: A caption of two lines indents its second line. C2-B-234: A label holds its marker line and every line directly below it that is indented past the column of its marker",
+   "summary": "the upgrade spelling of a 0.1 table caption of two lines (U-442)",
+   "input": "| a |\n^ cap\n  Next prose.\n",
+   "options": {},
+   "expected": {
+    "html": "<table>\n  <caption>cap\nNext prose.</caption>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>",
+    "children": [
+     {
+      "type": "table",
+      "columns": [
+       {
+        "type": "table_column"
+       }
+      ],
+      "children": [
+       {
+        "type": "table_body",
+        "children": [
+         {
+          "type": "table_row",
+          "children": [
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "a"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ],
+      "caption": {
+       "type": "caption",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "cap"
+          },
+          {
+           "type": "soft_break"
+          },
+          {
+           "type": "text",
+           "value": "Next prose."
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2097",
+   "clauses": [
+    "C2-B-148",
+    "C2-B-234"
+   ],
+   "why": "C2-B-148: A caption of two lines indents its second line. C2-B-234: A label holds its marker line and every line directly below it that is indented past the column of its marker",
+   "summary": "the upgrade spelling of a 0.1 quote attribution of two lines (U-442)",
+   "input": "> q\n^ Author\n  more\n",
+   "options": {},
+   "expected": {
+    "html": "<figure>\n  <blockquote><p>q</p></blockquote>\n  <figcaption>Author\nmore</figcaption>\n</figure>",
+    "children": [
+     {
+      "type": "block_quote",
+      "children": [
+       {
+        "type": "paragraph",
+        "children": [
+         {
+          "type": "text",
+          "value": "q"
+         }
+        ]
+       }
+      ],
+      "caption": {
+       "type": "caption",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "Author"
+          },
+          {
+           "type": "soft_break"
+          },
+          {
+           "type": "text",
+           "value": "more"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2098",
+   "clauses": [
+    "C2-B-148",
+    "C2-B-234"
+   ],
+   "why": "C2-B-148: A caption of two lines indents its second line. C2-B-234: A label holds its marker line and every line directly below it that is indented past the column of its marker",
+   "summary": "a list marker indented past the caret outside an item is caption text (U-442)",
+   "input": "![a](a.png)\n^ cap\n  - c\n",
+   "options": {},
+   "expected": {
+    "html": "<figure>\n  <img src=\"a.png\" alt=\"a\">\n  <figcaption>cap\n- c</figcaption>\n</figure>",
+    "children": [
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "image",
+        "src": "a.png",
+        "alt": "a"
+       }
+      ],
+      "role": "image",
+      "caption": {
+       "type": "caption",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "cap"
+          },
+          {
+           "type": "soft_break"
+          },
+          {
+           "type": "text",
+           "value": "- c"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2099",
+   "clauses": [
+    "C2-B-071",
+    "C2-B-234"
+   ],
+   "why": "C2-B-234: A line that is not indented past the marker ends the label and is read with no label open: a caption line among such lines is still tested against its host (C2-B-018, C2-B-146, C2-B-149), and below a term the line closes the list unless it is a description line or a term line at the list's column (C2-B-071).",
+   "summary": "a description mark at the term column across a comment line is a description (#6716)",
+   "input": ":: t\n %% c\n: d\n",
+   "options": {},
+   "expected": {
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>",
+    "children": [
+     {
+      "type": "definition_list",
+      "children": [
+       {
+        "type": "definition_term",
+        "children": [
+         {
+          "type": "text",
+          "value": "t"
+         },
+         {
+          "type": "soft_break"
+         },
+         {
+          "type": "comment",
+          "form": "line",
+          "value": "c"
+         }
+        ]
+       },
+       {
+        "type": "definition_description",
+        "children": [
+         {
+          "type": "paragraph",
+          "children": [
+           {
+            "type": "text",
+            "value": "d"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2100",
+   "clauses": [
+    "C2-M-037"
+   ],
+   "why": "C2-M-037: `<tr>` is a `table_row`, and `<th>` and `<td>` are a `table_cell` with `header` true and false, except that every `<td>` of the `<thead>` that becomes the `table_head` is a `table_cell` with `header` true, since no source spells a head of data cells (C2-B-178); a `<thead>` that holds a `<td>` is reported with one `import-structure-repaired` entry at the `<thead>`.",
+   "summary": "a thead row of td cells imports as the head of header cells, reported once at the thead",
+   "kind": "import",
+   "html": "<table><thead><tr><td>a</td><td>b</td></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>",
+   "options": {},
+   "expected": {
+    "carve": "|= a |= b |\n| 1 | 2 |\n",
+    "diagnostics": [
+     {
+      "code": "import-structure-repaired",
+      "channel": "render-loss",
+      "severity": "warning",
+      "line": 1,
+      "column": 8
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2101",
+   "clauses": [
+    "C2-M-037"
+   ],
+   "why": "C2-M-037: `<tr>` is a `table_row`, and `<th>` and `<td>` are a `table_cell` with `header` true and false, except that every `<td>` of the `<thead>` that becomes the `table_head` is a `table_cell` with `header` true, since no source spells a head of data cells (C2-B-178); a `<thead>` that holds a `<td>` is reported with one `import-structure-repaired` entry at the `<thead>`.",
+   "summary": "an empty td corner cell and td column labels in the thead import as header cells",
+   "kind": "import",
+   "html": "<table><thead><tr><td></td><td>Q1</td><td>Q2</td></tr></thead><tbody><tr><th>North</th><td>1</td><td>2</td></tr></tbody></table>",
+   "options": {},
+   "expected": {
+    "carve": "|= |= Q1 |= Q2 |\n|= North | 1 | 2 |\n",
+    "diagnostics": [
+     {
+      "code": "import-structure-repaired",
+      "channel": "render-loss",
+      "severity": "warning",
+      "line": 1,
+      "column": 8
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2102",
+   "clauses": [
+    "C2-M-037"
+   ],
+   "why": "C2-M-037: `<tr>` is a `table_row`, and `<th>` and `<td>` are a `table_cell` with `header` true and false, except that every `<td>` of the `<thead>` that becomes the `table_head` is a `table_cell` with `header` true, since no source spells a head of data cells (C2-B-178); a `<thead>` that holds a `<td>` is reported with one `import-structure-repaired` entry at the `<thead>`.",
+   "summary": "an empty td corner cell beside th column labels in the thead imports as a header cell",
+   "kind": "import",
+   "html": "<table><thead><tr><td></td><th>Q1</th><th>Q2</th></tr></thead><tbody><tr><th>North</th><td>1</td><td>2</td></tr></tbody></table>",
+   "options": {},
+   "expected": {
+    "carve": "|= |= Q1 |= Q2 |\n|= North | 1 | 2 |\n",
+    "diagnostics": [
+     {
+      "code": "import-structure-repaired",
+      "channel": "render-loss",
+      "severity": "warning",
+      "line": 1,
+      "column": 8
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2103",
+   "clauses": [
+    "C2-M-037"
+   ],
+   "why": "C2-M-037: `<tr>` is a `table_row`, and `<th>` and `<td>` are a `table_cell` with `header` true and false, except that every `<td>` of the `<thead>` that becomes the `table_head` is a `table_cell` with `header` true, since no source spells a head of data cells (C2-B-178); a `<thead>` that holds a `<td>` is reported with one `import-structure-repaired` entry at the `<thead>`.",
+   "summary": "td cells in two rows of one thead give one report entry at the thead",
+   "kind": "import",
+   "html": "<table><thead><tr><td>a</td></tr><tr><td>b</td></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+   "options": {},
+   "expected": {
+    "carve": "|= a |\n|= b |\n| 1 |\n",
+    "diagnostics": [
+     {
+      "code": "import-structure-repaired",
+      "channel": "render-loss",
+      "severity": "warning",
+      "line": 1,
+      "column": 8
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2104",
+   "clauses": [
+    "C2-M-037"
+   ],
+   "why": "C2-M-037: each further `<thead>` or `<tfoot>` is a `table_body` at its place and is reported with `import-structure-repaired`. ... every `<td>` of the `<thead>` that becomes the `table_head` is a `table_cell` with `header` true",
+   "summary": "a td of a further thead, which is read as a body, stays a data cell",
+   "kind": "import",
+   "html": "<table><thead><tr><th>h</th></tr></thead><thead><tr><td>x</td></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+   "options": {},
+   "expected": {
+    "carve": "{body-rows=1,1}\n|= h |\n| x |\n| 1 |\n",
+    "diagnostics": [
+     {
+      "code": "import-structure-repaired",
+      "channel": "render-loss",
+      "severity": "warning",
+      "line": 1,
+      "column": 42
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2105",
+   "clauses": [
+    "C2-B-084"
+   ],
+   "why": "C2-B-084: Every line directly below it that is indented past column 0 continues the expansion",
+   "summary": "the upgrade spelling of a 0.1 paragraph indented below an abbreviation definition (U-443)",
+   "kind": "render",
+   "input": "*[A]: B\n\n  x\n",
+   "options": {},
+   "expected": {
+    "html": "<p>x</p>",
+    "children": [
+     {
+      "type": "abbreviation_def",
+      "expansion": "B",
+      "key": "A",
+      "namespace": "abbr"
+     },
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "text",
+        "value": "x"
+       }
+      ]
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2106",
+   "clauses": [
+    "C2-B-084"
+   ],
+   "why": "C2-B-084: Every line directly below it that is indented past column 0 continues the expansion",
+   "summary": "the upgrade spelling of a 0.1 paragraph of two indented lines below an abbreviation definition (U-443)",
+   "kind": "render",
+   "input": "*[A]: B\n\n  x\n  y\n",
+   "options": {},
+   "expected": {
+    "html": "<p>x\ny</p>",
+    "children": [
+     {
+      "type": "abbreviation_def",
+      "expansion": "B",
+      "key": "A",
+      "namespace": "abbr"
+     },
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "text",
+        "value": "x"
+       },
+       {
+        "type": "soft_break"
+       },
+       {
+        "type": "text",
+        "value": "y"
+       }
+      ]
+     }
+    ]
+   },
+   "from": []
+  },
+ {
+  "id": "CC-2107",
+  "clauses": [
+   "C2-M-074",
+   "C2-W-117"
+  ],
+  "why": "C2-M-074: A tree that holds a fact the writer has no spelling for in that place, such as blocks in a table cell, a row span the source cannot express or a `dir`, is returned as it stands. The writer reports it with `field-unspellable` or `structure-unspellable` (C2-W-117), in the same record. C2-W-117: No such loss is silent.",
+  "summary": "an imported row span that runs into a column span of the next row is kept and reported, not dropped",
+  "kind": "import",
+  "html": "<table><tr><td>a</td><td rowspan=\"2\">r</td></tr><tr><td colspan=\"2\">w</td></tr></table>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "table",
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "a"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "r"
+              }
+             ]
+            }
+           ],
+           "rowspan": 2
+          }
+         ]
+        },
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "w"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ]
+    }
+   ],
+   "carve": "| a | r |\n| w | < |\n",
+   "diagnostics": [
+    {
+     "code": "field-unspellable",
+     "path": "/children/0/children/0/children/0/children/1/rowspan"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2108",
+  "clauses": [
+   "C2-M-074",
+   "C2-W-117"
+  ],
+  "why": "C2-M-074: A tree that holds a fact the writer has no spelling for in that place, such as blocks in a table cell, a row span the source cannot express or a `dir`, is returned as it stands. The writer reports it with `field-unspellable` or `structure-unspellable` (C2-W-117), in the same record. C2-W-117: No such loss is silent.",
+  "summary": "an imported head row span that runs into a column span of the next head row is kept and reported",
+  "kind": "import",
+  "html": "<table><thead><tr><th>a</th><th rowspan=\"2\">r</th></tr><tr><th colspan=\"2\">w</th></tr></thead></table>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "table",
+     "children": [
+      {
+       "type": "table_head",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": true,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "a"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "type": "table_cell",
+           "header": true,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "r"
+              }
+             ]
+            }
+           ],
+           "rowspan": 2
+          }
+         ]
+        },
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": true,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "w"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ]
+    }
+   ],
+   "carve": "|= a |= r |\n|= w |= < |\n",
+   "diagnostics": [
+    {
+     "code": "field-unspellable",
+     "path": "/children/0/children/0/children/0/children/1/rowspan"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2109",
+  "clauses": [
+   "C2-M-039",
+   "C2-M-068"
+  ],
+  "why": "C2-M-039: The table's `columns` holds one `table_column` for each column the cells fill, counted as a parse counts the columns of a row with spans (C2-B-172), with the slots that row spans from above take in each row. C2-M-068: The importer returns a tree that the 0.2 reader accepts and that the writer can spell wherever the HTML holds a fact Carve can hold.",
+  "summary": "a row span from above takes its slot in the next row, so a column span there widens the table to three columns",
+  "kind": "import",
+  "html": "<table><tr><td rowspan=\"2\">r</td></tr><tr><td colspan=\"2\">w</td></tr></table>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "table",
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "r"
+              }
+             ]
+            }
+           ],
+           "rowspan": 2
+          }
+         ]
+        },
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "w"
+              }
+             ]
+            }
+           ],
+           "colspan": 2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ]
+    }
+   ],
+   "carve": "| r |\n| ^ | w | < |\n",
+   "diagnostics": []
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2110",
+  "clauses": [
+   "C2-M-039",
+   "C2-M-068"
+  ],
+  "why": "C2-M-039: The table's `columns` holds one `table_column` for each column the cells fill, counted as a parse counts the columns of a row with spans (C2-B-172), with the slots that row spans from above take in each row. C2-M-068: The importer returns a tree that the 0.2 reader accepts and that the writer can spell wherever the HTML holds a fact Carve can hold.",
+  "summary": "a row span from above takes its slot in the next row, so a cell there starts in the second column",
+  "kind": "import",
+  "html": "<table><tr><td rowspan=\"2\">r</td></tr><tr><td>w</td></tr></table>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "table",
+     "children": [
+      {
+       "type": "table_body",
+       "children": [
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "r"
+              }
+             ]
+            }
+           ],
+           "rowspan": 2
+          }
+         ]
+        },
+        {
+         "type": "table_row",
+         "children": [
+          {
+           "type": "table_cell",
+           "header": false,
+           "children": [
+            {
+             "type": "cell_paragraph",
+             "children": [
+              {
+               "type": "text",
+               "value": "w"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "columns": [
+      {
+       "type": "table_column"
+      },
+      {
+       "type": "table_column"
+      }
+     ]
+    }
+   ],
+   "carve": "| r |\n| ^ | w |\n",
+   "diagnostics": []
+  },
+  "from": []
  }
  ]
 }
