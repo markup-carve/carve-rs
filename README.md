@@ -325,7 +325,7 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `html_to_ast`, `migrate_html` | `api::import_document` |
 | `parse_with_source_layout` | `api::parse_with_layout` |
 | `djot_to_carve`, `migrate_djot`, `try_migrate_markdown`, `try_markdown_to_ast` | `Carve::import_from` with `ImportFormat::Djot`, `Markdown` or `Gfm` |
-| `try_migrate_markdown_for_directory`, `try_migrate_markdown_for_directory_with_destinations` | same names in `api` and at the crate root; they return `Imported` instead of `MigrationResult`. The directory run is `carve import --from gfm --directory` |
+| `try_migrate_markdown_for_directory`, `try_migrate_markdown_for_directory_with_destinations` | same names in `api` and at the crate root; the first returns `Imported` instead of `MigrationResult`, the second `(Imported, HashMap<String, String>)`. The directory run is `carve import --from gfm --directory` |
 | `bbcode_to_carve`, `migrate_bbcode` | gone: BBCode import stays in carve-js |
 | `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json` | `api::diff_tree`, `api::apply_patch` (C2-T-043, C2-T-044): patches are JSON values in the 0.2 form, so a 0.1 patch is not read |
 | `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no reversible patch |
