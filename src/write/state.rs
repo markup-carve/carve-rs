@@ -173,6 +173,8 @@ pub struct Writer<'t> {
     pub saw_link: bool,
     /// Whether the document holds a link whose text starts with a caret (C2-W-125 case eight), found once.
     pub caret_links: Option<bool>,
+    /// No table cell of the written JSON tree holds a span mark.
+    pub unmarked: bool,
     /// C2-W-125 case eight: the links whose caret stays bare, as the early closers of a text note before them took
     /// the backslash.
     pub case_eight_links: AddrSet<usize>,
@@ -244,6 +246,7 @@ impl<'t> Writer<'t> {
             attempts_journal: None,
             saw_link: false,
             caret_links: None,
+            unmarked: false,
             case_eight_links: AddrSet::default(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),

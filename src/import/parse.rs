@@ -306,6 +306,8 @@ fn tracker(input: &str) -> Rc<Tracker> {
 }
 
 fn run(input: &str, tok: &Tokenizer<Located>, t: &Tracker) {
+    // One shared buffer: each chunk is a view of it, not a copy.
+    let whole = StrTendril::from_slice(input);
     let mut at = 0;
     while at < input.len() {
         let next = input
@@ -318,8 +320,11 @@ fn run(input: &str, tok: &Tokenizer<Located>, t: &Tracker) {
         if lt && t.tag_start.get().is_none() {
             t.tag_start.set(Some(at));
         }
-        t.queue
-            .push_back(StrTendril::from_slice(input.get(at..next).unwrap_or("")));
+        let chunk = match (u32::try_from(at), u32::try_from(next - at)) {
+            (Ok(from), Ok(len)) => whole.subtendril(from, len),
+            _ => StrTendril::from_slice(input.get(at..next).unwrap_or("")),
+        };
+        t.queue.push_back(chunk);
         while let html5ever::TokenizerResult::Script(_) = tok.feed(&t.queue) {}
         at = next;
     }

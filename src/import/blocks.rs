@@ -1362,11 +1362,14 @@ impl Cx {
 
     fn rows_of(&mut self, group_rows: &[Id], in_head: bool) -> Vec<Value> {
         let mut out = Vec::new();
+        let mut spanned = false;
         for &r in group_rows {
             let mut cells = Vec::new();
             for entry in self.dom.elements(r) {
                 if self.dom.is(entry, "th") || self.dom.is(entry, "td") {
-                    cells.push(self.table_cell(entry, in_head));
+                    let cell = self.table_cell(entry, in_head);
+                    spanned |= cell.get("rowspan").is_some();
+                    cells.push(cell);
                 } else {
                     self.report(entry, Code::StructureRepaired, "Non-cell child in HTML row");
                 }
@@ -1374,7 +1377,10 @@ impl Cx {
             let mapped = self.plain_attrs(r);
             out.push(with("table_row", cells, &mapped));
         }
-        self.clamp_rowspans(&mut out, group_rows);
+        // The clamp reads every cell again; a group without a row span skips it.
+        if spanned {
+            self.clamp_rowspans(&mut out, group_rows);
+        }
         out
     }
 

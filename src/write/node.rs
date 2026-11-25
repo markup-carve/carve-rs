@@ -458,7 +458,10 @@ fn joinable_texts(last: V<'_>, next: V<'_>) -> bool {
     last.each(&mut |k, p| {
         if !run(k) {
             own += 1;
-            same = same && next.get(k).is_some_and(|q| equal_values(p, q, false));
+            same = same
+                && next
+                    .get(k)
+                    .is_some_and(|q| equal_values(p, q, false, false));
         }
     });
     next.each(&mut |k, _| other += usize::from(!run(k)));
@@ -510,12 +513,12 @@ pub fn equal_scalars(a: V<'_>, b: V<'_>) -> bool {
     a.is_null() && b.is_null()
 }
 
-fn equal_arrays(x: Arr<'_>, y: Arr<'_>, span_marks: bool) -> bool {
+fn equal_arrays(x: Arr<'_>, y: Arr<'_>, span_marks: bool, unmarked: bool) -> bool {
     if !has_adjacent_text(x) && !has_adjacent_text(y) {
         return x.len() == y.len()
             && x.iter()
                 .zip(y.iter())
-                .all(|(l, r)| equal_values(l, r, span_marks));
+                .all(|(l, r)| equal_values(l, r, span_marks, unmarked));
     }
     let (x, y) = (coalesced(x), coalesced(y));
     x.len() == y.len()
@@ -526,6 +529,7 @@ fn equal_arrays(x: Arr<'_>, y: Arr<'_>, span_marks: bool) -> bool {
                 r.node,
                 r.joined.as_deref(),
                 span_marks,
+                unmarked,
             )
         })
 }
@@ -538,13 +542,14 @@ fn equal_field(
     q: V<'_>,
     joined: (Option<&str>, Option<&str>),
     span_marks: bool,
+    unmarked: bool,
 ) -> bool {
     let (lv, rv) = joined;
     if k == "value" && (lv.is_some() || rv.is_some()) {
         let x = lv.or_else(|| p.as_str());
         return x.is_some() && x == rv.or_else(|| q.as_str());
     }
-    equal_values(p, q, span_marks)
+    equal_values(p, q, span_marks, unmarked)
 }
 
 /// [`equal_objects`] of two typed nodes, their fields zipped; `None` for two node types.
@@ -553,6 +558,7 @@ fn equal_nodes(
     b: V<'_>,
     joined: (Option<&str>, Option<&str>),
     inner: bool,
+    unmarked: bool,
 ) -> Option<bool> {
     let (V::Node(x), V::Node(y)) = (a, b) else {
         return None;
@@ -567,7 +573,7 @@ fn equal_nodes(
         let q = q.filter(|_| !skipped_in(b, fields, k, inner));
         same = match (p, q) {
             (None, None) => true,
-            (Some(p), Some(q)) => equal_field(k, p, q, joined, inner),
+            (Some(p), Some(q)) => equal_field(k, p, q, joined, inner, unmarked),
             _ => false,
         };
     });
@@ -581,6 +587,7 @@ fn equal_json_node(
     b: V<'_>,
     joined: (Option<&str>, Option<&str>),
     span_marks: bool,
+    unmarked: bool,
 ) -> Option<bool> {
     let (V::Json(value @ Value::Object(map)), V::Node(node)) = (a, b) else {
         return None;
@@ -590,7 +597,7 @@ fn equal_json_node(
         return None;
     }
     let inner = if name == "table" {
-        list_has_span_marks(a) || list_has_span_marks(b)
+        list_has_span_marks(b) || (!unmarked && list_has_span_marks(a))
     } else {
         span_marks
     };
@@ -602,28 +609,35 @@ fn equal_json_node(
             return;
         }
         same = match left.next() {
-            Some((kl, p)) => kl == kr && equal_field(kl, V::Json(p), q, joined, inner),
+            Some((kl, p)) => kl == kr && equal_field(kl, V::Json(p), q, joined, inner, unmarked),
             None => false,
         };
     });
     Some(same && left.next().is_none())
 }
 
-fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_marks: bool) -> bool {
+fn equal_objects(
+    a: V<'_>,
+    lv: Option<&str>,
+    b: V<'_>,
+    rv: Option<&str>,
+    span_marks: bool,
+    unmarked: bool,
+) -> bool {
     if !(a.is_object() && b.is_object()) {
-        return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks);
+        return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks, unmarked);
     }
     if let (V::Json(_), V::Node(_)) = (a, b)
-        && let Some(same) = equal_json_node(a, b, (lv, rv), span_marks)
+        && let Some(same) = equal_json_node(a, b, (lv, rv), span_marks, unmarked)
     {
         return same;
     }
     let inner = if ty(a) == "table" {
-        list_has_span_marks(a) || list_has_span_marks(b)
+        list_has_span_marks(b) || (!(unmarked && matches!(a, V::Json(_))) && list_has_span_marks(a))
     } else {
         span_marks
     };
-    if let Some(same) = equal_nodes(a, b, (lv, rv), inner) {
+    if let Some(same) = equal_nodes(a, b, (lv, rv), inner, unmarked) {
         return same;
     }
     let l = Compared::of(a, inner);
@@ -639,24 +653,26 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
             return;
         };
         at += 1;
-        same = kl == kr && equal_field(kl, p, q, (lv, rv), inner);
+        same = kl == kr && equal_field(kl, p, q, (lv, rv), inner, unmarked);
     });
     same && at == l.len
 }
 
 /// The typed pairs a parsed tree is made of, sent where [`equal_values`] dispatches them; `None` for any other pair.
-fn equal_typed(a: V<'_>, b: V<'_>, span_marks: bool) -> Option<bool> {
+fn equal_typed(a: V<'_>, b: V<'_>, span_marks: bool, unmarked: bool) -> Option<bool> {
     Some(match (a, b) {
-        (V::Node(_), V::Node(_)) => equal_objects(a, None, b, None, span_marks),
-        (V::Nodes(x), V::Nodes(y)) => equal_arrays(Arr::Nodes(x), Arr::Nodes(y), span_marks),
+        (V::Node(_), V::Node(_)) => equal_objects(a, None, b, None, span_marks, unmarked),
+        (V::Nodes(x), V::Nodes(y)) => {
+            equal_arrays(Arr::Nodes(x), Arr::Nodes(y), span_marks, unmarked)
+        }
         (V::Str(x), V::Str(y)) => x == y,
         (V::Bool(x), V::Bool(y)) => x == y,
         _ => return None,
     })
 }
 
-fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
-    if let Some(same) = equal_typed(a, b, span_marks) {
+fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool, unmarked: bool) -> bool {
+    if let Some(same) = equal_typed(a, b, span_marks, unmarked) {
         return same;
     }
     // The JSON side of an imported tree, read without the view's dispatch.
@@ -667,11 +683,11 @@ fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
             Value::Array(x) => {
                 return b
                     .as_array()
-                    .is_some_and(|y| equal_arrays(Arr::Json(x), y, span_marks));
+                    .is_some_and(|y| equal_arrays(Arr::Json(x), y, span_marks, unmarked));
             }
             Value::Object(_) => {
                 if let V::Node(_) = b
-                    && let Some(same) = equal_json_node(a, b, (None, None), span_marks)
+                    && let Some(same) = equal_json_node(a, b, (None, None), span_marks, unmarked)
                 {
                     return same;
                 }
@@ -680,24 +696,31 @@ fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
         }
     }
     match (a.as_array(), b.as_array()) {
-        (Some(x), Some(y)) => return equal_arrays(x, y, span_marks),
+        (Some(x), Some(y)) => return equal_arrays(x, y, span_marks, unmarked),
         (Some(_), None) | (None, Some(_)) => return false,
         (None, None) => {}
     }
     if a.is_object() || b.is_object() {
-        return a.is_object() && b.is_object() && equal_objects(a, None, b, None, span_marks);
+        return a.is_object()
+            && b.is_object()
+            && equal_objects(a, None, b, None, span_marks, unmarked);
     }
     equal_scalars(a, b)
 }
 
 /// C2-A-161 on two node lists, as the children of two paragraphs compare.
 pub fn lists_equal(a: Arr<'_>, b: Arr<'_>) -> bool {
-    equal_arrays(a, b, false)
+    equal_arrays(a, b, false, false)
 }
 
 /// C2-A-161: whether two trees are the same document.
 pub fn trees_equal<'a, 'b>(a: impl Into<V<'a>>, b: impl Into<V<'b>>) -> bool {
-    equal_values(a.into(), b.into(), false)
+    equal_values(a.into(), b.into(), false, false)
+}
+
+/// [`trees_equal`] where no table cell of the JSON side of `a` holds a span mark.
+pub fn unmarked_trees_equal<'a, 'b>(a: impl Into<V<'a>>, b: impl Into<V<'b>>) -> bool {
+    equal_values(a.into(), b.into(), false, true)
 }
 
 /// `n` without the standard data namespaces (C2-A-193).

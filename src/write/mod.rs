@@ -648,7 +648,8 @@ mod escape_prune_test {
 /// The whole-tree checks the writer makes on a supplied JSON tree, read in one walk: each tree
 /// walk of a large import misses the cache throughout.
 #[allow(clippy::struct_excessive_bools)] // one flag per check
-struct JsonFacts {
+#[derive(Clone, Copy)]
+pub(crate) struct JsonFacts {
     /// [`has_attribute_lines`]
     attribute_lines: bool,
     /// [`has_adjacent_plain_text`]
@@ -659,20 +660,17 @@ struct JsonFacts {
     mark_text: bool,
     /// A table cell spans more than one row or column, as in `spans::json_has_counts`.
     counts: bool,
+    /// A link's first child is a text starting with a caret: a superset of [`check::holds_caret_link`].
+    caret_link: bool,
+    /// A table cell has a `span` field.
+    span_marks: bool,
     /// [`json_estimate`]
     estimate: usize,
 }
 
 impl JsonFacts {
     fn of(doc: &Value) -> Self {
-        let mut facts = Self {
-            attribute_lines: false,
-            adjacent_plain_text: false,
-            spaced_text: false,
-            mark_text: false,
-            counts: false,
-            estimate: 0,
-        };
+        let mut facts = Self::of_parts();
         facts.estimate = facts.visit(doc);
         facts
     }
@@ -698,10 +696,74 @@ impl JsonFacts {
         }
     }
 
-    fn read(&mut self, map: &serde_json::Map<String, Value>) {
+    /// [`JsonFacts::of`] in one pass without recursion, `None` where a path of `doc` holds more than `limit`
+    /// nodes of the kinds `nests` counts as nesting blocks or inlines.
+    pub(crate) fn checked(
+        doc: &Value,
+        limit: usize,
+        nests: impl Fn(&str) -> (bool, bool),
+    ) -> Option<Self> {
+        let mut facts = Self::of_parts();
+        let mut pending = vec![(doc, 0usize, 0usize)];
+        while let Some((value, blocks, inlines)) = pending.pop() {
+            facts.estimate = facts.estimate.saturating_add(match value {
+                Value::String(s) => s.len().saturating_mul(2).saturating_add(2),
+                _ => 2,
+            });
+            match value {
+                Value::Array(items) => {
+                    if !facts.adjacent_plain_text {
+                        facts.adjacent_plain_text =
+                            items.windows(2).any(|pair| pair.iter().all(is_plain_text));
+                    }
+                    pending.extend(items.iter().map(|v| (v, blocks, inlines)));
+                }
+                Value::Object(map) => {
+                    let (block, inline) = nests(facts.read(map));
+                    let blocks = blocks + usize::from(block);
+                    let inlines = inlines + usize::from(inline);
+                    if blocks > limit || inlines > limit {
+                        return None;
+                    }
+                    pending.extend(map.values().map(|v| (v, blocks, inlines)));
+                }
+                _ => {}
+            }
+        }
+        Some(facts)
+    }
+
+    const fn of_parts() -> Self {
+        Self {
+            attribute_lines: false,
+            adjacent_plain_text: false,
+            spaced_text: false,
+            mark_text: false,
+            counts: false,
+            caret_link: false,
+            span_marks: false,
+            estimate: 0,
+        }
+    }
+
+    /// The checks on one object, its type returned. Its keys are read once: a lookup by key reads several.
+    fn read<'v>(&mut self, map: &'v serde_json::Map<String, Value>) -> &'v str {
+        let (mut kind, mut attrs, mut value, mut children) = ("", None, None, None);
+        let (mut colspan, mut rowspan, mut span) = (None, None, false);
+        for (k, v) in map {
+            match k.as_str() {
+                "type" => kind = v.as_str().unwrap_or(""),
+                "attrs" => attrs = Some(v),
+                "value" => value = v.as_str(),
+                "children" => children = Some(v),
+                "colspan" => colspan = Some(v),
+                "rowspan" => rowspan = Some(v),
+                "span" => span = true,
+                _ => {}
+            }
+        }
         if !self.attribute_lines {
-            self.attribute_lines = map
-                .get("attrs")
+            self.attribute_lines = attrs
                 .and_then(|a| a.get("keyValues"))
                 .and_then(Value::as_array)
                 .is_some_and(|pairs| {
@@ -712,19 +774,29 @@ impl JsonFacts {
                     })
                 });
         }
-        match map.get("type").and_then(Value::as_str) {
-            Some("text") => {
-                if let Some(text) = map.get("value").and_then(Value::as_str) {
+        match kind {
+            "text" => {
+                if let Some(text) = value {
                     self.spaced_text |= text.ends_with([' ', '\t']);
                     self.mark_text |= text.bytes().any(pairs::is_asked_byte);
                 }
             }
-            Some("table_cell") => {
-                let counted = |field| map.get(field).and_then(Value::as_i64).unwrap_or(1) > 1;
-                self.counts |= counted("colspan") || counted("rowspan");
+            "table_cell" => {
+                let counted =
+                    |field: Option<&Value>| field.and_then(Value::as_i64).unwrap_or(1) > 1;
+                self.counts |= counted(colspan) || counted(rowspan);
+                self.span_marks |= span;
+            }
+            "link" => {
+                self.caret_link |= children
+                    .and_then(|c| c.get(0))
+                    .and_then(|t| t.get("value"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.starts_with('^'));
             }
             _ => {}
         }
+        kind
     }
 }
 
@@ -1020,8 +1092,16 @@ fn has_adjacent_plain_text(value: &Value) -> bool {
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
+    write_value_with(doc, settings, JsonFacts::of(doc))
+}
+
+/// [`write_value`] with the [`JsonFacts`] of `doc`.
+pub(crate) fn write_value_with(
+    doc: &Value,
+    settings: &Settings,
+    facts: JsonFacts,
+) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    let facts = JsonFacts::of(doc);
     if !facts.attribute_lines && !facts.adjacent_plain_text {
         return write_trimmed(V::Json(doc), &pool, settings, None, Some(&facts));
     }
@@ -1170,6 +1250,10 @@ fn write_tree<'t>(
         Some(f) => !f.mark_text,
         None => matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value)),
     };
+    if facts.is_some_and(|f| !f.caret_link) {
+        w.caret_links = Some(false);
+    }
+    w.unmarked = facts.is_some_and(|f| !f.span_marks);
     w.extensions.clone_from(&settings.extensions);
     if settings.extensions.iter().any(|e| e == "carve.tabs") {
         w.matchers.push(state::Matcher {
@@ -2345,10 +2429,13 @@ fn compare_group<'t>(
     };
     let actual = children(parsed);
     round.equal = group.len() == actual.len()
-        && group
-            .iter()
-            .zip(actual)
-            .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+        && group.iter().zip(actual).all(|(expected, read_back)| {
+            if w.unmarked {
+                node::unmarked_trees_equal(expected, read_back)
+            } else {
+                node::trees_equal(expected, read_back)
+            }
+        });
     if !round.equal {
         check::count_open_above(w, group);
         compare_blocks(w, &mut c, group, actual, doc);
@@ -4079,7 +4166,49 @@ mod json_facts_tests {
             assert_eq!(facts.mark_text, pairs::json_has_mark_text(tree), "{tree}");
             assert_eq!(facts.counts, spans::json_has_counts(tree), "{tree}");
             assert_eq!(facts.estimate, json_estimate(tree), "{tree}");
+            let caret = super::check::holds_caret_link(crate::view::V::Json(tree));
+            assert!(facts.caret_link || !caret, "{tree}");
+            assert_eq!(facts.span_marks, marked_cell(tree), "{tree}");
+            let fields = |f: JsonFacts| {
+                (
+                    f.attribute_lines,
+                    f.adjacent_plain_text,
+                    f.spaced_text,
+                    f.mark_text,
+                    f.counts,
+                    f.caret_link,
+                    f.span_marks,
+                    f.estimate,
+                )
+            };
+            let checked = JsonFacts::checked(tree, usize::MAX, |_| (false, false));
+            assert_eq!(checked.map(fields), Some(fields(facts)), "{tree}");
         }
+    }
+
+    fn marked_cell(v: &Value) -> bool {
+        match v {
+            Value::Array(items) => items.iter().any(marked_cell),
+            Value::Object(m) => {
+                (m.get("type") == Some(&json!("table_cell")) && m.contains_key("span"))
+                    || m.values().any(marked_cell)
+            }
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn the_checked_walk_refuses_past_the_nesting_limit() {
+        let nested = |depth: usize| {
+            let mut v = json!({"type": "text", "value": "x"});
+            for _ in 0..depth {
+                v = json!({"type": "block_quote", "children": [v]});
+            }
+            v
+        };
+        let quotes = |kind: &str| (kind == "block_quote", false);
+        assert!(JsonFacts::checked(&nested(3), 3, quotes).is_some());
+        assert!(JsonFacts::checked(&nested(4), 3, quotes).is_none());
     }
 }
 
