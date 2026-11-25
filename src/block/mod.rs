@@ -1109,7 +1109,18 @@ impl<'a> Parser<'a> {
         );
         // The paragraph goes before the comment lines that followed it.
         if let Some(ev) = self.events.pop() {
-            self.events.insert(p.at.min(self.events.len()), ev);
+            let at = p.at.min(self.events.len());
+            self.events.insert(at, ev);
+            // Containers that closed since the attribute lines own them too (C2-A-151).
+            let mut depth = 0usize;
+            for ev in self.events.iter_mut().skip(at + 1) {
+                match ev {
+                    Event::Enter { .. } => depth += 1,
+                    Event::Exit { end, .. } if depth == 0 => *end = (*end).max(p.end),
+                    Event::Exit { .. } => depth -= 1,
+                    Event::Leaf { .. } => {}
+                }
+            }
         }
         self.closed = None;
     }
