@@ -657,8 +657,7 @@ fn link_bracket_counts<'t>(w: &mut Writer<'t>, link: N<'t>) -> (usize, usize) {
     counts
 }
 
-/// Scan one link label. A nested link is a boundary for bracket pairs in the
-/// containing label; counts stand in for its own brackets to keep deep scans linear.
+/// Scan one link label. Counts stand in for the brackets of a nested link to keep deep scans linear.
 fn scan_link_brackets<'t>(w: &mut Writer<'t>, nodes: Arr<'t>, scan: &mut BracketScan<'t>) {
     for node in nodes {
         match ty(node) {
@@ -677,14 +676,8 @@ fn scan_link_brackets<'t>(w: &mut Writer<'t>, nodes: Arr<'t>, scan: &mut Bracket
                     }
                 }
             }
+            // A nested link bounds no pairs (carve#6544): text brackets on either side pair through it.
             "link" => {
-                for place in scan.open.drain(..) {
-                    if let BracketPlace::Text(n, at) = place {
-                        scan.lone.push((n, at));
-                    }
-                }
-                scan.lone_count += scan.size;
-                scan.size = 0;
                 let counts = link_bracket_counts(w, node);
                 counted_brackets(scan, counts);
             }
