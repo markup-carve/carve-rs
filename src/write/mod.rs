@@ -716,7 +716,7 @@ impl JsonFacts {
                         facts.adjacent_plain_text =
                             items.windows(2).any(|pair| pair.iter().all(is_plain_text));
                     }
-                    pending.extend(items.iter().map(|v| (v, blocks, inlines)));
+                    pending.extend(items.iter().rev().map(|v| (v, blocks, inlines)));
                 }
                 Value::Object(map) => {
                     let (block, inline) = nests(facts.read(map));
@@ -725,7 +725,7 @@ impl JsonFacts {
                     if blocks > limit || inlines > limit {
                         return None;
                     }
-                    pending.extend(map.values().map(|v| (v, blocks, inlines)));
+                    pending.extend(map.values().rev().map(|v| (v, blocks, inlines)));
                 }
                 _ => {}
             }
