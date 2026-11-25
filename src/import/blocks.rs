@@ -1492,7 +1492,7 @@ impl Cx {
             children.insert(0, parent("table_body", direct));
         }
         if let Some(h) = head {
-            let rows = self.rows(h, true);
+            let rows = self.head_cells(h);
             let mapped = self.plain_attrs(h);
             children.insert(0, with("table_head", rows, &mapped));
         } else if !head_rows.is_empty() {
@@ -1504,6 +1504,30 @@ impl Cx {
             children.push(with("table_foot", rows, &mapped));
         }
         children
+    }
+
+    /// carve#6663: a head holds header cells only (C2-B-178), so each `<td>` of the `<thead>` is one, reported once.
+    fn head_cells(&mut self, head: Id) -> Vec<Value> {
+        let mut rows = self.rows(head, true);
+        let mut changed = false;
+        for cell in rows
+            .iter_mut()
+            .filter_map(|r| r["children"].as_array_mut())
+            .flatten()
+        {
+            if cell["header"] == false {
+                cell["header"] = true.into();
+                changed = true;
+            }
+        }
+        if changed {
+            self.report(
+                head,
+                Code::StructureRepaired,
+                "The data cells of a table head read as header cells",
+            );
+        }
+        rows
     }
 
     /// The rows of a body; `lead` splits its leading column-heading rows off into `head_rows`.
