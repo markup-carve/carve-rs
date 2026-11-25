@@ -287,6 +287,8 @@ pub struct Renderer<'s> {
     depth: usize,
     raw: Raw,
     img_alt_text: usize,
+    /// The outermost open image has an undefined reference: djot.js writes no alt and no src for it.
+    img_unresolved: bool,
     list_tightness: Vec<bool>,
     first_line: bool,
     ignore: bool,
@@ -305,6 +307,7 @@ impl<'s> Renderer<'s> {
             depth,
             raw: Raw::default(),
             img_alt_text: 0,
+            img_unresolved: false,
             list_tightness: Vec::new(),
             first_line: true,
             ignore: false,
@@ -380,6 +383,12 @@ impl<'s> Renderer<'s> {
             return Ok(());
         }
 
+        if self.img_unresolved
+            && !matches!(&e, Event::Start(Container::Image(..), _) | Event::End(Container::Image(..)))
+        {
+            return Ok(());
+        }
+
         match e {
             Event::Start(c, attrs) => {
                 if c.is_block() {
@@ -449,9 +458,10 @@ impl<'s> Renderer<'s> {
                             out.write_char('"')?;
                         }
                     }
-                    Container::Image(..) => {
+                    Container::Image(_, ty) => {
                         self.img_alt_text += 1;
                         if self.img_alt_text == 1 {
+                            self.img_unresolved = matches!(ty, SpanLinkType::Unresolved);
                             out.write_str("<img")?;
                         } else {
                             return Ok(());
@@ -542,7 +552,7 @@ impl<'s> Renderer<'s> {
                         }
                     }
                     Container::Image(..) => {
-                        if self.img_alt_text == 1 {
+                        if self.img_alt_text == 1 && !self.img_unresolved {
                             out.write_str(r#" alt=""#)?;
                         }
                     }
@@ -607,7 +617,10 @@ impl<'s> Renderer<'s> {
                     Container::Span => out.write_str("</span>")?,
                     Container::Link(..) => out.write_str("</a>")?,
                     Container::Image(src, ..) => {
-                        if self.img_alt_text == 1 {
+                        if self.img_alt_text == 1 && self.img_unresolved {
+                            out.write_char('>')?;
+                            self.img_unresolved = false;
+                        } else if self.img_alt_text == 1 {
                             if !src.is_empty() {
                                 out.write_str(r#"" src=""#)?;
                                 write_attr(&src, out)?;
