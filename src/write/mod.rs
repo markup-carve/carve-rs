@@ -257,6 +257,43 @@ mod nested_write_test {
 }
 
 #[cfg(test)]
+mod group_reads_test {
+    use super::*;
+
+    /// The characters the read-back parses of `fmt` take on `n` paragraphs of `shape`.
+    fn read_chars(shape: &str, n: usize) -> (usize, usize) {
+        let src: String = (0..n).map(|i| format!("{shape} w{i}\n\n")).collect();
+        let arena = crate::Arena::for_input(&src);
+        let doc =
+            crate::parse_resolved_in(&src, &crate::Options::default(), &arena).unwrap_or_default();
+        let pool = Pool::new();
+        let before = READ_CHARS.with(std::cell::Cell::get);
+        let (out, losses) = format_view(V::Doc(&doc), &pool, Some(&src), &Settings::default());
+        assert!(!out.is_empty() && losses.is_empty());
+        (READ_CHARS.with(std::cell::Cell::get) - before, src.len())
+    }
+
+    /// carve-rs#4779, carve-rs#4780: a text the rounds of a group wrote before is not parsed again, and the
+    /// parses grow with the page.
+    #[test]
+    fn rounds_read_a_written_text_once() {
+        // Each text read once is about 5 and 2.2 times the page; reading the repeats again took 8.4 and 2.9.
+        for (shape, tenths) in [(r"x{#a\_--}", 60), (r"{_=\._}", 25)] {
+            let (small, small_src) = read_chars(shape, 64);
+            let (large, large_src) = read_chars(shape, 256);
+            assert!(
+                large * 10 <= tenths * large_src,
+                "{shape}: {large} characters read for {large_src}"
+            );
+            assert!(
+                large * small_src <= small * large_src * 11 / 10,
+                "{shape}: {small} then {large}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod plain_table_certificate_test {
     use super::*;
 
@@ -1681,11 +1718,25 @@ fn repair_rounds_once<'t>(
     let kept_reads = Reads::default();
     loop {
         let done = if kept_reads.chars.get() <= MAX_KEPT_READ_CHARS {
-            repair_round(w, doc, (from, first, reported), (&mut history, &mut first_round), &kept, &kept_reads)
+            repair_round(
+                w,
+                doc,
+                (from, first, reported),
+                (&mut history, &mut first_round),
+                &kept,
+                &kept_reads,
+            )
         } else {
             let chunks = typed_arena::Arena::new();
             let reads = Reads::default();
-            repair_round(w, doc, (from, first, reported), (&mut history, &mut first_round), &chunks, &reads)
+            repair_round(
+                w,
+                doc,
+                (from, first, reported),
+                (&mut history, &mut first_round),
+                &chunks,
+                &reads,
+            )
         };
         if let Some(end) = done {
             return end;
@@ -1765,32 +1816,31 @@ fn trim_capped_runs<'t, 's>(
     if placed.is_empty() {
         return;
     }
-    let reads_back =
-        |w: &mut Writer<'t>, keep: usize, restore: bool| -> Option<(&'s str, V<'s>)> {
-            let dropped = placed.get(keep..).unwrap_or(&[]);
+    let reads_back = |w: &mut Writer<'t>, keep: usize, restore: bool| -> Option<(&'s str, V<'s>)> {
+        let dropped = placed.get(keep..).unwrap_or(&[]);
+        for &(n, at) in dropped {
+            if let Some(list) = w.sp.escapes.get_mut(&id(n))
+                && let Ok(p) = list.binary_search(&at)
+            {
+                list.remove(p);
+            }
+        }
+        reset_lines(w);
+        blocks::write_blocks(w, group, "", 0, false);
+        let (source, parsed) = round.parse(w, group_source(w, first));
+        let actual = children(parsed);
+        let equal = group.len() == actual.len()
+            && group
+                .iter()
+                .zip(actual)
+                .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+        if restore {
             for &(n, at) in dropped {
-                if let Some(list) = w.sp.escapes.get_mut(&id(n))
-                    && let Ok(p) = list.binary_search(&at)
-                {
-                    list.remove(p);
-                }
+                w.add_escape(n, at);
             }
-            reset_lines(w);
-            blocks::write_blocks(w, group, "", 0, false);
-            let (source, parsed) = round.parse(w, group_source(w, first));
-            let actual = children(parsed);
-            let equal = group.len() == actual.len()
-                && group
-                    .iter()
-                    .zip(actual)
-                    .all(|(expected, read_back)| node::trees_equal(expected, read_back));
-            if restore {
-                for &(n, at) in dropped {
-                    w.add_escape(n, at);
-                }
-            }
-            equal.then_some((source, parsed))
-        };
+        }
+        equal.then_some((source, parsed))
+    };
     let mut reads = |w: &mut Writer<'t>, keep: usize| reads_back(w, keep, true).is_some();
     let high = shortest_reading(w, placed.len(), &mut reads);
     if let Some((source, parsed)) = reads_back(w, high, false) {
@@ -2033,7 +2083,9 @@ impl<'s> Round<'s> {
     }
 
     fn alloc(&self, text: String) -> &'s Chunk {
-        self.reads.chars.set(self.reads.chars.get().saturating_add(text.len()));
+        self.reads
+            .chars
+            .set(self.reads.chars.get().saturating_add(text.len()));
         self.chunks.alloc(Chunk::new(text))
     }
 
@@ -2071,12 +2123,12 @@ fn count_read(w: &mut Writer<'_>, text: &str) {
     w.work_chars = w.work_chars.saturating_add(text.len());
 }
 
-fn compare_group<'t, 's>(
+fn compare_group<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     group: Arr<'t>,
     first: bool,
-    round: &mut Round<'s>,
+    round: &mut Round<'_>,
 ) -> Check<'t> {
     #[cfg(test)]
     REPAIR_PARSES.with(|count| count.set(count.get() + 1));
@@ -2396,7 +2448,9 @@ fn asked_with(w: &mut Writer<'_>, round: &Round<'_>, with: String, without: Stri
     round.read(w, with, |w, _, with| match round.source.zip(round.last) {
         // The last read-back, read again uncounted.
         Some((text, parsed)) if text == without => !node::trees_equal(with, parsed),
-        _ => round.read(w, without, |_, _, without| !node::trees_equal(with, without)),
+        _ => round.read(w, without, |_, _, without| {
+            !node::trees_equal(with, without)
+        }),
     })
 }
 
@@ -2456,7 +2510,8 @@ fn drop_idle_trials<'t>(
     first: bool,
     round: &Round<'_>,
 ) -> bool {
-    if !(2..=MAX_RETESTED_TRIALS).contains(&c.trials.len()) || !round.last.is_some_and(reads_only_text)
+    if !(2..=MAX_RETESTED_TRIALS).contains(&c.trials.len())
+        || !round.last.is_some_and(reads_only_text)
     {
         return false;
     }
@@ -3373,9 +3428,8 @@ fn try_prune_all(
     }
     round.read(w, without_bytes(source, escapes)?, |_, text, parsed| {
         let kids = children(parsed);
-        (kids.len() == group.len()
-            && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e)))
-        .then(|| text.to_string())
+        (kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e)))
+            .then(|| text.to_string())
     })
 }
 
@@ -3481,11 +3535,11 @@ fn without_bytes(source: &str, at: &[usize]) -> Option<String> {
 
 /// The escapes of `window` that its text reads the same without, tried in source order as the whole-group
 /// trials try them; `None` where the window alone does not read its leaf blocks as the group does.
-fn prune_window<'s>(
+fn prune_window(
     w: &mut Writer<'_>,
     source: &str,
     window: &Window<'_>,
-    round: &Round<'s>,
+    round: &Round<'_>,
 ) -> Option<Vec<usize>> {
     // A window below line 1 keeps one line above, as a group below another does (C2-W-005).
     let lead = usize::from(window.start > 0);
