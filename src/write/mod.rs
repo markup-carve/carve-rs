@@ -3811,3 +3811,99 @@ mod json_facts_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod break_after_break_test {
+    use super::{Settings, parse_plain, write_value};
+    use serde_json::{Value, json};
+
+    fn inlines(count: usize, first: &str) -> Value {
+        let mut kids = vec![json!({"type":"text","value":"Note"})];
+        kids.extend((0..count).map(|k| json!({"type": if k == 0 { first } else { "soft_break" }})));
+        kids.push(json!({"type":"text","value":"A note."}));
+        Value::Array(kids)
+    }
+
+    fn losses(doc: &Value) -> Vec<String> {
+        write_value(doc, &Settings::default())
+            .1
+            .iter()
+            .map(|e| format!("{} {}", e.code, e.path.as_deref().unwrap_or("")))
+            .collect()
+    }
+
+    #[test]
+    fn note_tree_reports_each_lost_soft_break() {
+        let doc = json!({"type":"document","astVersion":"2.0","children":[{"type":"paragraph","children":inlines(3, "soft_break")}]});
+        let (out, entries) = write_value(&doc, &Settings::default());
+        assert_eq!(out, "Note\n\n\nA note.\n");
+        let got: Vec<_> = entries
+            .iter()
+            .map(|e| {
+                (
+                    e.code.as_str(),
+                    e.channel.as_str(),
+                    e.severity.as_str(),
+                    e.path.as_deref(),
+                    e.message.as_str(),
+                )
+            })
+            .collect();
+        let message = "Carve source cannot spell a soft_break node here";
+        assert_eq!(
+            got,
+            [
+                (
+                    "structure-unspellable",
+                    "render-loss",
+                    "warning",
+                    Some("/children/0/children/2"),
+                    message
+                ),
+                (
+                    "structure-unspellable",
+                    "render-loss",
+                    "warning",
+                    Some("/children/0/children/3"),
+                    message
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn one_entry_per_soft_break_behind_a_break() {
+        for (src, at) in [
+            ("Note\n", "/children/0"),
+            ("- Note\n", "/children/0/children/0/children/0"),
+            ("> Note\n", "/children/0/children/0"),
+        ] {
+            for first in ["soft_break", "hard_break"] {
+                for count in 1..=6 {
+                    let mut doc = parse_plain(src).unwrap_or_default();
+                    if let Some(kids) = doc.pointer_mut(&format!("{at}/children")) {
+                        *kids = inlines(count, first);
+                    }
+                    let expected: Vec<_> = (1..count)
+                        .map(|k| format!("structure-unspellable {at}/children/{}", k + 1))
+                        .collect();
+                    assert_eq!(losses(&doc), expected, "{src:?} {first} {count}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inside_emphasis_the_loss_is_the_soft_break() {
+        let mut doc = parse_plain("Note\n").unwrap_or_default();
+        if let Some(kids) = doc.pointer_mut("/children/0/children") {
+            *kids = json!([{"type":"text","value":"A "}, {"type":"emphasis","children":inlines(2, "soft_break")}]);
+        }
+        let (out, _) = write_value(&doc, &Settings::default());
+        assert_eq!(out, "A /Note\n\nA note./\n");
+        assert_eq!(
+            losses(&doc),
+            ["structure-unspellable /children/0/children/1/children/2"]
+        );
+    }
+}
