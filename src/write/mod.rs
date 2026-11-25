@@ -1810,7 +1810,7 @@ fn seed_first_write<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
         && !w.closer_kinds
         && !w.whole_trials
         && group.len() == 1
-        && check::seed_group(group);
+        && check::seed_group(w, group);
 }
 
 /// C2-I-118: the rounds would place the escapes behind a capped opener one per round and stop at the first

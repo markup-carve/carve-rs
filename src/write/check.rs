@@ -907,12 +907,68 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 /// The first write of a group of one paragraph places the backslashes the rounds would reach there, where no other
 /// repair runs in the paragraph (C2-W-091 keeps a backslash an earlier round placed). Called on the first round of a
 /// pass; the result tells the writes of the pass to place the backslash of case nine.
-pub fn seed_group(group: Arr<'_>) -> bool {
+pub fn seed_group<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
     let Some(paragraph) = group.first().filter(|p| ty(*p) == "paragraph") else {
         return false;
     };
     let kids = children(paragraph);
-    kids.iter().any(|k| matches!(ty(k), "underline" | "delete")) && quiet_braced(kids)
+    let (mut links, mut braced) = (false, false);
+    for k in kids {
+        match ty(k) {
+            "link" => links = true,
+            "underline" | "delete" => braced = true,
+            _ => {}
+        }
+    }
+    if links && w.link_keys.is_empty() {
+        seed_link_closers(w, kids);
+    }
+    braced && quiet_braced(kids)
+}
+
+/// C2-W-125 case five, C2-W-088: in a paragraph whose only brackets of text are plain `[` and the one `]` of the
+/// text of inline links, the first write places what the rounds would: the backslash on each such `]`, and where a
+/// text `[` stands before such a link, which the bare link closer would take, on every text `[` of the paragraph.
+fn seed_link_closers<'t>(w: &mut Writer<'t>, kids: Arr<'t>) {
+    if !kids
+        .iter()
+        .any(|k| ty(k) == "link" && text(children(k).first().unwrap_or(k)).contains(']'))
+    {
+        return;
+    }
+    let mut closers: Vec<(N<'t>, usize)> = Vec::new();
+    let mut openers: Vec<(N<'t>, usize)> = Vec::new();
+    let mut below = false;
+    let mut plain = true;
+    for (i, k) in kids.iter().enumerate() {
+        match ty(k) {
+            "text" => match plain_openers(k, i == 0) {
+                Some(at) => openers.extend(at.into_iter().map(|a| (k, a))),
+                None => plain = false,
+            },
+            "link" => match lone_closer(k) {
+                Some(Some(at)) => {
+                    below |= !openers.is_empty();
+                    closers.push((children(k).first().unwrap_or(k), at));
+                }
+                Some(None) => {}
+                None => plain = false,
+            },
+            _ => plain &= !holds_bracket(k),
+        }
+        if !plain {
+            break;
+        }
+    }
+    if !plain {
+        return;
+    }
+    if below {
+        closers.extend(openers);
+    }
+    for (n, at) in closers {
+        w.add_escape(n, at);
+    }
 }
 
 /// A paragraph with a braced underline or delete whose other text, inside emphasis and strong too, opens nothing.
@@ -928,6 +984,74 @@ fn quiet_braced(kids: Arr<'_>) -> bool {
         "strong" | "emphasis" => children(k).iter().all(quiet),
         _ => quiet(k),
     })
+}
+
+/// The offsets of the `[` of a text that holds no other bracket, each behind a space or at the start of the
+/// paragraph; `None` where the text holds another bracket or a backslash.
+fn plain_openers(n: V<'_>, first: bool) -> Option<Vec<usize>> {
+    let b = text(n).as_bytes();
+    if b.contains(&b']') || b.contains(&b'\\') {
+        return None;
+    }
+    let mut out = Vec::new();
+    for (at, &x) in b.iter().enumerate() {
+        if x != b'[' {
+            continue;
+        }
+        let spaced = at.checked_sub(1).map_or(first, |p| b.get(p) == Some(&b' '));
+        if !spaced || matches!(b.get(at + 1), None | Some(b'^')) {
+            return None;
+        }
+        out.push(at);
+    }
+    Some(out)
+}
+
+/// An inline link without attributes whose content is one text: `Some(Some(at))` where its only bracket is the
+/// `]` at `at`, `Some(None)` where it holds none, `None` for any other link.
+fn lone_closer(link: V<'_>) -> Option<Option<usize>> {
+    let kids = children(link);
+    let only = kids
+        .first()
+        .filter(|k| kids.len() == 1 && ty(k) == "text")?;
+    if has(link, "attrs")
+        || has(link, "key")
+        || s(link, "href")
+            .is_none_or(|h| h.is_empty() || h.contains(|c: char| "[](){}<>\\ ".contains(c)))
+    {
+        return None;
+    }
+    let b = text(only).as_bytes();
+    if b.contains(&b'[') || b.contains(&b'\\') {
+        return None;
+    }
+    let mut closers = b
+        .iter()
+        .enumerate()
+        .filter(|(_, x)| **x == b']')
+        .map(|(at, _)| at);
+    let Some(at) = closers.next() else {
+        return Some(None);
+    };
+    if closers.next().is_some()
+        || b.first() == Some(&b'^')
+        || matches!(b.get(at + 1), Some(b'[' | b'{'))
+    {
+        return None;
+    }
+    Some(Some(at))
+}
+
+fn holds_bracket(n: V<'_>) -> bool {
+    if ty(n) == "text" {
+        return text(n).contains(['[', ']']);
+    }
+    let mut kids = Vec::new();
+    super::node::descendants(n, &mut kids);
+    !matches!(ty(n), "strong" | "emphasis")
+        || kids
+            .iter()
+            .any(|k| ty(*k) != "text" || text(*k).contains(['[', ']', '\\']))
 }
 
 fn content_flags(c: &Check<'_>, e: V<'_>) -> u32 {
