@@ -474,6 +474,10 @@ impl State<'_> {
         if lower.starts_with("on") {
             return;
         }
+        // carve#6779: Namespaces in XML forbids undeclaring a prefix.
+        if value == Some("") && lower.starts_with("xmlns:") {
+            return;
+        }
         if lower == "href" || lower == "xlink:href" {
             if let Some(value) = value.filter(|v| self.url_value_allowed(v, external_href)) {
                 write_attr(out, name, value);

@@ -284,3 +284,35 @@ fn an_attribute_without_a_value_is_dropped() {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
     );
 }
+
+#[test]
+fn an_empty_prefixed_namespace_declaration_is_dropped() {
+    // carve#6779: Namespaces in XML 1.0 forbids undeclaring a prefix.
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\"\"><rect/></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=''/></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><g/></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg XMLNS:XLINK='' id=\"a\"><g xmlns:xlink = ''></g></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"a\"><g/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\"\"><g xmlns:xlink=\"http://www.w3.org/1999/xlink\"/></svg>")
+            .svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g xmlns:xlink=\"http://www.w3.org/1999/xlink\"/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=\" \"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g xmlns:xlink=\" \"/></svg>"
+    );
+}
