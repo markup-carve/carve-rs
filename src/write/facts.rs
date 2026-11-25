@@ -166,13 +166,15 @@ pub fn from_source(doc: V<'_>, src: &str) -> Vec<Entry> {
 
 /// `path` is the pointer of `node`, one buffer extended and cut back per step.
 fn walk(node: V<'_>, src: &str, path: &mut String, quote_depth: usize, out: &mut Vec<Entry>) {
+    let mut prefixed = ty(node) == "block_quote";
     if let Some(facts) = node_facts(node, src, path, quote_depth, out) {
+        prefixed &= facts.fenced != Some(true);
         out.push(Entry {
             path: path.clone(),
             facts,
         });
     }
-    let inner = quote_depth + usize::from(ty(node) == "block_quote");
+    let inner = quote_depth + usize::from(prefixed);
     let include = ty(node) == "include";
     super::node::for_each_slot(node, true, &mut |nodes, step, single| {
         if include && step == "children" {
@@ -226,73 +228,91 @@ fn node_facts(
             let (start, _) = children(node).first().and_then(span).filter(|_| ordered)?;
             facts.bare = Some(src.as_bytes().get(start) == Some(&b'.'));
         }
-        "block_quote" => facts.fenced = Some(opener(node, src).is_some_and(|o| o.starts_with(':'))),
+        "block_quote" => {
+            facts.fenced = Some(opener(node, src, quote_depth).is_some_and(|o| o.starts_with(':')));
+        }
         "div" if classes(node).contains(&super::blocks::HARD_BREAKS_CLASS) => {
-            facts.hard_break_opener = opener(node, src).map(|o| {
+            facts.hard_break_opener = opener(node, src, quote_depth).map(|o| {
                 o.trim_start_matches(':')
                     .trim_start_matches([' ', '\t'])
                     .starts_with('\\')
             });
         }
-        "table" => table_facts(node, src, path, out, &mut facts),
+        "table" => table_facts(node, src, path, quote_depth, out, &mut facts),
         "link" | "image" if node.get("key").is_some() => {
             facts.raw_ref = raw_ref(node, src, quote_depth);
         }
-        "include" => facts.option_spelling = option_spelling(node, src),
+        "include" => facts.option_spelling = option_spelling(node, src, quote_depth),
         _ => return None,
     }
     Some(facts)
 }
 
-/// The opener line of a block, behind its attribute lines, from the column of its start.
-fn opener<'s>(node: V<'_>, src: &'s str) -> Option<&'s str> {
+/// The offset of a block's opener, behind the attribute and comment lines its span starts with.
+/// A later line can start left of the first one, so it is read behind the prefixes of the
+/// `quotes` enclosing `>` quotes rather than from the column of the span's start.
+fn opener_at(node: V<'_>, src: &str, quotes: usize) -> Option<usize> {
     let (start, end) = span(node)?;
-    let line_start = src.get(..start)?.rfind('\n').map_or(0, |p| p + 1);
-    let column = start - line_start;
-    let body = src.get(line_start..end.max(start))?;
-    for line in body.split('\n') {
-        let rest = line.get(column..).unwrap_or("");
-        if rest.trim_start_matches([' ', '\t']).starts_with('{') {
-            continue;
+    let b = src.as_bytes();
+    let skip = |mut at: usize, set: &[u8]| {
+        while b.get(at).is_some_and(|c| set.contains(c)) {
+            at += 1;
         }
-        return Some(rest.trim_start_matches([' ', '\t']));
+        at
+    };
+    let mut at = skip(start, b" \t");
+    loop {
+        let rest = src.get(at..)?;
+        let attribute = rest.starts_with('{') && !rest.starts_with("{{");
+        if !attribute && !rest.starts_with("%%") {
+            return (at < end.max(start + 1)).then_some(at);
+        }
+        at += rest.find('\n')? + 1;
+        if at >= end {
+            return None;
+        }
+        for _ in 0..quotes {
+            at = skip(at, b" \t");
+            if b.get(at) != Some(&b'>') {
+                break;
+            }
+            at += 1;
+        }
+        at = skip(at, b" \t");
     }
-    None
 }
 
-fn attribute_text<'s>(node: V<'_>, src: &'s str) -> &'s str {
-    let Some((start, end)) = span(node) else {
+/// The opener line of a block, behind its attribute lines.
+fn opener<'s>(node: V<'_>, src: &'s str, quotes: usize) -> Option<&'s str> {
+    let at = opener_at(node, src, quotes)?;
+    let rest = src.get(at..)?;
+    Some(
+        rest.get(..rest.find('\n').unwrap_or(rest.len()))?
+            .trim_end_matches('\r'),
+    )
+}
+
+fn attribute_text<'s>(node: V<'_>, src: &'s str, quotes: usize) -> &'s str {
+    let (Some((start, _)), Some(at)) = (span(node), opener_at(node, src, quotes)) else {
         return "";
     };
-    let line_start = src
-        .get(..start)
-        .and_then(|p| p.rfind('\n'))
-        .map_or(0, |p| p + 1);
-    let column = start - line_start;
-    let body = src.get(line_start..end).unwrap_or("");
-    let mut len = 0;
-    for line in body.split('\n') {
-        if !line
-            .get(column..)
-            .unwrap_or("")
-            .trim_start()
-            .starts_with('{')
-        {
-            break;
-        }
-        len += line.len() + 1;
-    }
-    src.get(line_start..line_start + len.min(body.len()))
-        .unwrap_or("")
+    src.get(start..at).unwrap_or("")
 }
 
-fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: &mut Facts) {
-    let Some(head) = opener(node, src) else {
+fn table_facts(
+    node: V<'_>,
+    src: &str,
+    path: &str,
+    quotes: usize,
+    out: &mut Vec<Entry>,
+    facts: &mut Facts,
+) {
+    let Some(head) = opener(node, src, quotes) else {
         return;
     };
     if head.starts_with('|') {
         facts.source_format = Some("pipe".into());
-        rows(node, src, path, out);
+        rows(node, src, opener_at(node, src, quotes), path, out);
         return;
     }
     let word = head.trim_start_matches('`');
@@ -304,7 +324,7 @@ fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: 
         }
         .into(),
     );
-    if declares_header_rows(attribute_text(node, src)) {
+    if declares_header_rows(attribute_text(node, src, quotes)) {
         let count = children(node)
             .iter()
             .filter(|g| ty(g) == "table_head")
@@ -323,6 +343,7 @@ fn declares_header_rows(text: &str) -> bool {
     for line in text.lines() {
         if let Some((parsed, _)) = line
             .find('{')
+            .filter(|&at| line.get(..at).is_some_and(|p| !p.contains("%%")))
             .and_then(|at| crate::attr::parse_block(line, at))
         {
             block.merge(parsed);
@@ -423,8 +444,8 @@ fn table_source_line(line: &str, column: usize, first: bool) -> &str {
     line.get(at..).unwrap_or("").trim_end_matches('\r')
 }
 
-fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
-    let Some((start, table_end)) = span(table) else {
+fn rows(table: V<'_>, src: &str, first_row: Option<usize>, path: &str, out: &mut Vec<Entry>) {
+    let (Some((_, table_end)), Some(start)) = (span(table), first_row) else {
         return;
     };
     // A table's source span includes its caption. Caption text cannot supply
@@ -466,12 +487,19 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     for ((g, r, row), (first, more)) in rows.into_iter().zip(lines) {
         if !more.is_empty() {
             let row_path = format!("{path}/children/{g}/children/{r}");
-            row_facts(row, first, &more, &row_path, out);
+            row_facts(row, src, first, &more, &row_path, out);
         }
     }
 }
 
-fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mut Vec<Entry>) {
+fn row_facts(
+    row: V<'_>,
+    src: &str,
+    line: &str,
+    continuation: &[&str],
+    path: &str,
+    out: &mut Vec<Entry>,
+) {
     if continuation.is_empty() {
         return;
     }
@@ -488,10 +516,8 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
         let Some(block) = children(cell).single() else {
             continue;
         };
-        let Some(t) = children(block).single() else {
-            continue;
-        };
-        if ty(t) != "text" {
+        let inlines = children(block);
+        if inlines.is_empty() {
             continue;
         }
         let mut parts = vec![first.get(c).map_or("", |f| content_fragment(f))];
@@ -499,25 +525,36 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
             more.iter()
                 .map(|m| m.get(c).map_or("", |f| f.trim_matches([' ', '\t']))),
         );
+        let base = format!("{path}/children/{c}/children/0/children");
         let mut wraps = Vec::new();
-        let mut offset = 0usize;
         let mut seen = false;
         for (k, part) in parts.iter().enumerate() {
             if part.is_empty() {
                 continue;
             }
-            if seen {
-                offset += 1;
-            }
             if k > 0 {
-                wraps.push(Wrap {
-                    line: i64::try_from(k).unwrap_or(0),
-                    path: format!("{path}/children/{c}/children/0/children/0"),
-                    offset,
-                    row: None,
-                });
+                // C2-L-021: a cell whose first piece stands in a continuation row starts there,
+                // whatever its first inline; a later piece is a break in a text child (C2-L-020).
+                let wrap = if seen {
+                    text_wrap(
+                        src,
+                        &inlines,
+                        parts.get(..k).unwrap_or(&[]),
+                        offset_in(src, part),
+                        &base,
+                    )
+                } else {
+                    Some((format!("{base}/0"), 0))
+                };
+                if let Some((path, offset)) = wrap {
+                    wraps.push(Wrap {
+                        line: i64::try_from(k).unwrap_or(0),
+                        path,
+                        offset,
+                        row: None,
+                    });
+                }
             }
-            offset += unescaped_len(part);
             seen = true;
         }
         if !wraps.is_empty() {
@@ -530,6 +567,52 @@ fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mu
             });
         }
     }
+}
+
+/// The byte offset of `part`, a slice of `src`, in `src`.
+fn offset_in(src: &str, part: &str) -> usize {
+    (part.as_ptr() as usize).saturating_sub(src.as_ptr() as usize)
+}
+
+/// The text child of a cell's paragraph that the piece starting at `at` continues, and the byte
+/// offset of that break in its value: the pieces before it read into the value with one joining
+/// space each.
+fn text_wrap(
+    src: &str,
+    inlines: &Arr<'_>,
+    before: &[&str],
+    at: usize,
+    base: &str,
+) -> Option<(String, usize)> {
+    // A text child can carry no position; it fills the gap between its siblings.
+    let nodes: Vec<V<'_>> = inlines.iter().collect();
+    let (index, node, start) = nodes.iter().enumerate().find_map(|(i, &n)| {
+        if ty(n) != "text" {
+            return None;
+        }
+        let start = span(n).map(|(a, _)| a).or_else(|| {
+            i.checked_sub(1)
+                .and_then(|p| nodes.get(p))
+                .and_then(|&p| span(p))
+                .map(|(_, b)| b)
+        });
+        let end = nodes
+            .get(i + 1)
+            .and_then(|&n| span(n))
+            .map_or(usize::MAX, |(a, _)| a);
+        let start = start.unwrap_or(0);
+        (start < at && at <= end).then_some((i, n, start))
+    })?;
+    let mut offset = 0;
+    for piece in before.iter().filter(|p| !p.is_empty()) {
+        let from = offset_in(src, piece);
+        if from + piece.len() < start {
+            continue;
+        }
+        let clip = piece.get(start.saturating_sub(from)..)?;
+        offset += unescaped_len(clip) + 1;
+    }
+    (offset <= text(node).len()).then(|| (format!("{base}/{index}"), offset))
 }
 
 fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
@@ -553,10 +636,12 @@ fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
     if !raw.contains('\n') {
         return Some(raw.to_string());
     }
+    // C2-B-010: the CR of a CRLF break is not part of the line.
     let lines: Vec<String> = raw
         .split('\n')
         .enumerate()
         .map(|(i, l)| {
+            let l = l.strip_suffix('\r').unwrap_or(l);
             if i == 0 {
                 return l.to_string();
             }
@@ -573,9 +658,8 @@ fn raw_ref(node: V<'_>, src: &str, quote_depth: usize) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-fn option_spelling(node: V<'_>, src: &str) -> Option<BTreeMap<String, String>> {
-    let (start, end) = span(node)?;
-    let line = src.get(start..end)?.split('\n').next()?;
+fn option_spelling(node: V<'_>, src: &str, quotes: usize) -> Option<BTreeMap<String, String>> {
+    let line = opener(node, src, quotes)?;
     let b = line.as_bytes();
     let options = node.get("options").filter(|o| o.is_object())?;
     let mut out = BTreeMap::new();

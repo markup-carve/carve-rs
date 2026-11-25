@@ -956,7 +956,8 @@ impl<'a> Parser<'a> {
             || shapes::link_def(k.rest()).is_some()
             || shapes::abbr_def(k.rest()).is_some()
             || crate::include::is_carve_region_marker(k.rest())
-            || self.interrupts(walk)
+            // C2-B-017: a caption line its containers do not own is a lazy line of the stanza.
+            || (shapes::caption(k).is_none() && self.interrupts(walk))
     }
 
     fn owns_line(&self, walk: &Walk<'_>) -> bool {
