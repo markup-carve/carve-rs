@@ -102,6 +102,14 @@ impl<'s> Lexer<'s> {
         self.next.as_ref()
     }
 
+    /// carve-rs: drops the peeked token, so it is lexed again in the current mode.
+    pub fn unpeek(&mut self) {
+        if let Some(t) = self.next.take() {
+            self.pos -= t.len;
+            self.escape = false;
+        }
+    }
+
     pub fn ahead(&self) -> &'s [u8] {
         &self.src[self.pos - self.next.as_ref().map_or(0, |t| t.len)..]
     }

@@ -336,6 +336,9 @@ impl<'s> Parser<'s> {
                 }
                 self.push(EventKind::Exit(ty_opener));
                 self.input.lexer.verbatim = false;
+                // carve-rs: a token peeked inside the span is read again outside it, so a backslash
+                // behind the closer escapes (a hard break after code).
+                self.input.lexer.unpeek();
                 self.verbatim = None;
                 if raw_format.is_none()
                     && self
@@ -932,9 +935,10 @@ impl<'s> Parser<'s> {
                 );
                 // use non-opener for now, replace if closed later
                 Some(self.push(match opener {
+                    // carve-rs: an explicit `{'` that pairs with nothing is a left quote (djot.js).
                     Opener::SingleQuoted => EventKind::Atom(Quote {
                         ty: QuoteType::Single,
-                        left: false,
+                        left: matches!(first.kind, lex::Kind::Open(Delimiter::BraceQuote1)),
                     }),
                     Opener::DoubleQuoted => EventKind::Atom(Quote {
                         ty: QuoteType::Double,
