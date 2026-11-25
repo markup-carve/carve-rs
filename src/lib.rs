@@ -476,9 +476,19 @@ fn secondary_node_paths_tail<'n, 'a>(
     }
 }
 
-fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
+/// The paths of the `targets` nodes, found in one walk that stops once every
+/// target has its path.
+fn node_paths(
+    nodes: &[ast::Node<'_>],
+    targets: &std::collections::HashSet<usize>,
+) -> std::collections::HashMap<usize, String> {
     use PathItem::{Array, One};
-    let mut pending = vec![Array(nodes, "/children".to_string())];
+    let mut found = std::collections::HashMap::new();
+    let mut pending = if targets.is_empty() {
+        Vec::new()
+    } else {
+        vec![Array(nodes, "/children".to_string())]
+    };
     while let Some(item) = pending.pop() {
         match item {
             Array(nodes, prefix) => {
@@ -487,8 +497,12 @@ fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
                 }
             }
             One(node, path) => {
-                if resolve::order::addr(node) == target {
-                    return Some(path);
+                let addr = resolve::order::addr(node);
+                if targets.contains(&addr) {
+                    found.entry(addr).or_insert_with(|| path.clone());
+                    if found.len() == targets.len() {
+                        break;
+                    }
                 }
                 if let Some(children) = node.children() {
                     pending.push(Array(children, format!("{path}/children")));
@@ -497,7 +511,7 @@ fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
             }
         }
     }
-    None
+    found
 }
 
 fn tree_loss_diagnostics(
@@ -510,6 +524,18 @@ fn tree_loss_diagnostics(
     shift_override: Option<&heading_shift::Found>,
 ) -> Vec<diagnostic::Diagnostic> {
     let shift = opts.heading_shift.to_string();
+    let targets: std::collections::HashSet<usize> = extension_nodes
+        .iter()
+        .map(|(target, _)| *target)
+        .chain(
+            destination_losses
+                .iter()
+                .filter_map(|loss| loss.site.as_ref().map(|(target, _)| *target)),
+        )
+        .chain(derived)
+        .collect();
+    let paths = node_paths(doc.children, &targets);
+    let node_path = |target: usize| paths.get(&target).cloned();
     let mut extensions = extension_nodes.iter();
     let mut destinations = destination_losses.iter();
     losses
@@ -538,16 +564,14 @@ fn tree_loss_diagnostics(
                 finding.message = heading_shift::message(opts.heading_shift);
             }
             finding.path = match code {
-                "extension-fallback-rendered" => {
-                    name.and_then(|(target, _)| node_path(doc.children, *target))
-                }
+                "extension-fallback-rendered" => name.and_then(|(target, _)| node_path(*target)),
                 "destination-denied" => destinations
                     .next()
                     .and_then(|loss| loss.site.as_ref())
                     .and_then(|(target, field)| {
-                        node_path(doc.children, *target).map(|path| format!("{path}{field}"))
+                        node_path(*target).map(|path| format!("{path}{field}"))
                     }),
-                "derived-text-budget" => derived.and_then(|target| node_path(doc.children, target)),
+                "derived-text-budget" => derived.and_then(node_path),
                 _ => None,
             };
             finding

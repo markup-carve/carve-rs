@@ -718,16 +718,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(b.attrs, b.lang).with_dir(b.dir);
         el.base.push(b.class.to_string());
         el.class_first = true;
-        let template = self.opts.social.as_ref().and_then(|s| match b.class {
-            "mention" => s.mention_url.as_deref(),
-            _ => s.tag_url.as_deref(),
-        });
         // Gap G-022: inside a link the badge stays a span, as no anchor nests.
-        let tag = match template.filter(|t| {
-            !t.is_empty() && self.in_link == 0 && self.profile_allows_type("link", false)
-        }) {
-            Some(t) => {
-                let full = t.replace("{name}", &encode_social_name(b.name));
+        let social = self.opts.social.is_some() || self.opts.social_resolvers.is_some();
+        let url = if social && self.in_link == 0 && self.profile_allows_type("link", false) {
+            self.social_url(b)
+        } else {
+            None
+        };
+        let tag = match url {
+            Some(full) => {
                 let href = self
                     .destination(&full, None, false, None, None)
                     .into_owned();
@@ -746,6 +745,50 @@ impl<'r, 'a> Renderer<'r, 'a> {
             out.push_str("</strong>");
         }
         let _ = write!(out, "</{tag}>");
+    }
+
+    /// C2-H-126: the URL of a resolver, which is final, or else of the
+    /// template of the pair; an empty URL is no URL.
+    fn social_url(&self, b: &Badge<'_>) -> Option<String> {
+        let mention = b.class == "mention";
+        let resolvers = self.opts.social_resolvers.as_ref();
+        let resolver = resolvers.and_then(|r| {
+            if mention {
+                r.resolve_mention.as_ref()
+            } else {
+                r.resolve_tag.as_ref()
+            }
+        });
+        let url = match resolver {
+            Some(resolver) => {
+                let request = crate::options::SocialRequest {
+                    kind: if mention {
+                        crate::options::SocialKind::Mention
+                    } else {
+                        crate::options::SocialKind::Tag
+                    },
+                    name: b.name,
+                    context: resolvers.and_then(|r| r.context.as_ref()),
+                };
+                // A resolver that panics gives no URL; the panic stays inside the render.
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (resolver.0)(&request)))
+                    .ok()
+                    .flatten()
+            }
+            None => self
+                .opts
+                .social
+                .as_ref()
+                .and_then(|s| {
+                    if mention {
+                        s.mention_url.as_deref()
+                    } else {
+                        s.tag_url.as_deref()
+                    }
+                })
+                .map(|t| t.replace("{name}", &encode_social_name(b.name))),
+        };
+        url.filter(|u| !u.is_empty())
     }
 
     /// C2-H-051, C2-H-053, C2-H-054.

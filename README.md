@@ -224,7 +224,7 @@ The standard tabs renderer defaults to CSS radio controls. Set `"renderers": {"c
 
 The same call enables the other standard extensions, all provisional:
 
-- `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). They have no standard renderer, so the content renders as plain text and attributes such as `locator` stay on the node.
+- `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). Without their renderers the content renders as plain text and attributes such as `locator` stay on the node.
 - `carve.imgFence.img` and `carve.imgFence.image` claim `img` and `image` code fences whose body is SVG (C2-X-059). Their standard renderer writes one `<img>` with a sanitized `data:image/svg+xml` URL; SVG it cannot sanitize keeps the code block and reports `extension-renderer-failed`.
 - `carve.fencedRender.<word>` for `mermaid`, `d2`, `dot`, `graphviz`, `wavedrom`, `abc`, `plantuml`, `puml`, `vega-lite` and `chart`: the diagram fence of that word as `<pre class="mermaid" role="img" aria-label="mermaid">` with the escaped source (`vega-lite` and `chart` as a JSON `<script>` in a `<div>`), for a client library to draw.
 - `carve.mathBlock`: a `math` fence as `<div class="math display" role="math">\[...\]</div>`.
@@ -233,6 +233,7 @@ The same call enables the other standard extensions, all provisional:
 - `carve.details`: a `details` div as `<details>` with its title as `<summary>` (`Details` without one), expanded in `static` mode.
 - `carve.spoiler`: `:spoiler[x]` as `<span class="spoiler">` and a `spoiler` div as `<details class="spoiler">`; `static` mode reveals both.
 - `carve.wiki` with its standard renderer: `:wiki[Page#anchor|Display]` as a link through a slug of the page, which the URL policy must allow (C2-X-057). `wikilinks` takes a URL generator, the link classes and `new_window`.
+- `carve.cite` with its standard renderer: the citations bundle (C2-X-058). A `:cite[key]` whose keys all have an entry in a `references` or `bibliography` directive renders as a numbered link (`[1]`), and the directive lists every entry in source order. A key without an entry keeps its text. `citations` takes the mode (`numbered` or `author-date`) and a CSL-JSON pool.
 - `carve.listTable`: a `list-table` div whose body is a list of row lists as a `<table>`; `header-rows`, `header-cols`, `footer-rows`, `aligns`, `valigns` and `widths` on the div, `header-row`, `header`, `align` and `valign` on a cell, `<` and `^` cells join the cell to their left or above.
 - `carve.colorSwatch`: `:color[value]` as a swatch beside the value when the value is a hex color, an `rgb`/`hsl` function or a named color; `{contrast}` writes the value on its color instead. `color_swatch` takes the chip position, shape, `tint` and `reveal`.
 - `carve.tabNormalize` (tabs in code as two spaces; `tab_normalize(width)` for another width) and `carve.inlineFootnotesToParentheses`: document transforms of the render view. `default_attributes` adds attributes per node type under the authored ones and has no JSON form.
@@ -322,14 +323,15 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `to_plain_text`, `render_plain_text`, `render_plain_text_with_options`, `try_to_plain_text_with_options`, `to_plain_text_with_report` | `export::to_plain_text`, writer target `plain` |
 | `to_ansi`, `render_ansi`, `render_ansi_with_options`, `try_to_ansi_with_options`, `to_ansi_with_report` | `export::to_ansi`, writer target `ansi` |
 | `html_to_ast`, `migrate_html` | `api::import_document` |
-| `parse_with_source_layout` | `api::parse_with_layout` (pending) |
+| `parse_with_source_layout` | `api::parse_with_layout` |
 | `djot_to_carve`, `migrate_djot`, `try_migrate_markdown`, `try_markdown_to_ast` | `Carve::import_from` with `ImportFormat::Djot`, `Markdown` or `Gfm` |
 | `bbcode_to_carve`, `migrate_bbcode` | gone: BBCode import stays in carve-js |
-| `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json`, `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no patch API (`UPGRADING.md`, Part 2) |
+| `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json` | `api::diff_tree`, `api::apply_patch` (C2-T-043, C2-T-044): patches are JSON values in the 0.2 form, so a 0.1 patch is not read |
+| `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no reversible patch |
 | `merge_ast`, `merge_ast_with_resolver` | gone: no merge API in 0.2 |
 | `parse_snapshot`, `parse_snapshot_with_identity`, `reparse` | same names in `api` and at the crate root: the snapshots hold 0.2 trees |
 | `try_render_html_streaming` | same name in `api` and at the crate root |
-| `to_prosemirror`, `from_prosemirror` | gone: not part of 0.2 |
+| `to_prosemirror`, `from_prosemirror` | not in 0.2; carve-rs#4830 tracks whether it comes back |
 | `decision_trace`, `parse_locator` | gone: 0.1 debugging aids |
 | `stamp_carve`, `read_stamp`, `needs_review` | gone: version stamps belong to the 0.1 upgrade flow; the rewrite tool is part of carve-js |
 | `sanitize_svg` | gone from the core; an extension renderer's job under the extension host |
@@ -347,4 +349,4 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - `tree_fingerprint` hashes this engine's `encode_tree`. Member order is not fixed across engines (carve#6099), so a fingerprint from another engine does not match the same tree here.
 - Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The claim ownership of C2-X-054 is not tracked.
 - Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
-- The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.
+- The social option's host functions (`resolveMention`, `resolveTag`, `context`, C2-H-126) are `Options::social_resolvers`, a `SocialResolvers` beside the `Social` templates. A resolver gets a `SocialRequest { kind, name, context }` and returns `Option<String>`; `context` is a `serde_json::Value`. They have no JSON form.
