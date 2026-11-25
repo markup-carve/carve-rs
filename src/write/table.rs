@@ -237,8 +237,31 @@ fn partitioned(bodies: &[V<'_>]) -> bool {
         })
 }
 
+/// C2-B-178: a head row is written with header marks only; a row of span marks continues the head.
+fn is_head_row(row: V<'_>) -> bool {
+    children(row)
+        .iter()
+        .all(|c| super::node::flag(c, "header") || has(c, "span"))
+}
+
+fn head_ends_above_foot(table: V<'_>) -> bool {
+    let head = rows_of(table, "table_head");
+    let foot = rows_of(table, "table_foot");
+    !head.is_empty()
+        && head.iter().all(|r| is_head_row(*r))
+        && foot.first().is_some_and(|r| is_header_row(*r))
+}
+
 fn body_keys(table: V<'_>) -> Vec<(String, String)> {
     let bodies = bodies_of(table);
+    // C2-W-136, C2-B-187: an empty `body-rows` ends the head above a foot that leads with a row of header cells.
+    if bodies.is_empty() {
+        return if head_ends_above_foot(table) {
+            vec![("body-rows".to_string(), String::new())]
+        } else {
+            Vec::new()
+        };
+    }
     if !partitioned(&bodies) {
         return Vec::new();
     }
