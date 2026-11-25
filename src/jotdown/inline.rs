@@ -217,6 +217,8 @@ pub struct Parser<'s> {
     openers: Vec<(Opener, usize)>,
     /// Per closer class, the indices into `openers` of the openers in that class, ascending.
     opener_classes: [Vec<usize>; OPENER_CLASSES],
+    /// carve-rs: the first byte of the current leaf.
+    leaf_start: Option<usize>,
     /// carve-rs: the open parentheses inside each open link destination, by its opener.
     destination_parens: Vec<(usize, usize)>,
     /// Buffer queue for next events. Events are buffered until no modifications due to future
@@ -251,6 +253,7 @@ impl<'s> Parser<'s> {
             openers: Vec::new(),
             opener_classes: Default::default(),
             destination_parens: Vec::new(),
+            leaf_start: None,
             events: std::collections::VecDeque::new(),
             verbatim: None,
             attributes: None,
@@ -260,6 +263,7 @@ impl<'s> Parser<'s> {
     }
 
     pub fn feed_line(&mut self, line: std::ops::Range<usize>, last: bool) {
+        self.leaf_start.get_or_insert(line.start);
         self.input.feed_line(line, last);
     }
 
@@ -269,6 +273,7 @@ impl<'s> Parser<'s> {
         self.openers.clear();
         self.opener_classes.iter_mut().for_each(Vec::clear);
         self.destination_parens.clear();
+        self.leaf_start = None;
         debug_assert!(self.attributes.is_none());
         debug_assert!(self.verbatim.is_none());
         self.store_cowstrs.clear();
@@ -508,6 +513,16 @@ impl<'s> Parser<'s> {
         }
 
         if start_attr == state.end_attr {
+            return None;
+        }
+        // carve-rs: attributes over several lines at the start of a paragraph are a block attribute the
+        // block parser refused, and djot.js reads them as text.
+        if matches!(state.elem_ty, AttributesElementType::Word)
+            && state.valid_lines > 0
+            && self.leaf_start.is_some_and(|l| {
+                l <= start_attr && self.input.src[l..start_attr].trim_ascii().is_empty()
+            })
+        {
             return None;
         }
 
