@@ -19,7 +19,7 @@ fn blocks() -> Value {
     ] })
 }
 
-fn row(cells: Vec<Value>) -> Value {
+fn row(cells: &[Value]) -> Value {
     json!({ "type": "table_row", "children": cells })
 }
 
@@ -41,10 +41,10 @@ fn entries(tree: &Value) -> Vec<String> {
 #[test]
 fn fields_of_a_table_group_come_before_the_nodes_inside_it() {
     let table = json!({ "type": "table", "columns": columns(), "children": [
-        { "type": "table_head", "attrs": { "id": "head" }, "children": [row(vec![plain(true), plain(true)])] },
+        { "type": "table_head", "attrs": { "id": "head" }, "children": [row(&[plain(true), plain(true)])] },
         { "type": "table_body", "attrs": { "id": "body" },
-          "children": [row(vec![plain(false), plain(false)]), row(vec![plain(false), blocks()])] },
-        { "type": "table_foot", "attrs": { "id": "foot" }, "children": [row(vec![plain(false), plain(false)])] },
+          "children": [row(&[plain(false), plain(false)]), row(&[plain(false), blocks()])] },
+        { "type": "table_foot", "attrs": { "id": "foot" }, "children": [row(&[plain(false), plain(false)])] },
     ] });
     assert_eq!(
         entries(&json!({ "type": "document", "astVersion": "2.0", "children": [table] })),
@@ -61,7 +61,7 @@ fn fields_of_a_table_group_come_before_the_nodes_inside_it() {
 fn each_index_compares_as_a_number() {
     let rows: Vec<Value> = (0..12)
         .map(|at| {
-            row(vec![
+            row(&[
                 plain(false),
                 if at == 2 || at == 10 {
                     blocks()
@@ -96,7 +96,7 @@ fn each_index_compares_as_a_number() {
 #[test]
 fn fields_of_the_document_come_before_its_blocks() {
     let table = json!({ "type": "table", "columns": columns(),
-        "children": [{ "type": "table_body", "children": [row(vec![plain(false), blocks()])] }] });
+        "children": [{ "type": "table_body", "children": [row(&[plain(false), blocks()])] }] });
     let got = entries(
         &json!({ "type": "document", "astVersion": "2.0", "lang": "de",
         "metadata": { "keywords": ["a"] }, "children": [table] }),

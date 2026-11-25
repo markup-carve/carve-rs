@@ -1222,22 +1222,18 @@ fn located(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
     if entries.len() < 2 {
         return entries;
     }
-    let mut order: Vec<usize> = (0..entries.len()).collect();
     if keys.iter().all(Option::is_some) {
-        order.sort_by_key(|&i| keys[i]);
-    } else {
-        // A node the walk did not find: its path alone places the entry.
-        let paths: Vec<Vec<usize>> = entries
-            .iter()
-            .map(|e| node::path_key(doc, e.path.as_deref().unwrap_or("")))
-            .collect();
-        order.sort_by(|&a, &b| paths[a].cmp(&paths[b]));
+        let mut keyed: Vec<_> = keys.into_iter().zip(entries).collect();
+        keyed.sort_by_key(|(key, _)| *key);
+        return keyed.into_iter().map(|(_, e)| e).collect();
     }
-    if order.iter().enumerate().all(|(at, &i)| at == i) {
-        return entries;
-    }
-    let mut slots: Vec<Option<Entry>> = entries.into_iter().map(Some).collect();
-    order.into_iter().filter_map(|i| slots[i].take()).collect()
+    // A node the walk did not find: its path alone places the entry.
+    let mut keyed: Vec<_> = entries
+        .into_iter()
+        .map(|e| (node::path_key(doc, e.path.as_deref().unwrap_or("")), e))
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.into_iter().map(|(_, e)| e).collect()
 }
 
 fn loss_entry(code: &str, message: String, path: String, range: Option<Range>) -> Entry {
