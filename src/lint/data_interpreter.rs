@@ -1949,7 +1949,7 @@ impl<'a> Eval<'_, 'a> {
                         })
                         .collect()
                 });
-                let (id, build) = self.records.tagged_lookup(lookup.site, tag, site_count());
+                let (id, build) = self.records.tagged_lookup(lookup.site, tag);
                 if build {
                     let built = self.build_lookup(lookup, true);
                     self.records.store_lookup(id, built);
@@ -2353,13 +2353,14 @@ fn lookup_site(arg: &'static Value) -> usize {
             _ => true,
         }
     }
+    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let key = &arg["key"];
     let signature = if item_only(key) {
         format!("{} {} {}", arg["over"], arg["types"], key)
     } else {
         format!("{:p}", std::ptr::from_ref(arg))
     };
-    let mut sites = lookup_site_table()
+    let mut sites = SITES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     sites
@@ -2369,16 +2370,6 @@ fn lookup_site(arg: &'static Value) -> usize {
             sites.push(signature);
             sites.len() - 1
         })
-}
-
-fn lookup_site_table() -> &'static std::sync::Mutex<Vec<String>> {
-    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-    &SITES
-}
-
-/// The number of shared lookup sites the model compiled; tagged indexes are numbered after them.
-fn site_count() -> usize {
-    lookup_site_table().lock().map_or(0, |sites| sites.len())
 }
 
 /// Collects the largest parts of a lookup key that read the record being tested (`f` of the subject,
