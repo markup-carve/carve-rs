@@ -256,6 +256,21 @@ impl Uses<'_> {
             label
         }
     }
+    /// Directive entries take their numbers in source order, before any use.
+    fn number_sources(&mut self, directives: &[Vec<String>]) -> HashSet<String> {
+        let mut source_keys = HashSet::new();
+        for key in directives.iter().flatten() {
+            source_keys.insert(key.clone());
+            if !self.numbers.contains_key(key) {
+                self.numbers.insert(key.clone(), self.numbers.len() + 1);
+                self.ref_ids.insert(
+                    key.clone(),
+                    app::fresh_id(&format!("ref-{key}"), &mut self.taken),
+                );
+            }
+        }
+        source_keys
+    }
     fn cite(&mut self, node: &mut Value) -> bool {
         if app::ty(node) != "inline_extension"
             || node.get("name").and_then(Value::as_str) != Some(CITE)
@@ -377,18 +392,7 @@ impl DocumentTransform for Transform {
             ref_ids: HashMap::new(),
             use_ids: HashMap::new(),
         };
-        // Directive entries take their numbers in source order, before any use.
-        let mut source_keys = HashSet::new();
-        for key in directives.iter().flatten() {
-            source_keys.insert(key.clone());
-            if !uses.numbers.contains_key(key) {
-                uses.numbers.insert(key.clone(), uses.numbers.len() + 1);
-                uses.ref_ids.insert(
-                    key.clone(),
-                    app::fresh_id(&format!("ref-{key}"), &mut uses.taken),
-                );
-            }
-        }
+        let source_keys = uses.number_sources(&directives);
         // Body uses are numbered first, even if a note definition precedes them.
         app::walk(&mut doc, &mut |node| {
             if references(node) || matches!(app::ty(node), "footnote" | "inline_footnote") {
@@ -409,52 +413,61 @@ impl DocumentTransform for Transform {
             }
             true
         });
-        let mut placed = false;
-        let mut claimed = false;
-        let mut at = 0;
-        app::walk(&mut doc, &mut |node| {
-            if !references(node) {
-                return true;
-            }
-            let mut keys = directives.get(at).cloned().unwrap_or_default();
-            at += 1;
-            if !placed {
-                keys.extend(
-                    uses.order
-                        .iter()
-                        .filter(|key| !source_keys.contains(*key))
-                        .cloned(),
-                );
-            }
-            let mut body = node.clone();
-            if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
-                parts.retain(|part| {
-                    app::ty(part) != "definition_list"
-                        || !app::children(part)
-                            .iter()
-                            .any(|item| app::ty(item) == "definition_description")
-                });
-                parts.push(reference_list(&uses, keys, true));
-            }
-            placed = true;
-            *node = app::claim_directive(REFERENCES, node, &[body]);
-            claimed = true;
-            false
-        });
-        if !placed && !uses.order.is_empty() {
-            if let Some(parts) = doc.get_mut("children").and_then(Value::as_array_mut) {
-                parts.push(
-                    json!({"type":"block_extension", "name":REFERENCES, "version":"1",
-                    "children":[], "slots":{"body":[reference_list(&uses, uses.order.clone(), false)]}, "fallback":[]}),
-                );
-                claimed = true;
-            }
-        }
-        if claimed {
+        if place(&mut doc, &uses, &directives, &source_keys) {
             super::super::standard::declare_names(&mut doc, &[(REFERENCES, json!(["body"]))]);
         }
         app::finish(&view, doc)
     }
+}
+
+/// Places the reference lists: in each directive, the first one with the
+/// cited entries no directive defines, or else at the end of the document.
+/// Returns whether anything was claimed.
+fn place(
+    doc: &mut Value,
+    uses: &Uses<'_>,
+    directives: &[Vec<String>],
+    source_keys: &HashSet<String>,
+) -> bool {
+    let mut placed = false;
+    let mut at = 0;
+    app::walk(doc, &mut |node| {
+        if !references(node) {
+            return true;
+        }
+        let mut keys = directives.get(at).cloned().unwrap_or_default();
+        at += 1;
+        if !placed {
+            keys.extend(
+                uses.order
+                    .iter()
+                    .filter(|key| !source_keys.contains(*key))
+                    .cloned(),
+            );
+        }
+        let mut body = node.clone();
+        if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
+            parts.retain(|part| {
+                app::ty(part) != "definition_list"
+                    || !app::children(part)
+                        .iter()
+                        .any(|item| app::ty(item) == "definition_description")
+            });
+            parts.push(reference_list(uses, keys, true));
+        }
+        placed = true;
+        *node = app::claim_directive(REFERENCES, node, &[body]);
+        false
+    });
+    if placed || uses.order.is_empty() {
+        return placed;
+    }
+    let Some(parts) = doc.get_mut("children").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    parts.push(json!({"type":"block_extension", "name":REFERENCES, "version":"1",
+        "children":[], "slots":{"body":[reference_list(uses, uses.order.clone(), false)]}, "fallback":[]}));
+    true
 }
 
 struct Cite {
