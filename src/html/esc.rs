@@ -122,6 +122,37 @@ pub fn text(s: &str, out: &mut String) {
     escape(s, out, &TEXT_BYTES, false, text_rep);
 }
 
+/// Text of a line-block line (C2-H-043): a run of spaces and tabs that leads
+/// the line (`lead`) or covers two or more columns is one `&nbsp;` per column,
+/// a one-column run is a space. Tab stops count from the start of `s`.
+pub fn verse(s: &str, lead: bool, out: &mut String) {
+    let mut col = 0usize;
+    let mut rest = s;
+    let mut first = true;
+    while !rest.is_empty() {
+        let run = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        if run > 0 {
+            let start = col;
+            for b in rest[..run].bytes() {
+                col = if b == b'\t' { col / 4 * 4 + 4 } else { col + 1 };
+            }
+            if (lead && first) || col - start > 1 {
+                for _ in start..col {
+                    out.push_str("&nbsp;");
+                }
+            } else {
+                out.push(' ');
+            }
+            rest = &rest[run..];
+        }
+        first = false;
+        let word = rest.find([' ', '\t']).unwrap_or(rest.len());
+        col += rest[..word].chars().count();
+        text(&rest[..word], out);
+        rest = &rest[word..];
+    }
+}
+
 /// Text content as a new string.
 #[must_use]
 pub fn text_str(s: &str) -> String {

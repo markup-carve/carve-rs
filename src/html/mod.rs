@@ -283,6 +283,8 @@ pub(crate) struct Renderer<'r, 'a> {
     in_abbr: usize,
     /// The smart punctuation node being written is an apostrophe that locale quotes leave.
     apostrophe: bool,
+    /// Writing a line of a line block; `true` while its leading text is next (C2-H-043).
+    verse: Option<bool>,
     level: usize,
     /// List, quote, and div levels for C2-H-166, separate from walk depth.
     profile_depth: usize,
@@ -392,6 +394,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             in_link: 0,
             in_abbr: 0,
             apostrophe: false,
+            verse: None,
             level: 0,
             profile_depth: 0,
             caption_inner: None,

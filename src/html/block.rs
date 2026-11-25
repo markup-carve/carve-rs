@@ -884,20 +884,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.line(depth, "</div>");
     }
 
-    /// One line of a line block: leading spaces become `&nbsp;`.
+    /// One line of a line block, its whitespace kept (C2-H-043).
     fn line_text(&mut self, children: &'r [Node<'a>]) -> String {
         // C2-B-130: only spaces the line starts with lead it, not those behind a comment.
-        let lead = match children.first() {
-            Some(Node::Text(t)) => t.value.bytes().take_while(|&b| b == b' ').count(),
-            _ => 0,
-        };
+        let lead = matches!(children.first(), Some(Node::Text(_)));
+        let outer = self.verse.replace(lead);
         let s = self.leaf(children);
-        let spaces = s.bytes().take(lead).take_while(|&b| b == b' ').count();
-        format!(
-            "{}{}",
-            "&nbsp;".repeat(spaces),
-            s.get(spaces..).unwrap_or("")
-        )
+        self.verse = outer;
+        s
     }
 
     /// C2-H-047, C2-H-048.
