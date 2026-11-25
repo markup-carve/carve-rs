@@ -490,9 +490,8 @@ impl State<'_> {
         {
             return;
         }
+        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
         let Some(value) = value else {
-            out.push(' ');
-            out.push_str(name);
             return;
         };
         let unsafe_value = if REF_VALUE_ATTRS.contains(&lower) {
