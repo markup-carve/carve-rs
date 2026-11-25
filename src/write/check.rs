@@ -968,10 +968,13 @@ pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 /// Whether a link below `doc` has text that starts with a caret.
 pub fn holds_caret_link(doc: V<'_>) -> bool {
     // An arena tree is walked through its typed slots: the generic slot walk costs a share of every `fmt`.
-    match doc {
-        V::Doc(d) => return d.children.iter().any(typed_caret_link),
-        V::Node(n) => return typed_caret_link(n),
-        _ => {}
+    let typed = match doc {
+        V::Doc(d) => typed_caret_links(d.children.iter()),
+        V::Node(n) => typed_caret_link(n),
+        _ => None,
+    };
+    if let Some(found) = typed {
+        return found;
     }
     let mut nodes = Vec::new();
     super::node::descendants(doc, &mut nodes);
@@ -980,24 +983,51 @@ pub fn holds_caret_link(doc: V<'_>) -> bool {
         .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
 }
 
-/// [`super::inline::leading_caret`] of every link below `n`, on the typed tree.
-fn typed_caret_link(n: &crate::ast::Node<'_>) -> bool {
+/// [`super::inline::leading_caret`] of every link below `n`, on the typed tree; `None` where no caret link was
+/// found and a JSON slot (a citation locator, extension slots) holds nodes the typed children do not reach.
+fn typed_caret_link(n: &crate::ast::Node<'_>) -> Option<bool> {
     use crate::ast::Node;
-    if let Node::Link(l) = n
-        && let Some(Node::Text(t)) = l.children.first()
-        && let Some(rest) = t.value.strip_prefix('^')
-        && rest
-            .chars()
-            .next()
-            .map_or(l.children.len() == 1, char::is_whitespace)
-    {
-        return true;
+    match n {
+        Node::Link(l) if caret_text(l.children) => return Some(true),
+        Node::Text(_) => return Some(false),
+        _ => {}
     }
-    let mut found = false;
+    let (mut found, mut json) = (false, false);
     n.for_each_child(&mut |c| {
-        found = found || (!matches!(c, Node::Text(_)) && typed_caret_link(c));
+        if !found {
+            match typed_caret_link(c) {
+                Some(true) => found = true,
+                None => json = true,
+                Some(false) => {}
+            }
+        }
     });
-    found
+    if found {
+        return Some(true);
+    }
+    json |= matches!(n, Node::Citation(c) if c.locator.is_some())
+        || matches!(n, Node::BlockExtension(e) if e.slots.is_some())
+        || matches!(n, Node::InlineExtension(e) if e.slots.is_some());
+    (!json).then_some(false)
+}
+
+/// [`super::inline::leading_caret`] of a link holding `kids`.
+fn caret_text(kids: &[crate::ast::Node<'_>]) -> bool {
+    matches!(kids.first(), Some(crate::ast::Node::Text(t)) if t.value.strip_prefix('^').is_some_and(|rest| {
+        rest.chars().next().map_or(kids.len() == 1, char::is_whitespace)
+    }))
+}
+
+fn typed_caret_links<'a>(nodes: impl Iterator<Item = &'a crate::ast::Node<'a>>) -> Option<bool> {
+    let mut json = false;
+    for n in nodes {
+        match typed_caret_link(n) {
+            Some(true) => return Some(true),
+            None => json = true,
+            Some(false) => {}
+        }
+    }
+    (!json).then_some(false)
 }
 
 fn scan_text_note_closers<'t>(
