@@ -14,7 +14,8 @@ the refusal. A gate nobody watched fire is the defect one layer up.
 The upstream checkout is the real one - only the map varies - because the pin's
 ancestry, the commit that touched the source and the published node list all
 have to be real for the refusal to mean anything. `CARVE_GRAMMARS_DIR` names it;
-the default matches the CI job's path.
+the default matches the CI job's path. `CARVE_GRAMMARS_REF` names the branch or
+tag the pin is checked against (default `main`, as the checker's `--branch`).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from tempfile import TemporaryDirectory
 HERE = Path(__file__).resolve().parent
 MAP = HERE.parent / "resources" / "prosemirror-schema-map.json"
 GRAMMARS = Path(os.environ.get("CARVE_GRAMMARS_DIR", HERE.parent / ".carve-grammars"))
+REF = os.environ.get("CARVE_GRAMMARS_REF", "main")
 
 spec = importlib.util.spec_from_file_location("check_schema_map", HERE / "check-schema-map.py")
 check_schema_map = importlib.util.module_from_spec(spec)
@@ -62,7 +64,7 @@ def run(overrides=None):
         path.write_text(json.dumps(document), encoding="utf-8")
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            code = check_schema_map.main(["--grammars", str(GRAMMARS), "--map", str(path)])
+            code = check_schema_map.main(["--grammars", str(GRAMMARS), "--branch", REF, "--map", str(path)])
 
     return code, out.getvalue() + err.getvalue()
 
@@ -83,7 +85,7 @@ class DivergenceReasons(unittest.TestCase):
         self.assertEqual(code, 1, output)
         self.assertIn("divergence_reasons_hold", output)
         for ty, node in WENT_FALSE.items():
-            self.assertIn(f"{ty}: main publishes `{node}`", output)
+            self.assertIn(f"{ty}: {REF} publishes `{node}`", output)
 
     def test_the_same_evidence_passes_that_check_as_prose(self):
         """The control: the refusal above came from the reason, not the entries.
@@ -111,14 +113,15 @@ class DivergenceReasons(unittest.TestCase):
         }
         code, output = run(entries)
         self.assertEqual(code, 1, output)
-        self.assertIn("main publishes no `carveFigureGrouping`", output)
+        self.assertIn(f"{REF} publishes no `carveFigureGrouping`", output)
 
     def test_a_node_upstream_publishes_outside_types_resolves(self):
         """`carveUnsupported` belongs to no Carve type and is still a node."""
         published = check_schema_map.upstream_node_names(
             json.loads(
-                check_schema_map.git(GRAMMARS, "show", "origin/main:tiptap/schema-map.json").stdout
-                or check_schema_map.git(GRAMMARS, "show", "main:tiptap/schema-map.json").stdout
+                check_schema_map.git(
+                    GRAMMARS, "show", f"{check_schema_map.resolve_branch(GRAMMARS, REF)}:tiptap/schema-map.json"
+                ).stdout
             )
         )
         self.assertIn("carveUnsupported", published)
