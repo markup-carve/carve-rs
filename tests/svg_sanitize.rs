@@ -1,6 +1,7 @@
 //! PROVISIONAL public `sanitize_svg` (carve#6754): byte parity with carve-php
-//! `SvgSanitizer` (480fb164), which carries the fixes of carve#6755,
-//! carve#6760 and carve#6761.
+//! `SvgSanitizer` (7f531fa), which carries the fixes of carve#6755,
+//! carve#6760, carve#6761, carve#6763, carve#6764, carve#6765, carve#6773 and
+//! carve#6774.
 
 use carve::api::UrlPolicy;
 use carve::api::extensions::{SanitizeResult, SanitizeSvgOptions, sanitize_svg};
@@ -41,9 +42,20 @@ fn kept(source: &str, opts: &SanitizeSvgOptions) -> String {
 
 #[test]
 fn output_equals_carve_php_on_its_parity_rows() {
-    let rows: Vec<Value> =
+    let mut rows: Vec<Value> =
         serde_json::from_str(include_str!("data/svg-sanitize/parity.json")).unwrap();
     assert_eq!(rows.len(), 770);
+    // The rows a js-first ruling changed (carve#6763, #6765, #6774), as
+    // carve-php f23005e8 and 7f531fa writes them.
+    let deltas: Vec<Value> =
+        serde_json::from_str(include_str!("data/svg-sanitize/parity-js-first.json")).unwrap();
+    assert_eq!(deltas.len(), 128);
+    for delta in &deltas {
+        let row = &mut rows[usize::try_from(delta["index"].as_u64().unwrap()).unwrap()];
+        assert_eq!(row["src"], delta["src"], "delta {}", delta["index"]);
+        row["svg"] = delta["svg"].clone();
+        row["ok"] = delta["ok"].clone();
+    }
     let mut failures = Vec::new();
     for (i, row) in rows.iter().enumerate() {
         let source = row["src"].as_str().unwrap();
@@ -185,4 +197,81 @@ fn malformed_input_is_refused() {
             "{source}"
         );
     }
+}
+
+#[test]
+fn quoted_and_spaced_local_url_references_are_kept() {
+    // carve#6763.
+    assert_eq!(
+        sanitize("<svg><rect fill=\"url('#g')\"/><rect fill='url(\"#g\")'/><rect fill=\"url( #g)\"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"url('#g')\"/><rect fill=\"url(&quot;#g&quot;)\"/><rect fill=\"url( #g)\"/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg><rect fill=\"url(\t'#g')\" stroke=\"url( ' #g' )\"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"url(\t'#g')\" stroke=\"url( ' #g' )\"/></svg>"
+    );
+}
+
+#[test]
+fn a_non_css_space_before_the_hash_is_not_local() {
+    // carve#6773: the URL keeps a leading U+00A0, U+3000 or U+FEFF.
+    for space in ['\u{A0}', '\u{3000}', '\u{FEFF}'] {
+        assert_eq!(
+            sanitize(&format!("<svg><rect fill=\"url({space}#g)\"/><rect fill=\"url('{space}#g')\"/></svg>")).svg,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><rect/></svg>",
+            "{space:?}"
+        );
+    }
+}
+
+#[test]
+fn output_holds_only_xml_characters() {
+    // carve#6764.
+    assert_eq!(
+        sanitize("<svg><text>&#0;</text><text>a&#x1;b</text></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>&amp;#0;</text><text>a&amp;#x1;b</text></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg><text id=\"a&#xFFFE;\">&#55296;&#9;&#0000000065;&#x10FFFF;&#x110000;</text></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><text id=\"a&amp;#xFFFE;\">&amp;#55296;&#9;&#0000000065;&#x10FFFF;&amp;#x110000;</text></svg>"
+    );
+    // Raw characters go before any check, so they cannot split a needle.
+    assert_eq!(
+        sanitize("<svg><rect fill=\"ur\u{1}l(https://e.example/x)\"/><text>a\u{0}b\u{FFFF}c</text></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><text>abc</text></svg>"
+    );
+}
+
+#[test]
+fn camel_case_animation_elements_are_kept() {
+    // carve#6765.
+    let opts = SanitizeSvgOptions {
+        allow_animation: true,
+        ..SanitizeSvgOptions::default()
+    };
+    let source = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect><animateTransform attributeName=\"transform\" type=\"rotate\" from=\"0\" to=\"360\" dur=\"1s\"/><animateMotion dur=\"1s\"/></rect></svg>";
+    assert_eq!(kept(source, &opts), source);
+    assert_eq!(
+        kept(source, &SanitizeSvgOptions::default()),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
+    );
+}
+
+#[test]
+fn an_attribute_without_a_value_is_dropped() {
+    // carve#6774.
+    assert_eq!(
+        sanitize("<svg id/>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"/>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg><rect width fill/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
+    );
 }
