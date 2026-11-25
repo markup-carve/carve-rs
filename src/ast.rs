@@ -207,12 +207,14 @@ pub mod owned {
             };
             let at = last.get(&class).copied();
             let other_at = other.and_then(|o| last.get(&o).copied());
-            match at {
-                Some(i) if other_at.is_none_or(|o| o < i) => out[i].1 = value,
-                _ => {
-                    last.insert(class, out.len());
-                    out.push((key, value));
-                }
+            if let Some(slot) = at
+                .filter(|&i| other_at.is_none_or(|o| o < i))
+                .and_then(|i| out.get_mut(i))
+            {
+                slot.1 = value;
+            } else {
+                last.insert(class, out.len());
+                out.push((key, value));
             }
         }
         *kv = out;
