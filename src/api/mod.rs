@@ -49,6 +49,7 @@ pub(crate) mod layout;
 mod migrate;
 mod options;
 mod patch;
+pub mod prosemirror;
 mod record;
 mod standard;
 pub mod stream;
