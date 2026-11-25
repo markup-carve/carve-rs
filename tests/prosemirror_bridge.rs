@@ -2,6 +2,9 @@
 //! Tiptap kit, parity with the carve-php bridge, and the round trip over the
 //! conformance inputs.
 
+// ProseMirror and Tiptap are product names, not code.
+#![allow(clippy::doc_markdown)]
+
 use std::sync::Arc;
 
 use carve::api::prosemirror::{
@@ -49,28 +52,23 @@ fn without_positions(tree: &api::Tree) -> Value {
     value
 }
 
-fn first_diff(a: &Value, b: &Value, path: &str) -> Option<String> {
-    match (a, b) {
-        (Value::Object(x), Value::Object(y)) => {
-            for k in x.keys().chain(y.keys()) {
-                match (x.get(k), y.get(k)) {
-                    (Some(p), Some(q)) => {
-                        if let Some(d) = first_diff(p, q, &format!("{path}/{k}")) {
-                            return Some(d);
-                        }
-                    }
-                    (p, q) => return Some(format!("{path}/{k}: {p:?} vs {q:?}")),
-                }
+/// The path of the first difference between two values, for a readable failure.
+fn first_diff(left: &Value, right: &Value, path: &str) -> Option<String> {
+    match (left, right) {
+        (Value::Object(lhs), Value::Object(rhs)) => lhs.keys().chain(rhs.keys()).find_map(|key| {
+            let at = format!("{path}/{key}");
+            match (lhs.get(key), rhs.get(key)) {
+                (Some(one), Some(other)) => first_diff(one, other, &at),
+                (one, other) => Some(format!("{at}: {one:?} vs {other:?}")),
             }
-            None
-        }
-        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => x
+        }),
+        (Value::Array(lhs), Value::Array(rhs)) if lhs.len() == rhs.len() => lhs
             .iter()
-            .zip(y)
+            .zip(rhs)
             .enumerate()
-            .find_map(|(i, (p, q))| first_diff(p, q, &format!("{path}/{i}"))),
-        _ if a == b => None,
-        _ => Some(format!("{path}: {a} vs {b}")),
+            .find_map(|(index, (one, other))| first_diff(one, other, &format!("{path}/{index}"))),
+        _ if left == right => None,
+        _ => Some(format!("{path}: {left} vs {right}")),
     }
 }
 
