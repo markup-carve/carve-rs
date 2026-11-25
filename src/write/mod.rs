@@ -259,12 +259,13 @@ mod nested_write_test {
 #[cfg(test)]
 mod group_reads_test {
     use super::*;
+    use std::fmt::Write as _;
 
     /// The characters the read-back parses of `fmt` take on `n` paragraphs of `shape`.
     fn read_chars(shape: &str, n: usize) -> (usize, usize) {
         let mut src = String::new();
         for i in 0..n {
-            src.push_str(&format!("{shape} w{i}\n\n"));
+            let _ = write!(src, "{shape} w{i}\n\n");
         }
         let arena = crate::Arena::for_input(&src);
         let doc =
