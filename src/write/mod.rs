@@ -193,8 +193,8 @@ mod prune_candidates_test {
         // carve-rs#4660: `{*` would read as a braced opener and take the strong's mark.
         assert_eq!(candidates("\\{*x* a\n"), [] as [usize; 0]);
         assert_eq!(candidates("\\{/x/ a\n"), [] as [usize; 0]);
-        // No pair opens at the mark, so the trial still decides.
-        assert_eq!(candidates("\\{*x a\n"), [0]);
+        // carve#6559: a `{` escaped before a mark is a potential opener of kind `{` and stays (C2-W-091).
+        assert_eq!(candidates("\\{*x a\n"), [] as [usize; 0]);
     }
 }
 
@@ -3318,7 +3318,6 @@ fn prunable_opener<'p>(
         return false;
     }
     match b.get(at + 2) {
-        Some(b'/' | b'*') => true,
         Some(b'#') => prunable_tag_brace(source, at, parsed, find, others),
         _ => false,
     }
@@ -3769,7 +3768,6 @@ fn prunable_escapes(
     notes: &mut dyn FnMut(usize) -> NoteCall,
 ) -> Vec<usize> {
     let raw_spans = raw_spans(source, raws);
-    let mut opens: Option<AddrSet<usize>> = None;
     let mut current = || Some(parsed);
     let mut next = next_byte_after(source);
     // The count of text backslashes, asked for the parse of `source` once.
@@ -3778,39 +3776,12 @@ fn prunable_escapes(
         .match_indices('\\')
         .map(|(p, _)| p)
         .filter(|&p| {
-            !(source
-                .get(p + 1..p + 3)
-                .is_some_and(|m| m == "{*" || m == "{/")
-                && opens
-                    .get_or_insert_with(|| bare_pair_openers(source, parsed))
-                    .contains(&(p + 2)))
-                && match notes(p) {
-                    NoteCall::Prune => true,
-                    NoteCall::Keep => false,
-                    NoteCall::Open => {
-                        prunable_opener(source, p, &mut current, &mut next, &mut others)
-                    }
-                }
-                && !in_raw(&raw_spans, p)
-        })
-        .collect()
-}
-
-/// The offsets of the bare marks that open an emphasis or strong of `parsed`, the parse of `source`. Without
-/// its backslash a `{` before such a mark reads with it as a braced opener, so the pair would not form.
-fn bare_pair_openers(source: &str, parsed: V<'_>) -> AddrSet<usize> {
-    let mut nodes = Vec::new();
-    node::descendants(parsed, &mut nodes);
-    nodes
-        .into_iter()
-        .filter_map(|n| {
-            let mark = match ty(n) {
-                "strong" => b'*',
-                "emphasis" => b'/',
-                _ => return None,
+            let prunable = match notes(p) {
+                NoteCall::Prune => true,
+                NoteCall::Keep => false,
+                NoteCall::Open => prunable_opener(source, p, &mut current, &mut next, &mut others),
             };
-            let (start, _) = span(n)?;
-            (source.as_bytes().get(start) == Some(&mark)).then_some(start)
+            prunable && !in_raw(&raw_spans, p)
         })
         .collect()
 }
