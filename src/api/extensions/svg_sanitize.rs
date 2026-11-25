@@ -67,12 +67,11 @@ const ALLOWED_TAGS: &[&str] = &[
     "feDisplacementMap",
 ];
 
-/// Looked up in lower case like carve-js, so the two camel-case names never
-/// match (carve#6765).
+/// Lower case: `tag_allowed` looks names up lowered (carve#6765).
 const ANIMATION_TAGS: &[&str] = &[
     "animate",
-    "animateTransform",
-    "animateMotion",
+    "animatetransform",
+    "animatemotion",
     "set",
     "mpath",
 ];
@@ -247,7 +246,8 @@ pub struct SanitizeSvgOptions {
     pub allow_style: bool,
     /// Keep `<a>` and its external `href` (safe schemes only).
     pub allow_links: bool,
-    /// Keep the SMIL elements `animate`, `set` and `mpath`.
+    /// Keep the SMIL elements `animate`, `animateTransform`, `animateMotion`,
+    /// `set` and `mpath`.
     pub allow_animation: bool,
     /// Keep `<image>` and its external `href` (safe schemes only; `data:`
     /// stays refused).
