@@ -5,13 +5,14 @@
 //! with its subtree, an attribute off the allowlist and every `on*` handler is
 //! dropped, URL and style values are checked, and only the survivors are
 //! written again. Output bytes equal carve-php on the same input, which takes
-//! carve-js output except for the fixes of carve#6755, carve#6760 and
-//! carve#6761.
+//! carve-js output except for the fixes of carve#6755, carve#6760,
+//! carve#6761 and carve#6774.
 // Every index sits on an ASCII byte the scan has just checked.
 #![allow(clippy::indexing_slicing)]
 
 use crate::options::UrlPolicy;
 use crate::tables::{DEFAULT_DENIED_SCHEMES, PROBE_REMOVES, STYLE_PATTERNS};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
@@ -67,12 +68,11 @@ const ALLOWED_TAGS: &[&str] = &[
     "feDisplacementMap",
 ];
 
-/// Looked up in lower case like carve-js, so the two camel-case names never
-/// match (carve#6765).
+/// Lower case: `tag_allowed` looks names up lowered (carve#6765).
 const ANIMATION_TAGS: &[&str] = &[
     "animate",
-    "animateTransform",
-    "animateMotion",
+    "animatetransform",
+    "animatemotion",
     "set",
     "mpath",
 ];
@@ -247,7 +247,8 @@ pub struct SanitizeSvgOptions {
     pub allow_style: bool,
     /// Keep `<a>` and its external `href` (safe schemes only).
     pub allow_links: bool,
-    /// Keep the SMIL elements `animate`, `set` and `mpath`.
+    /// Keep the SMIL elements `animate`, `animateTransform`, `animateMotion`,
+    /// `set` and `mpath`.
     pub allow_animation: bool,
     /// Keep `<image>` and its external `href` (safe schemes only; `data:`
     /// stays refused).
@@ -300,7 +301,8 @@ struct State<'o> {
 
 impl State<'_> {
     fn run(&mut self, source: &str) -> Option<String> {
-        let src = trim(source);
+        let cleaned = xml_chars_only(source);
+        let src = trim(&cleaned);
         let mut cursor = 0;
         while let Some(found) = src[cursor..].find('<') {
             let start = cursor + found;
@@ -490,9 +492,8 @@ impl State<'_> {
         {
             return;
         }
+        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
         let Some(value) = value else {
-            out.push(' ');
-            out.push_str(name);
             return;
         };
         let unsafe_value = if REF_VALUE_ATTRS.contains(&lower) {
@@ -536,6 +537,20 @@ fn write_attr(out: &mut String, name: &str, value: &str) {
     out.push_str("=\"");
     out.push_str(&escape_attr(value));
     out.push('"');
+}
+
+/// carve#6764: raw characters outside XML `Char` go before any check, so a
+/// check never sees a value the output does not hold. The byte scan finds C0
+/// controls and the 0xEF lead byte of U+FFFE / U+FFFF.
+fn xml_chars_only(source: &str) -> Cow<'_, str> {
+    let suspect = source
+        .bytes()
+        .any(|b| (b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r')) || b == 0xEF);
+    if suspect && source.contains(non_xml_char) {
+        Cow::Owned(source.chars().filter(|&c| !non_xml_char(c)).collect())
+    } else {
+        Cow::Borrowed(source)
+    }
 }
 
 /// JavaScript's `\s` and `String.prototype.trim()` set.
@@ -894,12 +909,25 @@ fn style_is_dangerous(value: &str) -> bool {
     STYLE_PATTERNS.iter().any(|p| compact.contains(p)) || compact.contains("javascript:")
 }
 
-/// Kept as carve-js reads it: any `url(` not directly followed by `#`
-/// (carve#6763 tracks the quoted local reference this also refuses).
+/// Any `url(` whose content does not start with `#` after CSS whitespace and
+/// one optional quote (carve#6763). Only CSS whitespace is skipped: a URL keeps
+/// a leading no-break space, so `url(\u{A0}#g)` names another resource
+/// (carve#6773).
 fn non_local_url(value: &str) -> bool {
     let b = value.as_bytes();
-    (0..b.len().saturating_sub(3))
-        .any(|at| b[at..at + 4].eq_ignore_ascii_case(b"url(") && b.get(at + 4) != Some(&b'#'))
+    let css_ws = |c: &&u8| matches!(c, b'\t' | b'\n' | 0x0C | b'\r' | b' ');
+    (0..b.len().saturating_sub(3)).any(|at| {
+        if !b[at..at + 4].eq_ignore_ascii_case(b"url(") {
+            return false;
+        }
+        let mut next = at + 4;
+        next += b[next..].iter().take_while(css_ws).count();
+        if matches!(b.get(next), Some(b'"' | b'\'')) {
+            next += 1;
+        }
+        next += b[next..].iter().take_while(css_ws).count();
+        b.get(next) != Some(&b'#')
+    })
 }
 
 fn ref_attr_unsafe(value: &str) -> bool {
@@ -920,8 +948,8 @@ fn value_has_external_ref(value: &str) -> bool {
     non_local_url(&decoded) || !scheme_is_safe(&decoded)
 }
 
-/// Keeps the entities XML defines (the five names and numeric references)
-/// and escapes every other `&`.
+/// Keeps the entities XML defines (the five names and numeric references to
+/// an XML `Char`, carve#6764) and escapes every other `&`.
 fn escape_amp(text: &str, out: &mut String) {
     let mut rest = text;
     while let Some(at) = rest.find('&') {
@@ -948,7 +976,15 @@ fn xml_entity_follows(rest: &str) -> bool {
                 }
             })
             .count();
-        n > 0 && b.get(from + n) == Some(&b';')
+        if n == 0 || b.get(from + n) != Some(&b';') {
+            return false;
+        }
+        let digits = rest[from..from + n].trim_start_matches('0');
+        if digits.len() > if hex { 6 } else { 7 } {
+            return false;
+        }
+        let cp = u32::from_str_radix(digits, if hex { 16 } else { 10 }).unwrap_or(0);
+        xml_char(cp)
     };
     match b.first() {
         Some(b'#') if b.get(1) == Some(&b'x') => numeric(2, true),
@@ -957,6 +993,16 @@ fn xml_entity_follows(rest: &str) -> bool {
             .iter()
             .any(|name| rest.starts_with(name)),
     }
+}
+
+fn xml_char(cp: u32) -> bool {
+    matches!(cp, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x1_0000..=0x10_FFFF)
+}
+
+/// A raw character outside the XML 1.0 `Char` production; a `str` holds no
+/// surrogates.
+fn non_xml_char(c: char) -> bool {
+    !xml_char(u32::from(c))
 }
 
 fn escape_text(text: &str) -> String {
