@@ -375,6 +375,9 @@ fn escape_line_start<'t>(
     owner: N<'t>,
 ) {
     c.misaligned = true;
+    if escape_attribute_lines_above(w, c, nodes, from, owner) {
+        return;
+    }
     let first = nodes.get(from).copied();
     let before = c.escapes.len();
     if let Some(mark) = escape_run_opener_at(w, c, nodes, from) {
@@ -398,6 +401,41 @@ fn escape_line_start<'t>(
         Some(f) if has_other_form(w, c, f) => change_form(c, f),
         _ => c.losses.push((first.unwrap_or(owner), None)),
     }
+}
+
+/// C2-I-028: the first lines of a block that are each a whole attribute block read as attribute lines, so the line
+/// at `nodes[from]` behind them starts a block of its own; the first brace takes the backslash (C2-W-125 case one).
+fn escape_attribute_lines_above<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    nodes: &[N<'t>],
+    from: usize,
+    owner: N<'t>,
+) -> bool {
+    let Some(&first) = nodes.first() else {
+        return false;
+    };
+    if from == 0
+        || !is_break(nodes.get(from - 1).copied())
+        || children(owner).first().map(id) != Some(id(first))
+    {
+        return false;
+    }
+    let mut line = String::new();
+    for &n in nodes.get(..from).unwrap_or(&[]) {
+        if is_break(Some(n)) {
+            let t = line.trim_end_matches([' ', '\t']);
+            if crate::attr::parse_block(t, 0).is_none_or(|(_, end)| end != t.len()) {
+                return false;
+            }
+            line.clear();
+        } else if ty(n) == "text" {
+            line.push_str(text(n));
+        } else {
+            return false;
+        }
+    }
+    escape_at(w, c, first, 0)
 }
 
 fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
@@ -905,6 +943,97 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
                 w.add_escape(text, at);
             }
         }
+    }
+}
+
+/// C2-W-125 case eight: a text `^[` stays bare before a later link whose text starts with a caret, so the `]`
+/// that closed it early takes the backslash before the first write. A collapsed or shortcut reference spells its
+/// caret through its key and is left to the rounds.
+pub fn seed_text_note_closers<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    let mut found = Vec::new();
+    let mut links = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(node) = pending.pop() {
+        super::node::for_each_slot(node, false, &mut |kids, _, _| {
+            scan_text_note_closers(w, kids, &mut found, &mut links);
+            pending.extend(kids.iter());
+        });
+    }
+    for (n, at) in found {
+        w.add_escape(n, at);
+    }
+    w.case_eight_links.extend(links.into_iter().map(id));
+}
+
+/// Whether a link below `doc` has text that starts with a caret.
+pub fn holds_caret_link(doc: V<'_>) -> bool {
+    let mut nodes = Vec::new();
+    super::node::descendants(doc, &mut nodes);
+    nodes
+        .into_iter()
+        .any(|n| ty(n) == "link" && super::inline::leading_caret(n))
+}
+
+fn scan_text_note_closers<'t>(
+    w: &Writer<'_>,
+    kids: Arr<'t>,
+    found: &mut Vec<(N<'t>, usize)>,
+    links: &mut Vec<N<'t>>,
+) {
+    if !kids
+        .iter()
+        .any(|k| ty(k) == "link" && super::inline::leading_caret(k))
+    {
+        return;
+    }
+    // With its closers escaped the note stays open, so each `]` at its own depth closes it early.
+    let mut depth = 0usize;
+    let mut closers = Vec::new();
+    for k in kids {
+        if ty(k) == "text" {
+            scan_note_text(k, &mut depth, &mut closers);
+        } else if ty(k) == "link"
+            && super::inline::leading_caret(k)
+            && !matches!(s(k, "refForm"), Some("collapsed" | "shortcut"))
+            && bare_authored_caret(w, k)
+            && !closers.is_empty()
+        {
+            found.append(&mut closers);
+            links.push(k);
+            depth = 0;
+        } else if !is_break(Some(k)) {
+            // Another node between the closer and the link leaves case eight to the rounds.
+            closers.clear();
+            depth = 0;
+        }
+    }
+}
+
+/// C2-W-075: a reference written as it was authored keeps its caret as spelled, so only a bare one takes case eight.
+fn bare_authored_caret(w: &Writer<'_>, link: V<'_>) -> bool {
+    w.fact(link)
+        .and_then(|f| f.raw_ref.as_deref())
+        .is_none_or(|raw| raw.starts_with("[^"))
+}
+
+/// Walks one text node of `scan_text_note_closers`: `depth` counts the brackets of an open `^[`, and each `]` at
+/// depth one is a closer.
+fn scan_note_text<'t>(k: N<'t>, depth: &mut usize, closers: &mut Vec<(N<'t>, usize)>) {
+    let b = text(k).as_bytes();
+    let mut at = 0;
+    while at < b.len() {
+        if *depth == 0 && b.get(at..at + 2) == Some(b"^[") {
+            *depth = 1;
+            closers.clear();
+            at += 1;
+        } else if *depth > 0 && b.get(at) == Some(&b'[') {
+            *depth += 1;
+        } else if *depth == 1 && b.get(at) == Some(&b']') {
+            closers.push((k, at));
+        } else if *depth > 1 && b.get(at) == Some(&b']') {
+            *depth -= 1;
+        }
+        at += 1;
     }
 }
 

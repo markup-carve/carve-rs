@@ -159,6 +159,11 @@ pub struct Writer<'t> {
     /// The attempts a comparison replaced, oldest first, while the link fallback may compare its round again.
     pub attempts_journal: Option<Vec<(usize, Option<Attempt<'t>>)>>,
     pub saw_link: bool,
+    /// Whether the document holds a link whose text starts with a caret (C2-W-125 case eight), found once.
+    pub caret_links: Option<bool>,
+    /// C2-W-125 case eight: the links whose caret stays bare, as the early closers of a text note before them took
+    /// the backslash.
+    pub case_eight_links: AddrSet<usize>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -226,6 +231,8 @@ impl<'t> Writer<'t> {
             link_bracket_fallback: false,
             attempts_journal: None,
             saw_link: false,
+            caret_links: None,
+            case_eight_links: AddrSet::default(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),

@@ -587,6 +587,21 @@ pub fn key_is_content(node: V<'_>) -> bool {
         && s(node, "key").is_some_and(|k| k.starts_with('^'))
 }
 
+/// Whether the text of the link `node` is a caret that reads as no footnote key bare: the caret alone or before a
+/// space (C2-W-125 case eight).
+pub fn leading_caret(node: V<'_>) -> bool {
+    let kids = children(node);
+    kids.first().is_some_and(|f| {
+        ty(f) == "text"
+            && text(f)
+                .strip_prefix('^')
+                .is_some_and(|rest| match rest.chars().next() {
+                    None => kids.len() == 1,
+                    Some(c) => c.is_whitespace(),
+                })
+    })
+}
+
 /// C2-W-125 case five: an unescaped leading caret of link or span text reads as a footnote reference.
 fn escape_leading_caret(w: &mut Writer<'_>, kids: Arr<'_>, flags: u32) {
     if flags & IN_NOTE != 0 {
@@ -714,7 +729,10 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     }
     // A backslash before the caret would change the key; the check places it only where the link needs it.
     if !key_is_content(node) {
-        escape_leading_caret(w, children(node), flags);
+        // C2-W-125 case eight: the caret behind a text note whose closers took the backslash stays bare.
+        if !w.case_eight_links.contains(&id(node)) {
+            escape_leading_caret(w, children(node), flags);
+        }
     }
     w.saw_link = true;
     lose_broken_title(w, node);
