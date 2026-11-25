@@ -12,7 +12,7 @@ mod scan;
 mod smart;
 mod token;
 
-pub(crate) use atoms::{Angle, Label, angle, code_span, comment_start, label};
+pub(crate) use atoms::{Angle, Label, angle, code_span, comment_start, label, sigil_name};
 pub(crate) use direct::{Seg, line_segments};
 
 use crate::Arena;

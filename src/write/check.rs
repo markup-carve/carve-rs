@@ -912,16 +912,20 @@ pub fn seed_group<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
         return false;
     };
     let kids = children(paragraph);
-    let (mut links, mut braced) = (false, false);
+    let (mut links, mut names, mut braced) = (false, false, false);
     for k in kids {
         match ty(k) {
             "link" => links = true,
+            "tag" | "mention" => names = true,
             "underline" | "delete" => braced = true,
             _ => {}
         }
     }
     if links && w.link_keys.is_empty() {
         seed_link_closers(w, kids);
+    }
+    if names {
+        seed_lengtheners(w, kids);
     }
     braced && quiet_braced(kids)
 }
@@ -969,6 +973,65 @@ fn seed_link_closers<'t>(w: &mut Writer<'t>, kids: Arr<'t>) {
     for (n, at) in closers {
         w.add_escape(n, at);
     }
+}
+
+/// C2-W-125 case six: in a paragraph of text, tags, mentions and smart punctuation whose text opens nothing but a
+/// brace glued before a tag or a mention, a text whose first character such a node reads into its name takes the
+/// backslash in the first write, where that backslash alone keeps the name. Up to [`MAX_SEEDED_NAMES`] of them,
+/// so that the brace trials of the rounds stay retested.
+fn seed_lengtheners<'t>(w: &mut Writer<'t>, kids: Arr<'t>) {
+    let mut found = Vec::new();
+    for (i, k) in kids.iter().enumerate() {
+        match ty(k) {
+            "tag" | "mention" | "smart_punctuation" => {}
+            "text" => {
+                let b = text(k).as_bytes();
+                let glued = kids
+                    .get(i + 1)
+                    .is_some_and(|n| matches!(ty(n), "tag" | "mention"));
+                let quiet = b.iter().enumerate().all(|(at, &x)| {
+                    x.is_ascii_alphanumeric()
+                        || b" .,_-}".contains(&x)
+                        || (x == b'{' && glued && at + 1 == b.len())
+                });
+                if !quiet {
+                    return;
+                }
+                if i > 0 && kids.get(i - 1).is_some_and(|n| lengthens(n, text(k))) {
+                    found.push(k);
+                }
+            }
+            _ => return,
+        }
+    }
+    if found.len() > MAX_SEEDED_NAMES {
+        return;
+    }
+    for n in found {
+        w.add_escape(n, 0);
+    }
+}
+
+const MAX_SEEDED_NAMES: usize = 4;
+
+fn lengthens(node: V<'_>, next: &str) -> bool {
+    let name = match ty(node) {
+        "tag" => s(node, "name"),
+        "mention" => s(node, "target"),
+        _ => None,
+    };
+    let Some(name) = name.filter(|_| !has(node, "attrs")) else {
+        return false;
+    };
+    if !next
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_punctuation)
+    {
+        return false;
+    }
+    let keeps = |joined: String| crate::inline::sigil_name(&joined, 0) == Some(name.len());
+    !keeps(format!("{name}{next}")) && keeps(format!("{name}\\{next}"))
 }
 
 /// A paragraph with a braced underline or delete whose other text, inside emphasis and strong too, opens nothing.

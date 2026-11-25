@@ -298,6 +298,55 @@ mod group_reads_test {
 }
 
 #[cfg(test)]
+mod first_write_test {
+    use super::*;
+    use std::fmt::Write as _;
+
+    /// The output of `fmt` on `n` paragraphs of `shape` and the characters its read-back parses take.
+    fn format_page(shape: &str, n: usize) -> (String, usize, usize) {
+        let mut src = String::new();
+        for i in 0..n {
+            let _ = write!(src, "{shape} w{i}\n\n");
+        }
+        let arena = crate::Arena::for_input(&src);
+        let doc =
+            crate::parse_resolved_in(&src, &crate::Options::default(), &arena).unwrap_or_default();
+        let pool = Pool::new();
+        let before = READ_CHARS.with(std::cell::Cell::get);
+        let (out, losses) = format_view(V::Doc(&doc), &pool, Some(&src), &Settings::default());
+        assert!(losses.is_empty());
+        (
+            out,
+            READ_CHARS.with(std::cell::Cell::get) - before,
+            src.len(),
+        )
+    }
+
+    /// carve-rs#4779, carve-rs#4780, carve-rs#4788: the first write places the backslashes of C2-W-125 cases five,
+    /// six and nine, so each paragraph is read back once (the rounds took two to five reads).
+    #[test]
+    fn case_backslashes_need_one_read() {
+        for shape in [
+            r"x{#a\_--}",
+            r"{_\=._}",
+            r"See \[foo[https://e.com/?q=\](uri)](https://e.com/x) and \[x [a\]b](u) with *em* text.",
+        ] {
+            let (out, small, small_src) = format_page(shape, 64);
+            assert!(out.starts_with(&format!("{shape} w0\n")), "{shape}: {out}");
+            let (_, large, large_src) = format_page(shape, 256);
+            assert!(
+                large * 10 <= 12 * large_src,
+                "{shape}: {large} characters read for {large_src}"
+            );
+            assert!(
+                large * small_src <= small * large_src * 11 / 10,
+                "{shape}: {small} then {large}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod plain_table_certificate_test {
     use super::*;
 
