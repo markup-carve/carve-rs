@@ -25,11 +25,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-1283", "html"),
     ("CC-1284", "html"),
     ("CC-1286", "html"),
-    // C2-B-187: a header-cell foot below an empty body-rows, ruling of carve#6637 (carve-rs line, lane w6637-rs).
-    ("CC-2065", "html"),
-    ("CC-2065", "children"),
-    ("CC-2066", "html"),
-    ("CC-2066", "children"),
 ];
 
 /// A case with extensions or a host runs through the JSON boundary in
