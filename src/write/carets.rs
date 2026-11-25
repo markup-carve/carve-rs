@@ -1,16 +1,10 @@
 //! C2-W-146, C2-W-092: a caret and a space that start a line of paragraph, term or line block text stay
 //! text that `unattached-caption` reports, so the caret takes a backslash.
-use super::node::{N, children, for_each_slot, is_break, text, ty};
+use super::node::{N, children, is_break, text, ty};
 use crate::view::Arr;
 
-/// The text nodes of `group` whose first byte is such a caret.
-pub(super) fn caret_lines<'t>(group: Arr<'t>, found: &mut Vec<N<'t>>) {
-    for node in group {
-        walk(node, found);
-    }
-}
-
-fn walk<'t>(node: N<'t>, found: &mut Vec<N<'t>>) {
+/// Push the text node of `node`'s own lines whose first byte is such a caret; the caller walks the slots below.
+pub(super) fn caret_lines<'t>(node: N<'t>, found: &mut Vec<N<'t>>) {
     match ty(node) {
         "paragraph" => scan_lines(children(node), true, found),
         // A term's first line starts behind its marker; its later lines read like paragraph text (C2-B-069).
@@ -18,11 +12,6 @@ fn walk<'t>(node: N<'t>, found: &mut Vec<N<'t>>) {
         "line" => test_line_start(children(node), 0, found),
         _ => {}
     }
-    for_each_slot(node, true, &mut |kids, _, _| {
-        for child in kids {
-            walk(child, found);
-        }
-    });
 }
 
 fn scan_lines<'t>(nodes: Arr<'t>, line_start: bool, found: &mut Vec<N<'t>>) {

@@ -59,7 +59,14 @@ struct Run<'t> {
     places: Vec<Place<'t>>,
 }
 
-fn walk<'t>(w: &Writer<'t>, node: N<'t>, run: &mut Run<'t>, found: &mut Vec<(N<'t>, usize)>) {
+fn walk<'t>(
+    w: &Writer<'t>,
+    node: N<'t>,
+    run: &mut Run<'t>,
+    found: &mut Vec<(N<'t>, usize)>,
+    carets: &mut Vec<N<'t>>,
+) {
+    super::carets::caret_lines(node, carets);
     if is_inline_parent(node)
         && children(node)
             .iter()
@@ -85,7 +92,7 @@ fn walk<'t>(w: &Writer<'t>, node: N<'t>, run: &mut Run<'t>, found: &mut Vec<(N<'
     }
     for_each_slot(node, true, &mut |kids, _, _| {
         for child in kids {
-            walk(w, child, run, found);
+            walk(w, child, run, found, carets);
         }
     });
 }
@@ -101,11 +108,10 @@ pub(super) fn asked<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<(N<'t>, usize)> {
     }
     let mut found = Vec::new();
     let mut run = Run::default();
-    for node in group {
-        walk(w, node, &mut run, &mut found);
-    }
     let mut carets = Vec::new();
-    super::carets::caret_lines(group, &mut carets);
+    for node in group {
+        walk(w, node, &mut run, &mut found, &mut carets);
+    }
     found.extend(carets.into_iter().map(|node| (node, 0)));
     found.retain(|(node, at)| w.escapes_of(node).binary_search(at).is_err());
     found.sort_unstable_by_key(|(node, at)| (id(node), *at));
