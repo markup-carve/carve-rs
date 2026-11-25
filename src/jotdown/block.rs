@@ -1252,7 +1252,10 @@ impl<'s> Kind<'s> {
         match self {
             Self::AttributeLines { indent, state } => {
                 let ws = line.len() - line.trim_start_matches([' ', '\t']).len();
-                if matches!(state, attr::State::Done | attr::State::Invalid) || ws <= *indent {
+                if matches!(state, attr::State::Done | attr::State::Invalid)
+                    || ws <= *indent
+                    || line.trim_ascii().is_empty()
+                {
                     return false;
                 }
                 let (next, n) = attr::resume(*state, line);
