@@ -41,22 +41,34 @@ fn commands_use_the_same_file_and_error_contract() {
     assert!(stderr.starts_with("carve[usage]:"));
 }
 
-/// C2-T-034: a writer loss of C2-W-134 fails the file and writes no source,
-/// `--allow-loss` notwithstanding; `--strict-losses` fails it with `render-loss`.
+/// C2-T-034: a writer loss of C2-W-134 fails the file and writes no source;
+/// `--strict-losses` fails it with `render-loss`. An allowed code is no loss
+/// (C2-T-025, carve#6746).
 #[test]
 fn import_fails_the_file_on_a_writer_loss() {
     let html = "<table><tr><td valign=\"baseline\">a</td></tr></table>";
     let line =
         "field-unspellable Carve source cannot spell field valign of a table_cell node here\n";
-    for flags in [&[][..], &["--allow-loss", "field-unspellable"][..]] {
-        let mut args = vec!["import", "--from", "html"];
-        args.extend_from_slice(flags);
-        args.push("-");
-        let (status, stdout, stderr) = run(&args, html);
-        assert_eq!((status, stdout.as_str()), (1, ""));
-        assert!(stderr.starts_with("carve[writer-refused]: <stdin>: the import lost content\n"));
-        assert_eq!(stderr.contains(line), flags.is_empty());
-    }
+    let (status, stdout, stderr) = run(&["import", "--from", "html", "-"], html);
+    assert_eq!((status, stdout.as_str()), (1, ""));
+    assert_eq!(
+        stderr,
+        format!("carve[writer-refused]: <stdin>: the import lost content\n<stdin>: warning {line}")
+    );
+    assert_eq!(
+        run(
+            &[
+                "import",
+                "--from",
+                "html",
+                "--allow-loss",
+                "field-unspellable",
+                "-"
+            ],
+            html
+        ),
+        (0, "| a |\n".into(), String::new())
+    );
     let (status, stdout, stderr) = run(&["import", "--from", "html", "--strict-losses", "-"], html);
     assert_eq!((status, stdout), (1, String::new()));
     assert_eq!(
@@ -81,6 +93,55 @@ fn import_fails_the_file_on_a_writer_loss() {
         "",
     );
     assert_eq!((status, stdout), (1, "ok\n".into()));
+}
+
+/// carve#6746: CC-2107, CC-2108 and the document `lang` of C2-M-004 fail the
+/// file without `--allow-loss` (carve#6737) and write the source with it, also
+/// under `--strict-losses` (C2-T-026).
+#[test]
+fn import_writes_the_source_of_an_allowed_writer_loss() {
+    let cases = [
+        (
+            r#"<table><tr><td>a</td><td rowspan="2">r</td></tr><tr><td colspan="2">w</td></tr></table>"#,
+            "| a | r |\n| w | < |\n",
+        ),
+        (
+            r#"<table><thead><tr><th>a</th><th rowspan="2">r</th></tr><tr><th colspan="2">w</th></tr></thead></table>"#,
+            "|= a |= r |\n|= w |= < |\n",
+        ),
+        (
+            r#"<table><tr><td>a</td><td rowspan="3">r</td></tr><tr><td colspan="2">w</td></tr><tr><td>b</td></tr></table>"#,
+            "| a | r |\n| w | < |\n| b | ^ |\n",
+        ),
+        (
+            r#"<table><tr><td>a</td><td>b</td><td rowspan="2">r</td></tr><tr><td>c</td><td colspan="2">w</td></tr></table>"#,
+            "| a | b | r |\n| c | w | < |\n",
+        ),
+        (r#"<html lang="en"><body><p>a</p></body></html>"#, "a\n"),
+    ];
+    for (html, source) in cases {
+        let (status, stdout, stderr) = run(&["import", "--from", "html", "-"], html);
+        assert_eq!((status, stdout.as_str()), (1, ""), "{html}");
+        assert!(stderr.starts_with("carve[writer-refused]: <stdin>: the import lost content\n"));
+        for strict in [false, true] {
+            let mut args = vec![
+                "import",
+                "--from",
+                "html",
+                "--allow-loss",
+                "field-unspellable",
+            ];
+            if strict {
+                args.push("--strict-losses");
+            }
+            args.push("-");
+            assert_eq!(
+                run(&args, html),
+                (0, source.into(), String::new()),
+                "{html}"
+            );
+        }
+    }
 }
 
 #[test]
