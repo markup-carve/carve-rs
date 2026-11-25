@@ -8,6 +8,12 @@ use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
+/// A lookup site and the tag of the record values its key reads; `None` builds a fresh index.
+type TaggedSite = (usize, Option<Vec<LookupKey>>);
+
+/// The bit that marks the id of a tagged lookup index.
+const TAGGED: usize = 1 << (usize::BITS - 1);
+
 fn text_at(source: &str, from: usize, to: usize) -> &str {
     source
         .get(from.min(source.len())..to.min(source.len()))
@@ -471,6 +477,11 @@ pub(super) struct Records<'a> {
     nodes: &'a dyn NodeTree,
     /// The lookup indexes of this call, by site.
     lookups: RefCell<Vec<Option<LookupIndex>>>,
+    /// The index ids of the lookups whose key reads the record being tested, by site and tag.
+    tagged: RefCell<HashMap<TaggedSite, usize>>,
+    /// The tagged indexes, apart from the shared ones: rules compile lazily, so sites still appear
+    /// after a tagged index exists.
+    tagged_lookups: RefCell<Vec<Option<LookupIndex>>>,
     /// The attribute records of this call (C2-W-148).
     pub attributes: super::data_attrs::Table,
     tree: TreeFacts<'a>,
@@ -969,6 +980,8 @@ impl<'a> Records<'a> {
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
             nodes,
             lookups: RefCell::new(Vec::new()),
+            tagged: RefCell::new(HashMap::new()),
+            tagged_lookups: RefCell::new(Vec::new()),
             attributes: super::data_attrs::Table::default(),
             tree,
             extensions,
@@ -1684,12 +1697,32 @@ impl<'a> Records<'a> {
         }
     }
 
+    /// The table and slot of an index id: a tagged id carries `TAGGED`.
+    fn lookup_table(&self, id: usize) -> (&RefCell<Vec<Option<LookupIndex>>>, usize) {
+        if id & TAGGED == 0 {
+            (&self.lookups, id)
+        } else {
+            (&self.tagged_lookups, id & !TAGGED)
+        }
+    }
+
     pub fn has_lookup(&self, id: usize) -> bool {
-        self.lookups.borrow().get(id).is_some_and(Option::is_some)
+        let (table, id) = self.lookup_table(id);
+        table.borrow().get(id).is_some_and(Option::is_some)
+    }
+
+    /// The index id of a site under a tag; `true` when that index has to be built.
+    pub fn tagged_lookup(&self, site: usize, tag: Option<Vec<LookupKey>>) -> (usize, bool) {
+        let rebuild = tag.is_none();
+        let mut tagged = self.tagged.borrow_mut();
+        let next = TAGGED | tagged.len();
+        let id = *tagged.entry((site, tag)).or_insert(next);
+        (id, rebuild || !self.has_lookup(id))
     }
 
     pub fn store_lookup(&self, id: usize, index: LookupIndex) {
-        let mut lookups = self.lookups.borrow_mut();
+        let (table, id) = self.lookup_table(id);
+        let mut lookups = table.borrow_mut();
         if lookups.len() <= id {
             lookups.resize_with(id + 1, || None);
         }
@@ -1698,7 +1731,8 @@ impl<'a> Records<'a> {
 
     /// Every record of a key, in document order (C2-W-150).
     pub fn lookup_all(&self, id: usize, key: &LookupKey) -> Vec<u32> {
-        self.lookups.borrow()[id]
+        let (table, id) = self.lookup_table(id);
+        table.borrow()[id]
             .as_ref()
             .and_then(|index| index.keys.get(key))
             .map(|found| found.iter().map(|(_, record)| *record).collect())
@@ -1708,7 +1742,8 @@ impl<'a> Records<'a> {
     /// The first record of a key; with `side` -1 the last of them that starts before `start`, with 1 the
     /// first that starts after it (C2-W-141).
     pub fn lookup_at(&self, id: usize, key: &LookupKey, start: usize, side: i8) -> Option<u32> {
-        let lookups = self.lookups.borrow();
+        let (table, id) = self.lookup_table(id);
+        let lookups = table.borrow();
         let found = lookups[id].as_ref()?.keys.get(key)?;
         let at = match side {
             0 => 0,
