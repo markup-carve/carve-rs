@@ -90,7 +90,8 @@ fn mark(table: &Value, (g, r, c): (usize, usize, usize), axis: &str) -> Option<S
 
 /// A head cell keeps its own mark; a cell outside the head that shows the
 /// mark of its column's head cell takes it from there; without a head mark,
-/// a column whose cells all show one alignment has it as its column entry.
+/// a column whose cells all show one alignment has it as its column entry,
+/// while every column before it has one on that axis.
 pub(crate) fn resolve(table: &mut Value) {
     let cells = placed(table);
     resolve_axis(table, &cells, "align");
@@ -120,10 +121,15 @@ fn resolve_axis(table: &mut Value, cells: &[Placed], axis: &str) {
             },
         }
     }
-    let has_head = cells.iter().any(|p| p.head);
-    for (index, entries) in by_column {
-        if has_head {
-            continue;
+    if cells.iter().any(|p| p.head) {
+        return;
+    }
+    // A column gives its alignment only after columns that all give one:
+    // an `aligns` or `valigns` list has no empty entry (C2-B-211).
+    by_column.sort_by_key(|(c, _)| *c);
+    for (expected, (index, entries)) in by_column.into_iter().enumerate() {
+        if index != expected {
+            return;
         }
         let first = entries.first().and_then(|p| mark(table, p.at, axis));
         let Some(value) = first.filter(|f| {
@@ -131,18 +137,18 @@ fn resolve_axis(table: &mut Value, cells: &[Placed], axis: &str) {
                 .iter()
                 .all(|p| mark(table, p.at, axis).as_ref() == Some(f))
         }) else {
-            continue;
+            return;
         };
         // `baseline` has no `valigns` entry (C2-B-211).
         if value == "baseline" {
-            continue;
+            return;
         }
         let Some(column) = table
             .get_mut("columns")
             .and_then(|c| c.get_mut(index))
             .and_then(Value::as_object_mut)
         else {
-            continue;
+            return;
         };
         column.insert(axis.to_string(), value.into());
         for p in &entries {
