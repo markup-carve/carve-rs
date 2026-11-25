@@ -473,17 +473,9 @@ impl State<'_> {
             return;
         }
         if lower == "href" || lower == "xlink:href" {
-            let Some(value) = value else {
-                return;
-            };
-            let decoded = normalize_for_check(value);
-            if (!decoded.starts_with('#') && !external_href)
-                || !scheme_is_safe(&decoded)
-                || !self.url_allowed(&decoded)
-            {
-                return;
+            if let Some(value) = value.filter(|v| self.url_value_allowed(v, external_href)) {
+                write_attr(out, name, value);
             }
-            write_attr(out, name, value);
             return;
         }
         if lower == "style" {
@@ -511,6 +503,13 @@ impl State<'_> {
         if !unsafe_value {
             write_attr(out, name, value);
         }
+    }
+
+    fn url_value_allowed(&self, value: &str, external_href: bool) -> bool {
+        let decoded = normalize_for_check(value);
+        (decoded.starts_with('#') || external_href)
+            && scheme_is_safe(&decoded)
+            && self.url_allowed(&decoded)
     }
 
     /// The scheme of C2-H-159 against the `urlPolicy` lists.
