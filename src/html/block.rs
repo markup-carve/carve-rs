@@ -74,9 +74,16 @@ fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
 impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
-        // C2-N-090: a snippet definition renders nothing, whatever the profile.
         // C2-H-178: an abbreviation definition is never degraded nor reported.
-        if matches!(n, Node::SnippetDefinition(_) | Node::AbbreviationDef(_)) {
+        if matches!(n, Node::AbbreviationDef(_)) {
+            return;
+        }
+        // C2-H-214: a snippet definition renders nothing; outside the profile
+        // it is still reported (C2-H-163, carve#6876).
+        if matches!(n, Node::SnippetDefinition(_)) {
+            if !self.profile_allows(n, true) {
+                self.profile_loss(n, true);
+            }
             return;
         }
         if matches!(

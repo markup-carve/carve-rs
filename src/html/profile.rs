@@ -352,6 +352,7 @@ fn degraded_body(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<Sour
         | Node::LinkReferenceDefinition(_)
         | Node::AbbreviationDef(_)
         | Node::SnippetDefinition(_)
+        | Node::CitationDefinition(_)
         | Node::Footnote(_) => return,
         other => match other.children() {
             Some(c) if c.iter().any(is_block) => {
