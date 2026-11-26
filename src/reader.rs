@@ -627,6 +627,7 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
     registered::validate(root)?;
     let resources = resource_ids(root)?;
     let header_ids = header_ids(root);
+    check_snippet_modes(root)?;
     let mut pending = vec![(root, String::new())];
     while let Some((value, path)) = pending.pop() {
         match value {
@@ -647,6 +648,52 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
                 );
             }
             _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Whether the list `key` of a node of type `ty` holds inline nodes, by its schema row.
+fn inline_slot(ty: &str, key: &str) -> bool {
+    definitions().ok().is_some_and(|d| {
+        d["$defs"][ty]["properties"][key]["items"]["oneOf"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|r| r["$ref"] == "#/$defs/text"))
+    })
+}
+
+/// C2-A-221: the mode of a snippet use matches the slot it stands in.
+fn check_snippet_modes(root: &Value) -> Result<(), TreeError> {
+    let mut pending = vec![(root, String::new())];
+    while let Some((value, path)) = pending.pop() {
+        let Value::Object(map) = value else { continue };
+        let ty = value["type"].as_str().unwrap_or("");
+        for (key, child) in map {
+            if matches!(key.as_str(), "data" | "props" | "pos" | "attrs") {
+                continue;
+            }
+            let Some(items) = child.as_array() else {
+                if child.is_object() {
+                    pending.push((child, format!("{path}/{key}")));
+                }
+                continue;
+            };
+            let uses = items.iter().any(|item| item["type"] == "snippet_use");
+            let inline = uses && inline_slot(ty, key);
+            for (i, item) in items.iter().enumerate() {
+                let at = format!("{path}/{key}/{i}");
+                if item["type"] == "snippet_use" {
+                    let want = if inline { "inline" } else { "block" };
+                    if item["mode"] != want {
+                        let slot = if inline { "inline nodes" } else { "blocks" };
+                        return Err(reader(
+                            &format!("{at}/mode"),
+                            &format!("a snippet use in a list of {slot} has the mode {}", item["mode"]),
+                        ));
+                    }
+                }
+                pending.push((item, at));
+            }
         }
     }
     Ok(())
