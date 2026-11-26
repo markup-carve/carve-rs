@@ -310,8 +310,11 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
 
 fn apparatus_standard(name: &str) -> Option<Bundle> {
     match name {
-        "carve.glossary" | "carve.term" => Some(glossary()),
-        "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
+        "carve.glossary" => Some(glossary()),
+        "carve.index" => Some(index(IndexOptions::default())),
+        // C2-X-072 registers one way: the marker alone brings no bundle.
+        "carve.term" => Some(glossary::glossary_term()),
+        "carve.indexTerm" => Some(index_terms::index_marker()),
         // The named carve.cite path is the C2-X-058 core-text matcher.
         // The full citation bundle is registered explicitly or by references.
         "carve.references" => Some(citations(CitationsOptions::default())),

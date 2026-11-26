@@ -167,19 +167,42 @@ impl Renderer for Term {
     }
 }
 
+fn term_extension() -> Extension {
+    Extension {
+        declaration: declaration(TERM, &["text"]),
+        renderers: vec![
+            (Channel::Interactive, Box::new(Term)),
+            (Channel::BuildTime, Box::new(Term)),
+        ],
+        transform: None,
+    }
+}
+
+fn term_matcher() -> Matcher {
+    Matcher {
+        extension: TERM.into(),
+        form: Form::Inline,
+        name: "term".into(),
+        claimer: Box::new(Engine(claim_term)),
+    }
+}
+
+/// `carve.term` alone: the term without the glossary or its transform (C2-X-072).
+#[must_use]
+pub(crate) fn glossary_term() -> Bundle {
+    Bundle {
+        extensions: vec![term_extension()],
+        matchers: vec![term_matcher()],
+        host: super::HostFields::default(),
+    }
+}
+
 /// Claims term uses, resolves the document's definition entries and places the glossary.
 #[must_use]
 pub fn glossary() -> Bundle {
     Bundle {
         extensions: vec![
-            Extension {
-                declaration: declaration(TERM, &["text"]),
-                renderers: vec![
-                    (Channel::Interactive, Box::new(Term)),
-                    (Channel::BuildTime, Box::new(Term)),
-                ],
-                transform: None,
-            },
+            term_extension(),
             Extension {
                 declaration: declaration(GLOSSARY, &["body"]),
                 renderers: vec![
@@ -189,12 +212,7 @@ pub fn glossary() -> Bundle {
                 transform: Some(Box::new(Transform)),
             },
         ],
-        matchers: vec![Matcher {
-            extension: TERM.into(),
-            form: Form::Inline,
-            name: "term".into(),
-            claimer: Box::new(Engine(claim_term)),
-        }],
+        matchers: vec![term_matcher()],
         host: super::HostFields::default(),
     }
 }

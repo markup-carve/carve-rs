@@ -279,3 +279,47 @@ fn c2_x_075_quote_locale_and_a_listed_smart_quotes_register_once() {
         assert_eq!(String::from_utf8_lossy(&out.stdout), want, "{all:?}");
     }
 }
+
+fn render(tag: &str, list: &str, src: &str) -> String {
+    let dir = dir(tag);
+    std::fs::write(dir.join("a.crv"), src).unwrap();
+    let out = carve(&dir, &["render", "--extensions", list, "a.crv"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{list}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// carve-rs#4846: the marker name registers the marker alone, no index or glossary transform.
+#[test]
+fn c2_x_072_a_marker_name_registers_no_bundle() {
+    assert_eq!(
+        render(
+            "index-term",
+            r#"["carve.indexTerm"]"#,
+            ":index[a]\n\n::: index\n:::\n"
+        ),
+        "<p><span class=\"index-term\"></span></p>\n<div class=\"index\">\n\n</div>\n"
+    );
+    assert_eq!(
+        render(
+            "term",
+            r#"["carve.term"]"#,
+            ":term[A]\n\n::: glossary\n:: A\n: a\n:::\n"
+        ),
+        "<p><span class=\"term\">A</span></p>\n<div class=\"glossary\">\n  <dl>\n    <dt>A</dt>\n    <dd>a</dd>\n  </dl>\n</div>\n"
+    );
+    let both = render(
+        "index-both",
+        r#"["carve.indexTerm","carve.index"]"#,
+        ":index[a]\n\n::: index\n:::\n",
+    );
+    assert!(
+        both.contains(r#"<span id="idx-a-1" class="index-term">"#),
+        "{both}"
+    );
+}
+

@@ -167,20 +167,43 @@ impl Renderer for Marker {
     }
 }
 
+fn marker_extension() -> Extension {
+    Extension {
+        declaration: declaration(MARKER, &["term"]),
+        renderers: vec![
+            (Channel::Interactive, Box::new(Marker)),
+            (Channel::BuildTime, Box::new(Marker)),
+        ],
+        transform: None,
+    }
+}
+
+fn marker_matcher() -> Matcher {
+    Matcher {
+        extension: MARKER.into(),
+        form: Form::Inline,
+        name: "index".into(),
+        claimer: Box::new(Engine(claim_marker)),
+    }
+}
+
+/// `carve.indexTerm` alone: the marker without the index or its transform (C2-X-072).
+#[must_use]
+pub(crate) fn index_marker() -> Bundle {
+    Bundle {
+        extensions: vec![marker_extension()],
+        matchers: vec![marker_matcher()],
+        host: super::HostFields::default(),
+    }
+}
+
 /// Invisible index markers and a sorted list with a back-link per use.
 #[must_use]
 pub fn index(options: IndexOptions) -> Bundle {
     let label = options.backref_label.unwrap_or_else(|| "Back to".into());
     Bundle {
         extensions: vec![
-            Extension {
-                declaration: declaration(MARKER, &["term"]),
-                renderers: vec![
-                    (Channel::Interactive, Box::new(Marker)),
-                    (Channel::BuildTime, Box::new(Marker)),
-                ],
-                transform: None,
-            },
+            marker_extension(),
             Extension {
                 declaration: declaration(INDEX, &["body"]),
                 renderers: vec![
@@ -192,12 +215,7 @@ pub fn index(options: IndexOptions) -> Bundle {
                 })),
             },
         ],
-        matchers: vec![Matcher {
-            extension: MARKER.into(),
-            form: Form::Inline,
-            name: "index".into(),
-            claimer: Box::new(Engine(claim_marker)),
-        }],
+        matchers: vec![marker_matcher()],
         host: super::HostFields::default(),
     }
 }
