@@ -66,6 +66,8 @@ pub struct ImportOptions {
     pub strict_losses: bool,
     /// The editor adapter (C2-M-102).
     pub adapter: ImportAdapter,
+    /// Imports a table whose cells hold blocks as a list table (C2-M-112). HTML only.
+    pub list_table: bool,
 }
 
 impl ImportOptions {
@@ -94,12 +96,14 @@ impl ImportOptions {
                     }
                     None => return Err(Error::option("from", "not a string")),
                 },
-                "rawHtml" | "strictLosses" => {
+                "rawHtml" | "strictLosses" | "listTable" => {
                     let Some(b) = v.as_bool() else {
                         return Err(Error::option(name, "not a boolean"));
                     };
                     if name == "rawHtml" {
                         out.raw_html = b;
+                    } else if name == "listTable" {
+                        out.list_table = b;
                     } else {
                         out.strict_losses = b;
                     }
@@ -377,6 +381,7 @@ fn run(
     html: &str,
     raw_html: bool,
     adapter: ImportAdapter,
+    list_table: bool,
 ) -> Result<crate::import::Imported, Error> {
     let refused = |r: crate::import::Refused| Error::ImportInput { message: r.0 };
     // A panic is an error, on the caller as from the thread's join.
@@ -389,8 +394,10 @@ fn run(
     // A shallow tree builds on the caller's stack: the thread costs a fresh
     // stack mapping per call. wasm32 targets have no threads at all.
     let inline = parsed.depth <= INLINE_DEPTH || cfg!(target_family = "wasm");
-    let import =
-        || crate::import::build(html, parsed, raw_html, adapter.runs_note_pass()).map_err(refused);
+    let import = || {
+        crate::import::build(html, parsed, raw_html, adapter.runs_note_pass(), list_table)
+            .map_err(refused)
+    };
     if inline {
         return std::panic::catch_unwind(std::panic::AssertUnwindSafe(import)).map_err(failed)?;
     }
@@ -440,7 +447,7 @@ impl super::Carve {
         opts: &ImportOptions,
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
-        let imported = run(html, opts.raw_html, opts.adapter)?;
+        let imported = run(html, opts.raw_html, opts.adapter, opts.list_table)?;
         self.finish_import(imported, *opts, limits)
     }
 
@@ -460,9 +467,12 @@ impl super::Carve {
         if format == super::ImportFormat::Html {
             return self.import_document_with(input, opts, limits);
         }
+        if opts.list_table {
+            return Err(Error::option("listTable", "HTML only"));
+        }
         let mut sink = super::hub::Sink::default();
         let html = super::hub::to_html(input, format, &mut sink)?;
-        let mut imported = run(&html, true, opts.adapter)?;
+        let mut imported = run(&html, true, opts.adapter, false)?;
         imported.tree = super::hub::finish(imported.tree, &sink);
         imported.facts = None;
         // The library's own line breaks are no whitespace of the input, and a

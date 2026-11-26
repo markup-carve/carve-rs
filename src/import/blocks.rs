@@ -1661,6 +1661,9 @@ impl Cx {
         }
         self.plain_attrs(id).apply(&mut m);
         let mut v = Value::Object(m);
+        if self.list_table && super::list_table::wants_list_table(&v) {
+            return self.list_table(&v, id);
+        }
         super::align::resolve(&mut v, &cells);
         v
     }

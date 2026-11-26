@@ -19,6 +19,7 @@ mod kinds;
 mod node;
 mod pairs;
 mod spans;
+pub(crate) use spans::{RowSlot, table_slots};
 mod state;
 mod table;
 mod trim;

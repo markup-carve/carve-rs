@@ -27,6 +27,7 @@ fuzz_target!(|data: &[u8]| {
         raw_html: sel & 0x80 != 0,
         strict_losses: false,
         adapter,
+        list_table: false,
     };
     let carve = Carve::new();
     let Ok(imported) = carve.import_from(input, format, &opts, &LossOptions::default()) else {

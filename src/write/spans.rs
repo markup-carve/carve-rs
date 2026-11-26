@@ -239,6 +239,42 @@ fn mark_tables(
     }
 }
 
+/// A slot of a row: a cell of the row by index, or a mark with the pointer of its covering cell.
+pub(crate) enum RowSlot {
+    Cell(usize),
+    Mark(&'static str, String),
+}
+
+/// The slots of a row with its group and row index.
+pub(crate) type PlacedRow = (usize, usize, Vec<RowSlot>);
+
+/// The slots of each row of a JSON `table` with the marks of C2-W-145, by group and row index,
+/// and the pointers of the cells whose row span has no spelling.
+pub(crate) fn table_slots(table: &Value) -> (Vec<PlacedRow>, Vec<String>) {
+    let mut out = Vec::new();
+    let mut unspelled = Vec::new();
+    for (g, group) in groups(V::Json(table)) {
+        let mut marks = GroupMarks::default();
+        for (r, row) in rows(group) {
+            let slots = match marks.row(row, &format!("/children/{g}/children/{r}"), &mut unspelled)
+            {
+                Some((slots, from)) => slots
+                    .into_iter()
+                    .zip(from)
+                    .map(|(slot, at)| match slot {
+                        Slot::Given(k) => RowSlot::Cell(k),
+                        Slot::Mark(span) => RowSlot::Mark(span, at),
+                    })
+                    .collect(),
+                None => (0..cells(row).len()).map(RowSlot::Cell).collect(),
+            };
+            out.push((g, r, slots));
+        }
+        marks.finish(&mut unspelled);
+    }
+    (out, unspelled)
+}
+
 /// Whether a table of the tree gets a mark or has a row span without one: what [`mark_tables`]
 /// decides, read off the tree without copying it. A parsed tree holds its marks, so its copy would
 /// change nothing (carve#6485).

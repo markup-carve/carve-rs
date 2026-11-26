@@ -7,6 +7,7 @@ mod attrs;
 mod blocks;
 pub(crate) mod dom;
 mod inline;
+mod list_table;
 mod notes;
 pub(crate) mod parse;
 mod snippets;
@@ -38,6 +39,8 @@ pub(crate) struct Imported {
 pub(crate) struct Cx {
     dom: Dom,
     raw_html: bool,
+    /// C2-M-112: tables whose cells hold blocks become list tables.
+    list_table: bool,
     diagnostics: Vec<Entry>,
     root_lang: Option<String>,
     root_dir: Option<String>,
@@ -86,6 +89,7 @@ impl Cx {
         Self {
             dom,
             raw_html,
+            list_table: false,
             diagnostics: Vec::new(),
             root_lang: None,
             root_dir: None,
@@ -193,7 +197,7 @@ pub(crate) fn import_html(
     raw_html: bool,
     note_pass: bool,
 ) -> Result<Imported, Refused> {
-    build(input, parse_html(input)?, raw_html, note_pass)
+    build(input, parse_html(input)?, raw_html, note_pass, false)
 }
 
 /// The parsed input of [`build`]. Parsing does not recurse, so it runs on any stack.
@@ -227,12 +231,14 @@ pub(crate) fn build(
     parsed: Parsed,
     raw_html: bool,
     note_pass: bool,
+    list_table: bool,
 ) -> Result<Imported, Refused> {
     let Parsed { mut dom, full, .. } = parsed;
     if note_pass {
         adapter::note_pass(&mut dom);
     }
     let mut cx = Cx::new(dom, raw_html);
+    cx.list_table = list_table;
     cx.ranged = inline::ranged_comments(&cx.dom, raw_html);
     if !full {
         fragment_body(input, &mut cx);

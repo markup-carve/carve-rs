@@ -1380,6 +1380,7 @@ fn import_file(
         adapter: str_value(args, "adapter")
             .and_then(api::ImportAdapter::from_name)
             .unwrap_or_default(),
+        list_table: bool_value(args, "list-table", false),
     };
     let every = LossOptions {
         allow_losses: Vec::new(),
