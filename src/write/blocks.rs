@@ -1176,7 +1176,11 @@ fn blank_lines_before_comment(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) ->
     {
         return 0;
     }
-    if is_comment_line(Some(node)) && is_open_container(w, before) && !is_region_marker(node) {
+    // C2-W-123, C2-W-034: a region marker closes the container itself and stands one blank line below it.
+    if is_region_marker(node) && is_open_container(w, before) {
+        return 1;
+    }
+    if is_comment_line(Some(node)) && is_open_container(w, before) {
         if last_fence(w, before).is_some() {
             return 0;
         }
@@ -1452,7 +1456,7 @@ fn is_nested_list(w: &Writer<'_>, before: V<'_>, node: V<'_>, at: usize) -> bool
 }
 
 fn mark_fence_before_comment(w: &mut Writer<'_>, node: V<'_>, next: Option<V<'_>>) {
-    if !is_comment_line(next) || !is_open_container(w, node) {
+    if !is_comment_line(next) || next.is_some_and(is_region_marker) || !is_open_container(w, node) {
         return;
     }
     if let Some(fence) = last_fence(w, node) {
