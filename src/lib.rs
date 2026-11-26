@@ -982,6 +982,36 @@ struct RenderDetails {
     places: Vec<(Option<String>, String, Option<ast::Pos>)>,
     losses: html::LossDetails,
     included_sources: std::collections::HashMap<String, String>,
+    /// C2-N-087: the include chain of each loss position, by file and range.
+    chains: std::collections::HashMap<(String, usize, usize), Vec<diagnostic::IncludeSite>>,
+}
+
+impl RenderDetails {
+    fn record_chains(&mut self, files: &resolve::files::Files<'_>) {
+        let l = &self.losses;
+        let places = l
+            .raws
+            .iter()
+            .map(|r| (&r.file, r.pos))
+            .chain(l.destinations.iter().map(|d| (&d.file, d.pos)))
+            .chain(l.carriers.iter().map(|c| (&c.file, c.pos)))
+            .chain(l.profiles.iter().map(|p| (&p.file, p.pos)))
+            .chain(l.shift.iter().map(|s| (&s.1, s.0)))
+            .chain(self.places.iter().map(|p| (&p.0, p.2)))
+            .filter_map(|(file, pos)| Some((file.as_deref()?, pos?.start(), pos?.end())));
+        self.chains = files
+            .included_by(places)
+            .into_iter()
+            .map(|((f, s, e), chain)| ((f.to_string(), s, e), chain))
+            .collect();
+    }
+
+    fn chain(&self, file: Option<&str>, pos: Option<ast::Pos>) -> Vec<diagnostic::IncludeSite> {
+        file.zip(pos)
+            .and_then(|(f, p)| self.chains.get(&(f.to_string(), p.start(), p.end())))
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 fn render_parts(
@@ -1016,6 +1046,7 @@ fn render_parts(
         let src = source::Source::new(input);
         let (out, mut losses) =
             html::render_files(&doc, opts, src.text(), &files, Some(&mut details.losses));
+        details.record_chains(&files);
         losses.extend(extra);
         return Ok((out, losses));
     }
@@ -1152,20 +1183,21 @@ fn loss_diagnostics(
                 .and_then(|id| included_sources.get(id))
                 .map(|text| source::Source::new(text));
             let loss_source = included_source.as_ref().unwrap_or(&source);
+            let record = LossPosition {
+                raw,
+                include_pos,
+                profile,
+                destination,
+                carrier,
+                file: file.as_deref(),
+            };
             let pos = render_loss_position(
                 c,
                 &source,
                 loss_source,
                 opts,
                 parse_diags,
-                &LossPosition {
-                    raw,
-                    include_pos,
-                    profile,
-                    destination,
-                    carrier,
-                    file: file.as_deref(),
-                },
+                &record,
                 &mut carrier_cursors,
             );
             let pos = shift.map_or(pos, |s| s.0);
@@ -1177,6 +1209,8 @@ fn loss_diagnostics(
                 .collect();
             let mut diagnostic =
                 diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
+            let at = record.recorded().or_else(|| shift.and_then(|s| s.0));
+            diagnostic.included_by = details.chain(file.as_deref(), at);
             if *c == heading_shift::ABOVE_6 {
                 diagnostic.message = heading_shift::message(opts.heading_shift);
             }
@@ -1196,6 +1230,17 @@ struct LossPosition<'a> {
     destination: Option<&'a html::DestinationLoss>,
     carrier: Option<&'a html::CarrierLoss>,
     file: Option<&'a str>,
+}
+
+impl LossPosition<'_> {
+    /// The position the loss record itself carries, before any source lookup.
+    fn recorded(&self) -> Option<ast::Pos> {
+        self.include_pos
+            .or_else(|| self.raw.and_then(|r| r.pos))
+            .or_else(|| self.destination.and_then(|d| d.pos))
+            .or_else(|| self.carrier.and_then(|c| c.pos))
+            .or_else(|| self.profile.and_then(|p| p.pos))
+    }
 }
 
 fn render_loss_position(
