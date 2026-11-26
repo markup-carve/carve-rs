@@ -482,6 +482,29 @@ fn abbreviation_definition(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
     );
 }
 
+/// C2-W-159: `{$`, the name, the attributes as the parts of one block, `}: `
+/// and the value on one line; a line break of a supplied value is one space and reported.
+fn snippet_definition<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
+    let block = super::attrs::brace_block(node, &BlockParts::default());
+    let name = s(node, "name").unwrap_or("");
+    let inner = block
+        .strip_prefix('{')
+        .and_then(|b| b.strip_suffix('}'))
+        .unwrap_or("");
+    let marker = if inner.is_empty() {
+        format!("{{${name}}}: ")
+    } else {
+        format!("{{${name} {inner}}}: ")
+    };
+    w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + &marker);
+    let mut content = write_content(w, &refs(children(node)), flags);
+    if content.contains('\n') {
+        lose(w, node, None);
+        content = content.replace("\\\n", " ").replace('\n', " ");
+    }
+    emit(w, prefix, &content);
+}
+
 /// C2-I-079: a key of only spaces, tabs and line feeds folds to nothing.
 fn lose_blank_key(w: &mut Writer<'_>, node: V<'_>) {
     if s(node, "key")
@@ -1017,9 +1040,23 @@ fn block_extension<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32
 fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
     match ty(node) {
         "paragraph" => {
+            // C2-W-159: a paragraph whose only child is an inline use reads as a block use.
+            let kids = children(node);
+            if kids.len() == 1
+                && kids.first().is_some_and(|c| ty(c) == "snippet_use")
+                && super::node::attrs(node).is_none()
+                && caption(node).is_none()
+            {
+                lose(w, node, None);
+                let name = kids.first().and_then(|c| s(c, "name")).unwrap_or("");
+                emit(w, prefix, &crate::snippet::spelling(name));
+                return;
+            }
             text_leaf(w, node, prefix, flags, "", "");
             write_caption(w, caption(node), prefix, flags);
         }
+        "snippet_definition" => snippet_definition(w, node, prefix, flags),
+        "snippet_use" => emit(w, prefix, &crate::snippet::spelling(s(node, "name").unwrap_or(""))),
         "heading" => heading(w, node, prefix, flags),
         "thematic_break" => {
             attribute_line(w, node, prefix, &BlockParts::default());

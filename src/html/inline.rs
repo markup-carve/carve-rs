@@ -434,6 +434,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-079, C2-H-081, C2-H-083, C2-H-085, C2-H-088, C2-H-141.
     fn link(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
+        // C2-H-215: a link that carries the carriers of its use but writes no `<a>` puts them on a span.
+        let Some(tail) = self.snippet_tail(n) else {
+            return self.link_html(n, l, out);
+        };
+        let mut html = String::new();
+        self.link_html(n, l, &mut html);
+        if html.starts_with("<a ") {
+            out.push_str(&html);
+        } else {
+            let _ = write!(out, "<span{tail}>{html}</span>");
+        }
+    }
+
+    fn link_html(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
         let href = l.href.filter(|href| {
             l.key.is_none_or(|key| self.links.contains_key(key)) || !self.hidden_heading(href)
         });
@@ -496,11 +510,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 _ => {}
             }
         }
+        el.snippet = self.snippet_tail(n);
         out.push_str("<a");
         el.write_into(self.filter(), out);
         out.push('>');
         self.in_link += 1;
+        let mark = self.snippet_mark(n);
+        let outer = std::mem::replace(&mut self.link_snippet, mark);
         self.inlines(&*l.children, out);
+        self.link_snippet = outer;
         self.in_link -= 1;
         out.push_str("</a>");
         if self.in_link == 0 {
@@ -621,6 +639,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
                 .push(("data-carve-footnote-label", Some(r.key.into())));
+        }
+        if self.in_link > 0 {
+            if let Some(mark) = self.snippet_mark(n).filter(|m| Some(*m) != self.link_snippet) {
+                el.carriers
+                    .push(("data-carve-snippet-mark", Some(mark.to_string().into())));
+            }
         }
         let f = self.filter();
         let target = if self.in_link > 0 {

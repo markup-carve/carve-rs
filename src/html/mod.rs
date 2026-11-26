@@ -294,6 +294,8 @@ pub(crate) struct Renderer<'r, 'a> {
     /// Note marks met inside link text, written after the outermost link.
     pending: String,
     in_link: usize,
+    /// C2-H-215: the innermost snippet use whose copy holds the open link.
+    link_snippet: Option<usize>,
     in_abbr: usize,
     /// The smart punctuation node being written is an apostrophe that locale quotes leave.
     apostrophe: bool,
@@ -408,6 +410,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             placing: None,
             pending: String::new(),
             in_link: 0,
+            link_snippet: None,
             in_abbr: 0,
             apostrophe: false,
             verse: None,
@@ -517,6 +520,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// [`Self::snippet_tail`] of a node's own struct.
     fn snippet_tail_of<T>(&self, payload: &T) -> Option<String> {
         self.snippet_tail_at(std::ptr::from_ref(payload).addr())
+    }
+
+    /// C2-H-215: the `N` of the innermost expanded use around a copied note reference or link.
+    fn snippet_mark(&self, n: &Node<'_>) -> Option<usize> {
+        if !self.opts.roundtrip {
+            return None;
+        }
+        crate::snippet::expand::with_side(|side| side?.marks.get(&n.payload_addr()).copied())
     }
 
     fn snippet_tail_at(&self, addr: usize) -> Option<String> {
@@ -725,6 +736,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             while let Some(c) = doc.children.get(i) {
                 if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
                     i += self.abbreviation_run(doc.children.get(i..).unwrap_or(&[]), depth);
+                } else if self.opts.roundtrip && matches!(c, Node::SnippetDefinition(_)) {
+                    i += self.snippet_run(doc.children.get(i..).unwrap_or(&[]), depth);
                 } else {
                     self.block(c, depth);
                     i += 1;
@@ -743,6 +756,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         while let Some(c) = children.get(i) {
             if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
                 i += self.abbreviation_run(children.get(i..).unwrap_or(&[]), stack.len());
+                continue;
+            }
+            if self.opts.roundtrip && matches!(c, Node::SnippetDefinition(_)) {
+                i += self.snippet_run(children.get(i..).unwrap_or(&[]), stack.len());
                 continue;
             }
             if let Node::Heading(h) = c {
