@@ -201,3 +201,54 @@ fn a_kept_definition_without_a_position_is_no_finding() {
     assert_eq!(out["html"], "<p>X</p>\n<p>b</p>");
     assert_eq!(codes(&out), Vec::<(String, Option<String>)>::new());
 }
+
+/// C2-N-091: a host with a registered extension and no transform renders on
+/// the arena path, which expands the uses too.
+#[test]
+fn a_host_with_an_extension_expands_uses() {
+    let mut host = api::Carve::default();
+    host.register_extension(api::Extension {
+        declaration: api::ExtensionDeclaration {
+            name: "sample.x".into(),
+            version: "1".into(),
+            required: false,
+            slots: Vec::new(),
+        },
+        renderers: Vec::new(),
+        transform: None,
+    })
+    .expect("registered");
+    let opts = carve::options::Options::default();
+    let out = host
+        .render_with_diagnostics("{$v}: X\n\nA {{ $v }} {{ $w }}\n", &opts)
+        .expect("rendered");
+    assert_eq!(out.html, "<p>A X {{ $w }}</p>");
+    assert!(
+        out.diagnostics
+            .iter()
+            .any(|d| d.code == "snippet-unresolved"),
+        "{:?}",
+        out.diagnostics
+    );
+}
+
+/// C2-H-215: a node a transform inserts at a copy's place does not take its carriers.
+#[test]
+fn an_inserted_sibling_takes_no_carrier() {
+    let request = json!({
+        "call": "renderWithDiagnostics",
+        "source": "{$v}: X\n\n{{ $v }}\n",
+        "options": {"roundtrip": true},
+        "host": {"documentTransforms": [{
+            "name": "sample.a",
+            "after": "/children/0",
+            "insert": {"type": "paragraph", "children": [{"type": "text", "value": "b"}]},
+        }]},
+    });
+    let out = parse_json(&api::json::call(&request.to_string()))["ok"].clone();
+    assert_eq!(
+        out["html"],
+        "<template data-carve-snippets>{$v}: X</template>\n<p>b</p>\n\
+         <p data-carve-snippet=\"1:block:$v\">X</p>"
+    );
+}

@@ -998,15 +998,22 @@ impl Carve {
 
     /// The render of a source in one arena: parse, claims, transforms and
     /// render, with no owned or JSON copy of the whole tree (carve-rs#4366).
-    /// `None` when the parse refuses the source, which the general path reports.
+    /// `None` when the parse refuses the source, which the general path reports,
+    /// and for snippet uses beside document transforms, which it renders.
     fn render_text(
         &self,
         text: &str,
         opts: &Options,
         refuse_loss: bool,
     ) -> Option<Result<Rendered, Error>> {
+        // C2-N-091: snippet uses meet document transforms on the general path, which keeps their carriers.
+        if self.extensions.has_transforms() && text.contains("{{") {
+            return None;
+        }
         let arena = crate::Arena::for_input(text);
         let mut found = Vec::new();
+        let mut expanded = Vec::new();
+        let mut snippets = None;
         let mut claimed: Result<(Vec<Entry>, bool), Error> = Ok((Vec::new(), false));
         // C2-X-005: engine claimers read no resolution result, so they run on
         // the core parse and one resolve of the claimed tree gives what
@@ -1015,21 +1022,33 @@ impl Carve {
         let early_claims = self.matchers.engine_only();
         let early = early_claims && self.extensions.parsed_arena_transforms_only();
         let mut early_shift_override = None;
-        let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
-            if early_claims {
-                claimed = self.claim_arena(doc, &arena, text);
-                let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
-                early_shift_override = crate::heading_shift::shifted_fact(
-                    shifted,
-                    opts.heading_shift,
-                    self.extensions.has_transforms(),
-                );
-            }
-            if early && claimed.is_ok() {
-                self.extensions.transform_parsed_arena(doc, &arena);
-            }
-        })
-        .ok()?;
+        let prepared = crate::prepare_expanding(
+            text,
+            opts,
+            &arena,
+            &mut found,
+            &mut |doc| {
+                if early_claims {
+                    claimed = self.claim_arena(doc, &arena, text);
+                    let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
+                    early_shift_override = crate::heading_shift::shifted_fact(
+                        shifted,
+                        opts.heading_shift,
+                        self.extensions.has_transforms(),
+                    );
+                }
+                if early && claimed.is_ok() {
+                    self.extensions.transform_parsed_arena(doc, &arena);
+                }
+            },
+            Some((&mut expanded, &mut snippets)),
+        );
+        found.extend(
+            expanded
+                .iter()
+                .map(crate::snippet::expand::Finding::diagnostic),
+        );
+        let (mut doc, _, _) = prepared.ok()?;
         let mut late_shift_override = None;
         if !early_claims {
             claimed = self.claim_arena(&mut doc, &arena, text);

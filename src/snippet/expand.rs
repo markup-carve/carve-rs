@@ -889,29 +889,17 @@ pub(crate) fn restore(nodes: &[Node<'_>], kept: Kept) -> Option<Guard> {
             includes.push(n.payload_addr());
         }
     });
-    // A kept node is found at its place where a node of its type stands there (a transform
-    // may change its content); else as the first equal node after the last match.
-    let mut found: Vec<(usize, Vec<usize>, Value)> = Vec::new();
+    let mut found: Vec<Seen> = Vec::new();
     each_node(nodes, &mut |n, place| {
         if let Ok(v) = serde_json::to_value(n) {
             found.push((n.payload_addr(), place.to_vec(), v));
         }
     });
-    let mut from = 0;
-    for (place, value, carried) in kept.nodes {
-        let same_place = found
-            .iter()
-            .skip(from)
-            .position(|(_, p, v)| *p == place && v.get("type") == value.get("type"));
-        let Some(at) =
-            same_place.or_else(|| found.iter().skip(from).position(|(_, _, v)| *v == value))
-        else {
+    let target = match_kept(&kept.nodes, &found);
+    for ((_, _, carried), at) in kept.nodes.into_iter().zip(target) {
+        let Some(&(addr, _, _)) = at.and_then(|at| found.get(at)) else {
             continue;
         };
-        let Some(&(addr, _, _)) = found.get(from + at) else {
-            continue;
-        };
-        from += at + 1;
         if let Some(c) = carried.carrier {
             side.carriers.insert(addr, c);
         }
@@ -928,6 +916,48 @@ pub(crate) fn restore(nodes: &[Node<'_>], kept: Kept) -> Option<Guard> {
         }
     }
     install(Some(side))
+}
+
+/// A node of the view a transform returned: its address, place and JSON.
+type Seen = (usize, Vec<usize>, Value);
+
+fn exact(place: &[usize], value: &Value, p: &[usize], v: &Value) -> bool {
+    p == place && v == value
+}
+
+fn moved(_: &[usize], value: &Value, _: &[usize], v: &Value) -> bool {
+    v == value
+}
+
+fn changed(place: &[usize], value: &Value, p: &[usize], v: &Value) -> bool {
+    p == place && v.get("type") == value.get("type")
+}
+
+/// Each kept node takes, in three passes over the nodes no earlier pass took: an equal
+/// node at its place; an equal node anywhere (a transform moved it); a node of its type
+/// at its place (a transform changed it).
+fn match_kept<C>(kept: &[(Vec<usize>, Value, C)], found: &[Seen]) -> Vec<Option<usize>> {
+    let mut taken = vec![false; found.len()];
+    let mut target: Vec<Option<usize>> = vec![None; kept.len()];
+    for pass in [exact, moved, changed] {
+        for ((place, value, _), slot) in kept.iter().zip(target.iter_mut()) {
+            if slot.is_some() {
+                continue;
+            }
+            let (p, v): (&[usize], &Value) = (place, value);
+            let hit = found
+                .iter()
+                .zip(taken.iter())
+                .position(|((_, fp, fv), t)| !t && pass(p, v, fp, fv));
+            if let Some(at) = hit {
+                if let Some(t) = taken.get_mut(at) {
+                    *t = true;
+                }
+                *slot = Some(at);
+            }
+        }
+    }
+    target
 }
 
 /// What tells a definition a document transform kept from one it added: its
