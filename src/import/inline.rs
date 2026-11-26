@@ -1192,13 +1192,11 @@ impl Walk {
             stack.extend(read.into_iter().rev().map(Step::Enter));
             return;
         }
-        // A `<pre>` is read from its text (`html_pre`), never from its children.
-        let descend = descend && !dom.is(id, "pre");
-        let gives = if dom.is(id, "pre") {
-            !dom.plain(id).is_empty()
-        } else {
-            holds(dom, id, cx.raw_html)
-        };
+        // A `<pre>` is always a code block, read from its text (`html_pre`),
+        // never from its children.
+        let pre = dom.is(id, "pre");
+        let descend = descend && !pre;
+        let gives = pre || holds(dom, id, cx.raw_html);
         self.place(gives);
         if !gives && !descend {
             skip(cx, id);

@@ -220,3 +220,17 @@ fn carrier_inside_pre_records_no_ordinal() {
     assert!(got.source.ends_with("{#n#}{{ $v }}y\n"), "{}", got.source);
     assert!(got.diagnostics.iter().any(|d| d.message == LOST));
 }
+
+#[test]
+fn empty_pre_stands_in_the_range() {
+    let got = api::import_document(
+        &format!("{START}</p><pre></pre><p>{END}"),
+        &ImportOptions::default(),
+    )
+    .expect("import");
+    assert!(
+        got.diagnostics.iter().any(|d| d.message == LOST),
+        "{:?}",
+        got.diagnostics
+    );
+}
