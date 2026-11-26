@@ -49,6 +49,8 @@ const HELD: &[(&str, &str)] = &[
         "CC-2323",
         "carve#6813: a key the escape rounds cannot spell is no loss where the output reads back",
     ),
+    ("CC-2388", "carve#6395: named snippets"),
+    ("CC-2389", "carve#6395: named snippets"),
 ];
 
 fn load(path: &str) -> Value {

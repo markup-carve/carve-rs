@@ -90,8 +90,6 @@ fn the_function_receives_the_node_and_runs_on_a_supplied_tree() {
 /// boundary's harness form; the include case runs above through a resolver.
 #[test]
 fn the_json_boundary_takes_the_harness_function_of_the_clause_cases() {
-    // carve#6791: a captioned code block keeps its line options on <pre>.
-    const HELD: &[&str] = &["CC-2228"];
     let text = std::fs::read_to_string("spec-conformance/clause-cases.json").unwrap();
     let mut de = serde_json::Deserializer::from_str(&text);
     de.disable_recursion_limit();
@@ -119,12 +117,6 @@ fn the_json_boundary_takes_the_harness_function_of_the_clause_cases() {
                     .as_str()
                     .unwrap()
                     .contains("codeBlockRenderer")
-            );
-        } else if HELD.contains(&case["id"].as_str().unwrap()) {
-            assert_ne!(
-                response["ok"]["html"], case["expected"]["html"],
-                "{}: held but passes; drop the hold",
-                case["id"]
             );
         } else {
             assert_eq!(

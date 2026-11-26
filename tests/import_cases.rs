@@ -30,6 +30,13 @@ const HELD: &[(&str, &str)] = &[
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
+    // carve#6395: named snippets on import.
+    ("CC-2393", "children"),
+    ("CC-2394", "children"),
+    ("CC-2395", "children"),
+    ("CC-2395", "diagnostic:import-carrier-ignored"),
+    ("CC-2396", "children"),
+    ("CC-2396", "diagnostic:snippet-scope-loss"),
     // carve#6804: an imported image whose alt is unknown.
     ("CC-2207", "children"),
     ("CC-2207", "diagnostic:image-alt-unknown"),

@@ -150,7 +150,8 @@ fn pinned_lint_clause_cases() {
     // Rulings this engine has not ported yet; a held case must keep failing.
     let held = [
         // carve#6663, carve#6664 (carve#6812 G1): header-rows and body-rows on a pipe table.
-        "CC-2241:", "CC-2247:",
+        "CC-2241:", "CC-2247:", // carve#6395: named snippets.
+        "CC-2359:", "CC-2361:", "CC-2362:", "CC-2364:", "CC-2385:", "CC-2386:", "CC-2387:",
     ];
     for h in held {
         assert!(

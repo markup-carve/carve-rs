@@ -12,7 +12,8 @@ const HELD: &[&str] = &[
     "CC-2187", // carve#6811: an xmlns:xlink value without whitespace stays.
     "CC-2275",
     // carve#6771 (carve#6812 G8): align on a cell adds its declaration after an authored style.
-    "CC-2308",
+    "CC-2308", // carve#6395: named snippets.
+    "CC-2372", "CC-2377", "CC-2378", "CC-2379", "CC-2380", "CC-2383", "CC-2384",
 ];
 
 fn call(request: &Value) -> Value {
