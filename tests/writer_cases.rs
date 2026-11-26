@@ -14,6 +14,10 @@ const HELD: &[(&str, &str)] = &[
     // carve#6772 (carve-rs line): the escape rounds read references from the tree.
     ("CC-2166", "carve#6772"),
     (
+        "CC-2426",
+        "carve#6846: the C2-W-088 fallback keeps earlier authored blocks (cumulative)",
+    ),
+    (
         "CC-501",
         "carve#3598 (carve#6812 G3): metadata.fields beside leading frontmatter is a loss",
     ),

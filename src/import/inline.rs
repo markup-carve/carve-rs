@@ -797,19 +797,14 @@ impl Cx {
             .and_then(|t| self.dom.attr(id, t))
             .unwrap_or("")
             .to_string();
-        // C2-A-035: an attribute of the element's own name would be a second key.
-        if self.dom.attr(id, &tag).is_some() {
-            self.report(
-                id,
-                Code::AttributeDropped,
-                format!("An {tag} attribute beside the key its element gives dropped"),
-            );
-        }
-        let omit: Vec<&str> = match target {
-            Some(t) => vec![t, &*tag],
-            None => vec![&*tag],
-        };
+        let omit: Vec<&str> = target.into_iter().collect();
         let mut mapped = self.attrs(id, &omit, false);
+        // C2-M-047: an authored attribute named like the key keeps its place, in upper case.
+        for (key, _) in &mut mapped.attrs.key_values {
+            if key.as_str() == &*tag {
+                *key = tag.to_ascii_uppercase().to_string();
+            }
+        }
         mapped.attrs.key_values.insert(0, (tag.to_string(), value));
         with("span", children, &mapped)
     }

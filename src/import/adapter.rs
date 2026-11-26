@@ -628,8 +628,8 @@ fn drop_separator(dom: &Dom, first: Id, edits: &mut Edits) {
 }
 
 /// C2-M-109: an element the notes left with layout only gives nothing, nor
-/// its parent, up to the `<body>`.
-fn prune_empty(dom: &Dom, start: Id, edits: &mut Edits) {
+/// its parent, up to the `<body>`; its comments take its place, in order.
+fn prune_empty(dom: &mut Dom, start: Id, edits: &mut Edits) {
     let mut node = start;
     while dom.is_element(node)
         && !is_top_level(dom, node)
@@ -639,6 +639,20 @@ fn prune_empty(dom: &Dom, start: Id, edits: &mut Edits) {
         let Some(parent) = dom.parent(node) else {
             return;
         };
+        let (comments, rest): (Vec<Id>, Vec<Id>) = dom
+            .children(node)
+            .iter()
+            .partition(|&&c| !edits.is_gone(c) && dom.is_comment(c));
+        if !comments.is_empty() {
+            dom.set_children(node, rest);
+            let mut siblings = dom.children(parent).to_vec();
+            let at = siblings.iter().position(|&c| c == node).unwrap_or(0);
+            for &c in &comments {
+                dom.set_parent(c, Some(parent));
+            }
+            siblings.splice(at..at, comments);
+            dom.set_children(parent, siblings);
+        }
         edits.detach(dom, node);
         node = parent;
     }
