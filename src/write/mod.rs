@@ -2861,7 +2861,7 @@ fn drop_idle_trials<'t>(
         }
         with = Some(without);
         added.retain(|&k| k != key);
-        while c.drop_escape(key.0, key.1) {}
+        c.drop_escapes(key.0, key.1);
         c.trials.retain(|&(m, a)| (id(m), a) != key);
         if let Some(marks) = c.marks.get_mut(&key.0) {
             marks.remove(&at);
@@ -2998,7 +2998,7 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
             continue;
         };
         if reported_comment_closer(&comment_openers, block, node, at) {
-            while c.drop_escape(id(node), at) {}
+            c.drop_escapes(id(node), at);
             continue;
         }
         let line = c.line_escapes.contains(&(id(node), at));

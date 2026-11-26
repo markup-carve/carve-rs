@@ -191,6 +191,11 @@ impl<'t> Check<'t> {
         true
     }
 
+    /// Takes every escape of `escapes` at byte `at` of the node `node` out.
+    pub fn drop_escapes(&mut self, node: usize, at: usize) {
+        while self.drop_escape(node, at) {}
+    }
+
     /// Whether `escapes` holds an escape in the node `node`.
     fn escapes_in(&self, node: usize) -> bool {
         self.escaped.contains_key(&node)
