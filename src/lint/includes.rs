@@ -68,6 +68,86 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
             }
         }
     }
+    reconcile_snippets(&tree, output);
+}
+
+/// The snippet definitions of an expanded tree in registry order (C2-N-090),
+/// keyed by the file and the offset of their `$`.
+#[derive(Default)]
+struct Registry<'t> {
+    names: HashMap<(String, u64), &'t str>,
+    winners: HashSet<(String, u64)>,
+    taken: HashSet<&'t str>,
+}
+
+impl<'t> Registry<'t> {
+    fn walk(&mut self, list: &'t Value, file: &str) {
+        for child in list["children"].as_array().into_iter().flatten() {
+            if child["type"] == "include" {
+                self.walk(child, child["file"].as_str().unwrap_or(file));
+                continue;
+            }
+            if child["type"] != "snippet_definition" {
+                continue;
+            }
+            let (Some(name), Some(start)) = (
+                child["name"].as_str(),
+                field(child, "/pos/startOffset").as_u64(),
+            ) else {
+                continue;
+            };
+            let file = field(child, "/pos/file").as_str().unwrap_or(file);
+            let key = (file.to_string(), start + 1);
+            if self.taken.insert(name) {
+                self.winners.insert(key.clone());
+            }
+            self.names.insert(key, name);
+        }
+    }
+}
+
+/// C2-N-096 across files: a definition that a use in another file of the
+/// expansion names is used, and one that loses to an earlier definition of
+/// its name (C2-N-090) takes no hint.
+fn reconcile_snippets(tree: &Value, output: &mut Vec<Diagnostic>) {
+    if !output.iter().any(|d| d.code == "unused-snippet") {
+        return;
+    }
+    let mut used = HashSet::new();
+    let mut pending = vec![tree];
+    while let Some(node) = pending.pop() {
+        if node["type"] == "snippet_use"
+            && let Some(name) = node["name"].as_str()
+        {
+            used.insert(name);
+        }
+        match node {
+            Value::Object(map) => {
+                pending.extend(map.iter().filter(|(k, _)| *k != "pos").map(|(_, v)| v));
+            }
+            Value::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+    let mut registry = Registry::default();
+    registry.walk(tree, "");
+    let Registry { names, winners, .. } = registry;
+    output.retain(|d| {
+        if d.code != "unused-snippet" {
+            return true;
+        }
+        let Some(pos) = d.pos else { return true };
+        // A finding of the entry file has no include chain, and its nodes name no file.
+        let file = if d.included_by.is_empty() {
+            String::new()
+        } else {
+            d.file.clone().unwrap_or_default()
+        };
+        let key = (file, u64::from(pos.start_offset));
+        names
+            .get(&key)
+            .is_none_or(|name| winners.contains(&key) && !used.contains(name))
+    });
 }
 
 fn include_site(node: &Value, file: Option<&str>) -> Option<IncludeSite> {
@@ -101,7 +181,8 @@ fn lint_include(
     seen: &mut HashSet<FindingKey>,
     output: &mut Vec<Diagnostic>,
 ) {
-    let Some(file) = node["file"].as_str() else {
+    // C2-N-086: only an include the expansion accepted is linted; a refused one has no children.
+    let (Some(file), Some(_)) = (node["file"].as_str(), node.get("children")) else {
         return;
     };
     let Some(bytes) = context.sources.get(file) else {

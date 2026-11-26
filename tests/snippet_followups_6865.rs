@@ -8,7 +8,13 @@ use std::sync::Arc;
 fn codes(source: &str, opts: &LintOptions) -> Vec<(String, Option<String>, u32)> {
     lint(source, opts)
         .into_iter()
-        .map(|d| (d.code.to_string(), d.file, d.pos.map_or(0, |p| p.start_line)))
+        .map(|d| {
+            (
+                d.code.to_string(),
+                d.file,
+                d.pos.map_or(0, |p| p.start_line),
+            )
+        })
         .collect()
 }
 
@@ -35,8 +41,8 @@ fn an_id_anywhere_in_the_attribute_lines_refuses_the_definition() {
         "<p id=\"x\">{$v}: X</p>"
     );
     assert_eq!(
-        carve::render("{.k}\n\n{#i}\n{$v}: X\n\n{{ $v }}\n", &opts).trim(),
-        "<p id=\"i\">{$v}: X</p>\n<p>{{ $v }}</p>"
+        carve::render("{#i}\n{.k}\n{$v}: X\n\n{{ $v }}\n", &opts),
+        "<p id=\"i\" class=\"k\">{$v}: X</p>\n<p>{{ $v }}</p>"
     );
     let found = codes("{id=x}\n{$v}: X\n", &LintOptions::default());
     assert!(found.contains(&("snippet-definition-id".into(), None, 2)));
