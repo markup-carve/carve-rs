@@ -1264,7 +1264,7 @@ fn write_tree<'t>(
         settings,
         budget,
         facts,
-        (false, false),
+        (true, false),
         usize::MAX,
     );
     if !has_loss(&entries) {
@@ -1272,11 +1272,11 @@ fn write_tree<'t>(
     }
     // The fallback writes share a repair budget of twice the work the first one spent.
     let mut left = budget.min(first_spent.saturating_mul(FALLBACK_WORK_SHARE));
-    // C2-W-088, C2-W-075 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a
-    // stop and write every reference from the tree, taking the verbatim texts after them, may give a form without one.
-    let mut modes = vec![(verbatim, true)];
+    // C2-W-088 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a stop may
+    // give a form without one, and so may rounds that read the verbatim references, where `fmt` keeps that form.
+    let mut modes = vec![(true, true)];
     if verbatim {
-        modes.push((true, false));
+        modes.push((false, false));
     }
     for mode in modes {
         if left == 0 {
@@ -1389,7 +1389,7 @@ const MAX_VERBATIM_TRIALS: usize = 32;
 /// tree, the group's references take their verbatim text together where the group reads back with them, and
 /// otherwise one by one in document order; the others keep their spelling from the tree.
 fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
-    if !w.tree_refs || w.lines.is_empty() || w.sp.losses.len() != reported {
+    if !w.tree_refs || w.lines.is_empty() {
         return;
     }
     let mut references = Vec::new();
@@ -1414,7 +1414,15 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     };
     w.tree_refs = false;
     w.tree_ref_ids.clear();
-    if !reads(w) {
+    if w.sp.losses.len() != reported {
+        // C2-W-075 (carve-js `settleLosses`): a loss of the rounds is provisional where the group written with
+        // every verbatim text reads back.
+        if reads(w) {
+            w.sp.losses.truncate(reported);
+        } else {
+            w.lines = tree;
+        }
+    } else if !reads(w) {
         w.tree_ref_ids.extend(references.iter().map(|&n| id(n)));
         for &n in references.iter().take(MAX_VERBATIM_TRIALS) {
             if exhausted(w) {
