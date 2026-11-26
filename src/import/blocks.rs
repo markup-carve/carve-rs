@@ -814,13 +814,17 @@ impl Cx {
             }
             let mut current = Vec::new();
             for child in self.kids(stanza) {
-                if self.dom.is(child, "br") {
-                    let children = self.line_inline(&current, stanza);
-                    lines.push(parent("line", children));
-                    current.clear();
-                } else {
+                if !self.dom.is(child, "br") {
                     current.push(child);
+                    continue;
                 }
+                let mut children = self.line_inline(&current, stanza);
+                current.clear();
+                // carve#6786: keep the break where the line cannot be written without it.
+                if needs_hard_break(&children) {
+                    children.push(json!({ "type": "hard_break" }));
+                }
+                lines.push(parent("line", children));
             }
             let children = self.line_inline(&current, stanza);
             lines.push(parent("line", children));
@@ -1918,6 +1922,16 @@ fn resolve_probe(probe: &Value) -> Option<Value> {
 
 pub(crate) fn flow(cx: &mut Cx, nodes: &[Id], host: Id, reader: Reader) -> Vec<Value> {
     cx.flow_of(nodes, host, reader)
+}
+
+/// C2-I-002, C2-I-102: an empty line, or one ending in a space or tab, needs its backslash.
+fn needs_hard_break(children: &[Value]) -> bool {
+    match children.last() {
+        None => true,
+        Some(last) => {
+            ty(last) == "text" && last["value"].as_str().unwrap_or("").ends_with([' ', '\t'])
+        }
+    }
 }
 
 /// C2-H-043 read back: the renderer writes the whole space and tab run of a
