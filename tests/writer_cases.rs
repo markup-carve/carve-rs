@@ -45,18 +45,6 @@ const HELD: &[(&str, &str)] = &[
         "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
     ),
     (
-        "CC-2265",
-        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
-    ),
-    (
-        "CC-2266",
-        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
-    ),
-    (
-        "CC-2267",
-        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
-    ),
-    (
         "CC-2323",
         "carve#6813: a key the escape rounds cannot spell is no loss where the output reads back",
     ),
