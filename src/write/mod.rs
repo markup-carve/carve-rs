@@ -1257,13 +1257,20 @@ fn write_tree<'t>(
     budget: usize,
     facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
-    let (source, entries, (verbatim, _)) =
-        write_tree_once(doc, pool, settings, budget, facts, (false, false));
+    let (source, entries, (verbatim, first_spent)) = write_tree_once(
+        doc,
+        pool,
+        settings,
+        budget,
+        facts,
+        (false, false),
+        usize::MAX,
+    );
     if !has_loss(&entries) {
         return (source, entries);
     }
-    // The fallback writes share one repair budget.
-    let mut left = budget;
+    // The fallback writes share a repair budget of twice the work the first one spent.
+    let mut left = budget.min(first_spent.saturating_mul(FALLBACK_WORK_SHARE));
     // C2-W-088, C2-W-075 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a
     // stop and write every reference from the tree, taking the verbatim texts after them, may give a form without one.
     let mut modes = vec![(verbatim, true)];
@@ -1275,7 +1282,7 @@ fn write_tree<'t>(
             break;
         }
         let (again, again_entries, (_, spent)) =
-            write_tree_once(doc, pool, settings, left, facts, mode);
+            write_tree_once(doc, pool, settings, budget, facts, mode, left);
         left = left.saturating_sub(spent);
         if !has_loss(&again_entries) && formats_to_itself(&again, settings) {
             return (again, again_entries);
@@ -1283,6 +1290,9 @@ fn write_tree<'t>(
     }
     (source, entries)
 }
+
+/// The fallback writes of [`write_tree`] spend at most this multiple of the first write's repair work.
+const FALLBACK_WORK_SHARE: usize = 2;
 
 thread_local! {
     static CHECKING_FIXED_POINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -1318,9 +1328,11 @@ fn write_tree_once<'t>(
     budget: usize,
     facts: Option<&JsonFacts>,
     (tree_refs, report): (bool, bool),
+    cap: usize,
 ) -> (String, Vec<Entry>, (bool, usize)) {
     let mut w = Writer::new(pool, settings.align_tables);
     w.work_limit = budget;
+    w.work_cap = cap;
     w.no_mark_text = match facts {
         Some(f) => !f.mark_text,
         None => matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value)),

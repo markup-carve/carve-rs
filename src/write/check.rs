@@ -110,7 +110,7 @@ impl Chunk {
 
 /// C2-W-133: whether the repairs of the document have parsed more than its budget.
 pub fn exhausted(w: &Writer<'_>) -> bool {
-    w.work_chars > w.work_limit
+    w.work_chars > w.work_limit || w.work_chars > w.work_cap
 }
 
 /// What a construct of the parse was, as far as the chains of one round read it.
