@@ -46,18 +46,17 @@ fn slug(page: &str) -> String {
     collapsed
 }
 
-/// `Page#anchor|Display`: the page, the anchor with its `#`, and the display text.
-fn target(text: &str) -> (String, String, String) {
-    let (path, display) = match text.split_once('|') {
-        Some((p, d)) => (p.trim(), d.trim().to_string()),
-        None => (text.trim(), String::new()),
-    };
+/// `Page#anchor`: the page and the anchor with its `#`, each possibly empty.
+fn target(text: &str) -> (String, String) {
+    let path = text.split_once('|').map_or(text, |(p, _)| p).trim();
     match path.split_once('#') {
-        Some((page, anchor)) => (page.trim().to_string(), format!("#{anchor}"), display),
-        None => (path.to_string(), String::new(), display),
+        Some((page, anchor)) => (page.trim().to_string(), format!("#{anchor}")),
+        None => (path.to_string(), String::new()),
     }
 }
 
+/// C2-X-057: the target before the first `|`, the display text (the
+/// fallback) after it; without a `|` both are the whole body.
 fn claim(claim: &Claim<'_>) -> Option<Value> {
     if claim.form != Form::Inline {
         return None;
@@ -69,18 +68,28 @@ fn claim(claim: &Claim<'_>) -> Option<Value> {
         .cloned()
         .unwrap_or_default();
     let text = super::super::standard::plain_text(&children);
-    let fallback = if text.is_empty() {
-        json!([])
-    } else {
-        json!([{"type": "text", "value": text}])
-    };
+    let (target, display) = text.split_once('|').unwrap_or((&text, &text));
     Some(json!({
         "type": "inline_extension",
         "name": "carve.wiki",
         "version": "1",
         "children": [],
-        "fallback": fallback,
+        "props": {"target": target},
+        "fallback": [{"type": "text", "value": display}],
     }))
+}
+
+/// The end of the leading ` id="..."` and ` class="..."` of a written list.
+fn after_id_and_class(written: &str) -> usize {
+    let mut at = 0;
+    for name in [" id=\"", " class=\""] {
+        if let Some(rest) = written[at..].strip_prefix(name)
+            && let Some(close) = rest.find('"')
+        {
+            at += name.len() + close + 1;
+        }
+    }
+    at
 }
 
 struct Link {
@@ -92,8 +101,12 @@ struct Link {
 impl Renderer for Link {
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
         let fallback = node.get("fallback").cloned().unwrap_or_else(|| json!([]));
-        let text = cx.plain_text(fallback.as_array().map_or(&[][..], Vec::as_slice));
-        let (page, anchor, display) = target(&text);
+        let display = cx.plain_text(fallback.as_array().map_or(&[][..], Vec::as_slice));
+        let source = node
+            .pointer("/props/target")
+            .and_then(Value::as_str)
+            .unwrap_or(&display);
+        let (page, anchor) = target(source);
         let href = match &self.generate {
             Some(g) => g(&page),
             None => slug(&page),
@@ -122,8 +135,7 @@ impl Renderer for Link {
                 k != "href" && !generated.iter().any(|(n, _)| *n == k)
             })
             .collect();
-        let mut kv = vec![json!(["data-wikilink", page])];
-        kv.extend(authored);
+        let mut kv = authored;
         kv.extend(generated.iter().skip(1).map(|(n, v)| json!([n, v])));
         let mut cls: Vec<Value> = self
             .classes
@@ -131,17 +143,29 @@ impl Renderer for Link {
             .map(|c| Value::from(c.as_str()))
             .collect();
         cls.extend(classes(attrs));
-        let shown = if !display.is_empty() {
+        let barless = node.pointer("/source/form").and_then(Value::as_str) == Some("inline")
+            && node
+                .pointer("/source/body")
+                .and_then(Value::as_str)
+                .is_some_and(|body| !body.contains('|'));
+        let shown = if !barless {
             display
         } else if page.is_empty() {
             anchor
         } else {
-            page
+            page.clone()
         };
+        // C2-H-161: the page is taken from text, so it is no authored value.
+        let mut written = cx.attributes(&with_attrs(node, cls, kv));
+        let at = after_id_and_class(&written);
+        written.insert_str(
+            at,
+            &format!(r#" data-wikilink="{}""#, cx.escape_attribute(&page)),
+        );
         Ok(format!(
             r#"<a href="{}"{}>{}</a>"#,
             cx.escape_attribute(&href),
-            cx.attributes(&with_attrs(node, cls, kv)),
+            written,
             cx.escape(&shown)
         ))
     }
