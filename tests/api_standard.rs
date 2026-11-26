@@ -142,8 +142,13 @@ fn the_pinned_extension_cases() {
     let corpus = parse_json(&text);
     let cases = corpus["cases"].as_array().cloned().unwrap_or_default();
     assert!(cases.len() >= 100, "{}", cases.len());
-    let failures: Vec<String> = cases.iter().filter_map(check).collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let mut gate = Gate::by_id("extension corpus", &[]);
+    for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
+        let failure = check(case);
+        gate.check(id, failure.is_none(), || failure.unwrap_or_default());
+    }
+    gate.finish();
 }
 
 /// Ruling D6 (carve#6070): clause cases of the spec after the engine pin.
@@ -198,8 +203,13 @@ fn c2_x_056_selected_tab_and_static_sections() {
             "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run setup.</p></section><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Use</h3><p>Open the app.</p></section></div>",
         ),
     ];
-    let failures: Vec<String> = cases.iter().filter_map(check).collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let mut gate = Gate::by_id("extension corpus", &[]);
+    for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
+        let failure = check(case);
+        gate.check(id, failure.is_none(), || failure.unwrap_or_default());
+    }
+    gate.finish();
 }
 
 #[test]
