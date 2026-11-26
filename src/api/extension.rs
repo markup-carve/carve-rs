@@ -132,6 +132,12 @@ impl RenderContext<'_> {
     /// every core element writes it: ` id="..." class="..." ...`.
     #[must_use]
     pub fn attributes(&self, node: &Value) -> String {
+        self.attributes_styled(node, Vec::new())
+    }
+
+    /// [`RenderContext::attributes`] with `style_after` declarations that
+    /// follow an authored `style` in its value (C2-H-057).
+    pub(crate) fn attributes_styled(&self, node: &Value, style_after: Vec<String>) -> String {
         use crate::html::attrs::{El, Filter};
         let attrs: Option<crate::ast::owned::Attrs> = node
             .get("attrs")
@@ -157,6 +163,7 @@ impl RenderContext<'_> {
                 .and_then(Value::as_u64)
                 .and_then(|n| u32::try_from(n).ok());
         }
+        element.style_after = style_after;
         element.write(Filter {
             roundtrip: self.host.opts.roundtrip,
             policy: Some(&self.host.opts.url_policy),

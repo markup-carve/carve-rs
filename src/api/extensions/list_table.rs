@@ -276,15 +276,27 @@ fn without_keys(attrs: Option<&Value>, consumed: &[&str]) -> Vec<Value> {
 /// The authored attributes of `attrs` without the consumed keys and without
 /// a source line.
 fn author_attrs(attrs: Option<&Value>, consumed: &[&str], cx: &RenderContext<'_>) -> String {
-    let Some(a) = attrs else {
-        return String::new();
+    author_attrs_styled(attrs, consumed, Vec::new(), cx)
+}
+
+/// [`author_attrs`] with `style` declarations after an authored `style`
+/// (C2-X-078, C2-H-057).
+fn author_attrs_styled(
+    attrs: Option<&Value>,
+    consumed: &[&str],
+    style: Vec<String>,
+    cx: &RenderContext<'_>,
+) -> String {
+    let node = match attrs {
+        Some(a) => with_attrs(
+            &json!({ "attrs": a }),
+            super::classes(Some(a)),
+            without_keys(Some(a), consumed),
+        ),
+        None if style.is_empty() => return String::new(),
+        None => json!({}),
     };
-    let node = with_attrs(
-        &json!({ "attrs": a }),
-        super::classes(Some(a)),
-        without_keys(Some(a), consumed),
-    );
-    cx.attributes(&node)
+    cx.attributes_styled(&node, style)
 }
 
 /// The source line of a block element, without authored attributes.
@@ -296,7 +308,7 @@ fn source_line(node: Option<&Value>, cx: &RenderContext<'_>) -> String {
 }
 
 impl Table<'_> {
-    fn cell_style(&self, cell: &Cell, col: usize) -> String {
+    fn cell_style(&self, cell: &Cell, col: usize) -> Vec<String> {
         let list = |key| {
             attr_value(self.attrs, key)
                 .map(|v| v.split(',').collect::<Vec<_>>())
@@ -312,17 +324,10 @@ impl Table<'_> {
             attr_value(own, "valign").or_else(|| valigns.get(col).copied()),
             &["top", "middle", "bottom"],
         );
-        let mut out = String::new();
-        if let Some(h) = h {
-            let _ = write!(out, "text-align: {h};");
-        }
-        if h.is_some() && v.is_some() {
-            out.push(' ');
-        }
-        if let Some(v) = v {
-            let _ = write!(out, "vertical-align: {v};");
-        }
-        out
+        h.map(|h| format!("text-align: {h};"))
+            .into_iter()
+            .chain(v.map(|v| format!("vertical-align: {v};")))
+            .collect()
     }
 
     fn cell(
@@ -364,11 +369,12 @@ impl Table<'_> {
         if cell.colspan > 1 {
             let _ = write!(open, r#" colspan="{}""#, cell.colspan);
         }
-        open.push_str(&author_attrs(cell.item.get("attrs"), CELL_KEYS, cx));
-        let style = self.cell_style(cell, col);
-        if !style.is_empty() {
-            let _ = write!(open, r#" style="{}""#, cx.escape_attribute(&style));
-        }
+        open.push_str(&author_attrs_styled(
+            cell.item.get("attrs"),
+            CELL_KEYS,
+            self.cell_style(cell, col),
+            cx,
+        ));
         open
     }
 
