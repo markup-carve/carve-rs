@@ -382,7 +382,7 @@ impl Cx {
                 let mut m = node("code");
                 m.insert("value".into(), self.dom.plain(id).into());
                 self.plain_attrs(id).apply(&mut m);
-                vec![Value::Object(m)]
+                self.non_empty(vec![Value::Object(m)], id)
             }
             _ => return None,
         })
@@ -394,10 +394,12 @@ impl Cx {
         let mut out = Vec::with_capacity(nodes.len());
         for item in nodes {
             let kind = ty(&item).to_string();
+            // C2-I-017: a code span needs a character; a lone backtick run is text.
             let empty = item
                 .get("children")
                 .and_then(Value::as_array)
-                .is_some_and(Vec::is_empty);
+                .is_some_and(Vec::is_empty)
+                || item.get("value").and_then(Value::as_str) == Some("");
             if !NEEDS_CONTENT.contains(&kind.as_str()) || !empty {
                 out.push(item);
                 continue;
@@ -1373,6 +1375,7 @@ fn holds(dom: &super::dom::Dom, id: Id, raw_html: bool) -> bool {
 }
 
 const NEEDS_CONTENT: &[&str] = &[
+    "code",
     "emphasis",
     "strong",
     "strike",
