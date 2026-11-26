@@ -1165,13 +1165,19 @@ impl Walk {
         if class.as_deref() == Some("comment-end") && self.end(cx, id, place) {
             return;
         }
-        // The flow reads a block carrier before any later inline one takes its ordinal.
-        if attrs::is_block_element(&cx.dom, id)
-            && cx.dom.has(id, "data-carve-snippet")
-            && cx.block_snippet(id).is_some()
-        {
-            self.place(false);
-            return;
+        // A snippet carrier is tried on entry, as the reader tries it before its
+        // content; an accepted one takes its ordinal and its content is never read.
+        if cx.dom.has(id, "data-carve-snippet") {
+            let block = attrs::is_block_element(&cx.dom, id);
+            let used = if block {
+                cx.block_snippet(id)
+            } else {
+                cx.inline_snippet(id)
+            };
+            if used.is_some() {
+                self.place(!block);
+                return;
+            }
         }
         let dom = &cx.dom;
         let inline = dom.is_element(id) && !opaque(dom, id) && !attrs::is_block_element(dom, id);

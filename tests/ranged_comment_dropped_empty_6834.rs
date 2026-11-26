@@ -172,3 +172,14 @@ fn block_carrier_ordinal_is_taken_before_the_range() {
     assert!(got.source.ends_with("{#n#}y\n"), "{}", got.source);
     assert!(got.diagnostics.iter().all(|d| d.message != LOST));
 }
+
+#[test]
+fn carrier_inside_an_accepted_carrier_records_no_ordinal() {
+    let html = format!(
+        "<p><span data-carve-snippet=\"1:inline:$v\"><span data-carve-snippet=\"2:inline:$w\">X</span></span></p>{START}{}{END}",
+        "<span data-carve-snippet=\"2:inline:$w\"></span>",
+    );
+    let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+    assert!(got.source.ends_with("{#n#}{{ $w }}y\n"), "{}", got.source);
+    assert!(got.diagnostics.iter().any(|d| d.message == LOST));
+}
