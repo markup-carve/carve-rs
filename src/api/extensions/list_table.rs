@@ -33,19 +33,14 @@ fn is(node: Option<&Value>, ty: &str) -> bool {
     node.and_then(|n| n.get("type")).and_then(Value::as_str) == Some(ty)
 }
 
-/// The cells of a row item: the items of its leading list, the blocks after
-/// that list appended to the last cell.
-fn row_cells(row: &Value) -> Option<Vec<Value>> {
-    let (first, rest) = children(row).split_first()?;
-    if !is(Some(first), "list") {
+/// The cells of a row item: the items of its list. A row item that holds
+/// anything beside its one list is no row (C2-X-078).
+fn row_cells(row: &Value) -> Option<&[Value]> {
+    let [list] = children(row) else { return None };
+    if !is(Some(list), "list") {
         return None;
     }
-    let mut items = children(first).to_vec();
-    let last = items.last_mut()?;
-    if let Some(c) = last.get_mut("children").and_then(Value::as_array_mut) {
-        c.extend(rest.iter().cloned());
-    }
-    Some(items)
+    Some(children(list))
 }
 
 fn table_list(body: &[Value]) -> Option<&Value> {
@@ -114,8 +109,7 @@ fn attr_value<'a>(attrs: Option<&'a Value>, name: &str) -> Option<&'a str> {
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn header_count(attrs: Option<&Value>, key: &str) -> usize {
     match attr_value(attrs, key) {
-        None => 0,
-        Some("") => 1,
+        None | Some("") => 0,
         Some(v) => js_number(v)
             .filter(|n| n.fract() == 0.0 && (0.0..=10_000.0).contains(n))
             .map_or(0, |n| n as usize),
@@ -468,10 +462,10 @@ fn extract(list: &Value) -> Option<(Vec<Vec<Cell>>, Vec<bool>)> {
             .push(attr_value(items.first().and_then(|i| i.get("attrs")), "header-row").is_some());
         rows.push(
             items
-                .into_iter()
+                .iter()
                 .map(|item| Cell {
-                    mark: mark(&item),
-                    item,
+                    mark: mark(item),
+                    item: item.clone(),
                     rowspan: 1,
                     colspan: 1,
                     skip: false,

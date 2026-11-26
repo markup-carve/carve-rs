@@ -15,8 +15,6 @@ const HELD: &[&str] = &[
     "CC-2275",
     // carve#6395: named snippets.
     "CC-2372", "CC-2377", "CC-2378", "CC-2379", "CC-2380", "CC-2383", "CC-2384",
-    // carve#6835 (carve-rs line): list-table valueless keys and rows with a block beside the list.
-    "CC-2416", "CC-2417", "CC-2418", "CC-2419", "CC-2420", "CC-2421", "CC-2423",
 ];
 
 fn call(request: &Value) -> Value {
