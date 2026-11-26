@@ -6,8 +6,8 @@ use crate::ast::Attrs;
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-/// The 23 names a roundtrip render reserves (C2-H-115, gap HTML-001).
-pub const RESERVED: [&str; 23] = [
+/// The 24 names a roundtrip render reserves (C2-H-115, gap HTML-001).
+pub const RESERVED: [&str; 24] = [
     "data-marker",
     "data-carve-explicit-id",
     "data-carve-generated-id",
@@ -21,6 +21,7 @@ pub const RESERVED: [&str; 23] = [
     "data-carve-abbreviations",
     "data-carve-label",
     "data-carve-tight",
+    "data-carve-loose",
     "data-carve-xref",
     "data-carve-caption-number",
     "data-carve-div",

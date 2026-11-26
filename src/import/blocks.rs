@@ -982,9 +982,58 @@ impl Cx {
                 .all(|&k| self.dom.is(k, "img") || self.dom.is_blank(k) || self.dom.is_comment(k))
     }
 
-    /// C2-H-138, C2-M-033: tight or loose.
+    /// C2-M-012, C2-M-013: an item holds a run of text and inline elements
+    /// that reads as a paragraph without `<p>`.
+    fn has_bare_run(&self, id: Id) -> bool {
+        self.dom.elements(id).into_iter().any(|item| {
+            if !self.dom.is(item, "li") {
+                return false;
+            }
+            let mut run: Vec<Id> = Vec::new();
+            for &n in self.dom.children(item) {
+                if self.dom.is(n, "input") && self.dom.attr(n, "type") == Some("checkbox") {
+                    continue;
+                }
+                if self.is_phrasing(n) || self.dom.is(n, "img") || self.dom.is_comment(n) {
+                    run.push(n);
+                } else if self.is_paragraph_run(&run) {
+                    return true;
+                } else {
+                    run.clear();
+                }
+            }
+            self.is_paragraph_run(&run)
+        })
+    }
+
+    /// The run `flush` writes as one paragraph.
+    fn is_paragraph_run(&self, run: &[Id]) -> bool {
+        let solid: Vec<Id> = run
+            .iter()
+            .copied()
+            .filter(|&n| !self.dom.is_blank(n))
+            .collect();
+        if solid.is_empty() || solid.iter().all(|&n| self.is_raw(n)) {
+            return false;
+        }
+        !(solid.iter().any(|&n| self.dom.is(n, "img"))
+            && solid
+                .iter()
+                .all(|&n| self.dom.is(n, "img") || self.dom.is_comment(n)))
+    }
+
+    /// C2-H-138, C2-H-185, C2-H-186, C2-M-033: tight or loose.
     fn list_spacing(&mut self, id: Id, items: &[Value]) -> &'static str {
-        if self.dom.has(id, "data-carve-tight") {
+        let tight = self.dom.has(id, "data-carve-tight");
+        let loose = self.dom.has(id, "data-carve-loose");
+        if tight && loose {
+            for (name, other) in [
+                ("data-carve-tight", "data-carve-loose"),
+                ("data-carve-loose", "data-carve-tight"),
+            ] {
+                self.ignored_carrier(id, name, &format!("the list also carries {other}"));
+            }
+        } else if tight {
             if !self.has_loose_item(id, true) {
                 return "tight";
             }
@@ -993,7 +1042,18 @@ impl Cx {
                 "data-carve-tight",
                 "an item writes its first paragraph as an element",
             );
-            return if items.len() > 1 { "loose" } else { "tight" };
+        } else if loose {
+            if items.len() <= 1 {
+                self.ignored_carrier(id, "data-carve-loose", "the list has one item");
+            } else if self.has_bare_run(id) {
+                self.ignored_carrier(
+                    id,
+                    "data-carve-loose",
+                    "an item writes a paragraph without an element",
+                );
+            } else {
+                return "loose";
+            }
         }
         if items.len() <= 1 {
             return "tight";

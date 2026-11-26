@@ -16,17 +16,6 @@ const HELD: &[(&str, &str)] = &[
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
-    // carve#6844 (carve-rs line): the importer reads `data-carve-loose`.
-    ("CC-2441", "children"),
-    ("CC-2443", "children"),
-    ("CC-2446", "children"),
-    ("CC-2450", "children"),
-    ("CC-2450", "diagnostic:import-carrier-ignored"),
-    ("CC-2451", "children"),
-    ("CC-2451", "diagnostic:import-carrier-ignored"),
-    ("CC-2452", "children"),
-    ("CC-2452", "diagnostic:import-carrier-ignored"),
-    ("CC-2453", "children"),
 ];
 
 /// `(entry id, checked field)` of the import examples held.

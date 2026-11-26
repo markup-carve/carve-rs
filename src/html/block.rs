@@ -513,6 +513,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             if l.spacing == ListSpacing::Tight {
                 el.carriers.push(("data-carve-tight", None));
+            } else if l.children.len() > 1 {
+                // C2-H-138: a one-item list reads as tight (C2-B-062).
+                el.carriers.push(("data-carve-loose", None));
             }
         }
         if l.children

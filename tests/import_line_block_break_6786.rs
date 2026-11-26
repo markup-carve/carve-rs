@@ -1,4 +1,4 @@
-//! C2-H-195 row 18 (carve#6786, Ruled A) and C2-H-043 (carve#6785): the hard
+//! C2-H-195 row 17 (carve#6786, Ruled A) and C2-H-043 (carve#6785): the hard
 //! break of a line-block line on import. The expected sources and trees are
 //! CC-2167 to CC-2171 of carve next2 307e80eb and the Expected of carve#6785.
 mod common;

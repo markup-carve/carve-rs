@@ -135,6 +135,7 @@ pub(crate) const CARRIERS: &[&str] = &[
     "data-carve-abbreviations",
     "data-carve-label",
     "data-carve-tight",
+    "data-carve-loose",
     "data-carve-xref",
     "data-carve-caption-number",
     "data-carve-div",
