@@ -1566,40 +1566,17 @@ fn authored_content(w: &Writer<'_>, leaf: N<'_>) -> Option<String> {
         return None;
     }
     let decode = |a: usize, b: usize| source.get(a..b).map(|t| t.replace("\r\n", "\n"));
-    let mut breaks = Vec::new();
-    let mut pending: Vec<N<'_>> = kids.iter().rev().collect();
-    while let Some(n) = pending.pop() {
-        if matches!(ty(n), "soft_break" | "hard_break") {
-            breaks.push(n);
-        }
-        let mut below = Vec::new();
-        node::for_each_slot(n, true, &mut |slot, _, _| below.extend(slot.iter()));
-        pending.extend(below.into_iter().rev());
-    }
-    let behind_break = |n: N<'_>| -> Option<(String, String, usize, usize)> {
-        let (start, end) = span(n)?;
-        let spelled = decode(start, end)?;
-        let cut = spelled.find('\n')?;
-        Some((
-            spelled
-                .get(..cut)?
-                .trim_end_matches([' ', '\t', '\r'])
-                .to_string(),
-            spelled.get(cut + 1..)?.to_string(),
-            start,
-            end,
-        ))
-    };
+    let breaks = line_breaks(kids);
     // A line break inside a node that holds no break node, as alternative text, loses the prefix of the break before.
     let mut prefix = breaks
         .first()
-        .and_then(|&b| behind_break(b))
+        .and_then(|&b| break_parts(b, &decode))
         .map(|(_, p, _, _)| p)
         .unwrap_or_default();
     let mut text = String::new();
     let mut at = from;
     for &b in &breaks {
-        let (head, next, start, end) = behind_break(b)?;
+        let (head, next, start, end) = break_parts(b, &decode)?;
         if start < at {
             return None;
         }
@@ -1610,16 +1587,54 @@ fn authored_content(w: &Writer<'_>, leaf: N<'_>) -> Option<String> {
         at = end;
     }
     text.push_str(&without_prefixes(&decode(at, to)?, &prefix));
-    // C2-W-016: a lone CR at the end of a written line has no spelling.
-    let lone_cr = text.match_indices('\r').any(|(i, _)| {
+    (!ends_line_in_lone_cr(&text)).then_some(text)
+}
+
+/// The soft and hard breaks below `nodes`, in document order.
+fn line_breaks<'t>(nodes: Arr<'t>) -> Vec<N<'t>> {
+    let mut breaks = Vec::new();
+    let mut pending: Vec<N<'t>> = nodes.iter().rev().collect();
+    while let Some(n) = pending.pop() {
+        if matches!(ty(n), "soft_break" | "hard_break") {
+            breaks.push(n);
+        }
+        let mut below = Vec::new();
+        node::for_each_slot(n, true, &mut |slot, _, _| below.extend(slot.iter()));
+        pending.extend(below.into_iter().rev());
+    }
+    breaks
+}
+
+/// The authored line break `n`: its line up to the line end without blanks, the container prefix behind it, and its
+/// byte range.
+fn break_parts(
+    n: N<'_>,
+    decode: &impl Fn(usize, usize) -> Option<String>,
+) -> Option<(String, String, usize, usize)> {
+    let (start, end) = span(n)?;
+    let spelled = decode(start, end)?;
+    let cut = spelled.find('\n')?;
+    Some((
+        spelled
+            .get(..cut)?
+            .trim_end_matches([' ', '\t', '\r'])
+            .to_string(),
+        spelled.get(cut + 1..)?.to_string(),
+        start,
+        end,
+    ))
+}
+
+/// C2-W-016: a lone CR at the end of a written line has no spelling.
+fn ends_line_in_lone_cr(text: &str) -> bool {
+    text.match_indices('\r').any(|(i, _)| {
         text.get(i + 1..)
             .unwrap_or_default()
             .trim_start_matches([' ', '\t'])
             .chars()
             .next()
             .is_none_or(|c| c == '\n')
-    });
-    (!lone_cr).then_some(text)
+    })
 }
 
 /// `text` with `prefix` taken off each line after the first that holds it; a lazy line keeps its spelling.
