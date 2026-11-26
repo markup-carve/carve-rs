@@ -309,11 +309,13 @@ impl Registry {
             .map(|e| e.declaration.clone())
     }
 
-    /// Whether the extension of this name has a renderer.
-    pub(crate) fn renders(&self, name: &str) -> bool {
-        self.list
-            .iter()
-            .any(|e| e.declaration.name == name && !e.renderers.is_empty())
+    /// Whether the extension of this name and version has a renderer.
+    pub(crate) fn renders(&self, d: &ExtensionDeclaration) -> bool {
+        self.list.iter().any(|e| {
+            e.declaration.name == d.name
+                && e.declaration.version == d.version
+                && !e.renderers.is_empty()
+        })
     }
 
     /// Puts `extension` in the place of the registered one of its name and version.

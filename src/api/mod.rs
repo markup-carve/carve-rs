@@ -560,16 +560,18 @@ impl Carve {
             let mut upgrade = Vec::new();
             let mut taken = Vec::new();
             for e in std::mem::take(&mut bundle.extensions) {
-                let shared = self
-                    .brought
-                    .iter()
-                    .any(|(member, via)| *member == e.declaration.name && via != name);
+                let by = |own: bool| {
+                    self.brought
+                        .iter()
+                        .any(|(member, via)| *member == e.declaration.name && (via == name) == own)
+                };
+                let shared = by(false) && !by(true);
                 if !shared {
                     bundle.extensions.push(e);
                     continue;
                 }
                 taken.push(e.declaration.name.clone());
-                if !e.renderers.is_empty() && !self.extensions.renders(&e.declaration.name) {
+                if !e.renderers.is_empty() && !self.extensions.renders(&e.declaration) {
                     upgrade.push(e);
                 }
             }
@@ -578,6 +580,7 @@ impl Carve {
                 .extensions
                 .iter()
                 .map(|e| e.declaration.name.clone())
+                .chain(taken)
                 .collect();
             self.register(bundle)?;
             for e in upgrade {

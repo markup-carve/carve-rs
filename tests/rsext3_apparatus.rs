@@ -313,6 +313,15 @@ fn only_a_member_another_standard_name_brought_is_shared() {
     let mut twice = Carve::new();
     twice.enable_standard("carve.term", true).unwrap();
     assert!(twice.enable_standard("carve.term", true).is_err());
+    for (bundle, member) in [
+        ("carve.glossary", "carve.term"),
+        ("carve.index", "carve.indexTerm"),
+    ] {
+        let mut shared = Carve::new();
+        shared.enable_standard(bundle, true).unwrap();
+        shared.enable_standard(member, true).unwrap();
+        assert!(shared.enable_standard(member, true).is_err(), "{member}");
+    }
     let mut custom = Carve::new();
     custom.register(extensions::glossary()).unwrap();
     assert!(custom.enable_standard("carve.term", true).is_err());
