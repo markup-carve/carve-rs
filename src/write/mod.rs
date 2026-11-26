@@ -113,6 +113,9 @@ pub(crate) fn format_view<'t>(
     let mut settings = settings.clone();
     if let Some(src) = src {
         settings.layout = Some(facts::from_source(doc, src));
+        if settings.source.is_none() && settings.fallback_source.is_none() {
+            settings.fallback_source = Some(src.to_string());
+        }
     }
     write_trimmed(doc, pool, &settings, src.map(str::len), None)
 }
@@ -4442,6 +4445,17 @@ fn prune_whole_group(
             .get(p + 1..)
             .and_then(|r| r.find('\\'))
             .map(|q| q + p + 1);
+    }
+}
+
+#[cfg(test)]
+mod authored_fallback_test {
+    use super::*;
+
+    #[test]
+    fn format_plain_reads_its_body_for_the_authored_fallback() {
+        let body = "[a *[a][]*[x]: /u\n".repeat(122);
+        assert_eq!(format_plain(&body).as_deref(), Some(body.as_str()));
     }
 }
 
