@@ -18,6 +18,30 @@ const HELD: &[(&str, &str)] = &[
         "carve#6846: the C2-W-088 fallback keeps earlier authored blocks (cumulative)",
     ),
     (
+        "CC-2427",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
+        "CC-2428",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
+        "CC-2429",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
+        "CC-2430",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
+        "CC-2431",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
+        "CC-2432",
+        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
+    ),
+    (
         "CC-501",
         "carve#3598 (carve#6812 G3): metadata.fields beside leading frontmatter is a loss",
     ),

@@ -884,11 +884,15 @@ impl StandardExtensions {
                 .as_object()
                 .ok_or_else(|| usage(format!("the options of {name} are not a JSON object")))?;
             for (option, setting) in settings {
-                let values = &declared["rendererOptions"][option]["values"];
+                let row = &declared["rendererOptions"][option];
+                let values = &row["values"];
                 if values.is_null() {
                     return Err(usage(format!("{name} has no renderer option {option}")));
                 }
-                if !values.as_array().is_some_and(|v| v.contains(setting)) {
+                // An `open` option takes any string; its values are the ones
+                // with a meaning of their own (C2-X-075).
+                let open = row["open"] == true && setting.is_string();
+                if !open && !values.as_array().is_some_and(|v| v.contains(setting)) {
                     return Err(usage(format!("bad value for the {name} option {option}")));
                 }
             }
