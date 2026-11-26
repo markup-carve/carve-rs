@@ -496,6 +496,17 @@ impl<'a> Builder<'_, 'a> {
                     ..Default::default()
                 }))
             }
+            LeafKind::SnippetDef { name, value } => {
+                let children = self.inline(ContentKind::Paragraph, &crate::block::table::Pieces::One(Some(value)));
+                Node::SnippetDefinition(self.arena.alloc(ast::SnippetDefinition {
+                    name: self.s(&name),
+                    children,
+                    attrs: self.at(attrs),
+                    lang,
+                    pos,
+                    ..Default::default()
+                }))
+            }
             other => self.other_leaf(other, attrs, lang, pos, start, end),
         };
         self.children().push(node);
@@ -586,6 +597,15 @@ impl<'a> Builder<'_, 'a> {
                     ..Default::default()
                 }))
             }
+            LeafKind::SnippetUse { name } => {
+                let _ = (attrs, lang);
+                Node::SnippetUse(self.arena.alloc(ast::SnippetUse {
+                    name: self.s(&name),
+                    mode: ast::SnippetUseMode::Block,
+                    pos,
+                    ..Default::default()
+                }))
+            }
             LeafKind::LineBlock { entries } => {
                 let children = self
                     .arena
@@ -613,7 +633,8 @@ impl<'a> Builder<'_, 'a> {
             LeafKind::Paragraph { .. }
             | LeafKind::Heading { .. }
             | LeafKind::Term { .. }
-            | LeafKind::Caption { .. } => {
+            | LeafKind::Caption { .. }
+            | LeafKind::SnippetDef { .. } => {
                 Node::ThematicBreak(self.arena.alloc(ast::ThematicBreak::default()))
             }
         }

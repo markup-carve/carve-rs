@@ -666,6 +666,18 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// C2-I-043: the opening brace, first rule that matches.
     fn brace(&mut self) -> bool {
         let i = self.i;
+        // C2-I-128: a snippet use is read before the four forms.
+        if self.at(i + 1) == Some(b'{') {
+            if let Some((end, a, b)) = crate::snippet::use_at(self.t, i) {
+                let node = Node::SnippetUse(self.c.arena().alloc(crate::ast::SnippetUse {
+                    name: self.c.keep(self.t.get(a..b).unwrap_or("")),
+                    mode: crate::ast::SnippetUseMode::Inline,
+                    ..Default::default()
+                }));
+                self.leaf(i, end, node, false);
+                return true;
+            }
+        }
         if let Some((block, end)) = self.attr_block(i) {
             if block.empty {
                 return false;

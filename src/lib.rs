@@ -85,6 +85,7 @@ pub mod profile;
 pub mod reader;
 #[doc(hidden)]
 pub mod resolve;
+pub mod snippet;
 #[doc(hidden)]
 pub mod source;
 #[doc(hidden)]

@@ -77,6 +77,15 @@ pub enum LeafKind {
         options: serde_json::Map<String, serde_json::Value>,
         invalid: Vec<String>,
     },
+    /// C2-B-236: a snippet definition; its value is the inline content `value`.
+    SnippetDef {
+        name: String,
+        value: Piece,
+    },
+    /// C2-B-237: a use alone on its line.
+    SnippetUse {
+        name: String,
+    },
     /// One entry per body line; an empty piece for an empty line (C2-A-069).
     LineBlock {
         entries: Vec<LineBlockEntry>,

@@ -552,6 +552,20 @@ impl Parser<'_> {
             );
             return;
         }
+        if let Some(name) = r
+            .starts_with("{{")
+            .then(|| crate::snippet::block_use(r))
+            .flatten()
+        {
+            // C2-B-237: a block snippet use is tested before the include directive.
+            let (s, attrs) = self.take_pending(start, None);
+            let kind = LeafKind::SnippetUse {
+                name: name.to_string(),
+            };
+            self.push_leaf_event(kind, s, start + r.len(), attrs);
+            self.closed = None;
+            return;
+        }
         if let Some(inc) = r
             .starts_with("{{")
             .then(|| super::include::parse(r))
@@ -576,6 +590,9 @@ impl Parser<'_> {
                 depth: self.stack.len(),
                 target,
             });
+            return;
+        }
+        if self.stack.len() == 1 && k.col == 0 && self.open_snippet_def(r, start, e) {
             return;
         }
         if self.open_fence(k, m, e)
@@ -834,6 +851,30 @@ impl Parser<'_> {
     }
 
     /// Link and abbreviation definitions at column 0 (C2-B-081 to C2-B-084).
+    /// C2-B-236: a snippet definition, one line at column 0 outside every container.
+    fn open_snippet_def(&mut self, r: &str, start: usize, e: usize) -> bool {
+        if !r.starts_with("{$") {
+            return false;
+        }
+        let Some(m) = crate::snippet::marker(r) else {
+            return false;
+        };
+        let Some(value) = crate::snippet::value_start(r, &m) else {
+            return false;
+        };
+        let name = r.get(2..m.name_end).unwrap_or("").to_string();
+        let own = (!m.block.attrs.is_empty() || m.block.lang.is_some()).then_some(m.block);
+        let (s, attrs) = self.take_pending(start, own);
+        let value = Piece {
+            start: start + value,
+            end: e,
+            join: Join::Line,
+        };
+        self.push_leaf_event(LeafKind::SnippetDef { name, value }, s, start + r.len(), attrs);
+        self.closed = None;
+        true
+    }
+
     fn open_definition(&mut self, r: &str, start: usize, e: usize) -> bool {
         if let Some(d) = shapes::link_def(r) {
             // C2-B-083: a line-end attribute block leaves no tail to take.
