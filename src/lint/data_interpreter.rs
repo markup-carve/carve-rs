@@ -1060,8 +1060,16 @@ impl Scope<'_> {
             "fold_space" => Expr::FoldSpace(Box::new(self.compile(arg))),
             "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
             "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
-            "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
-            "run" if arg.as_str() == Some("id_extensions") => Expr::RunIdExtensions,
+            "run" => Self::compile_run(arg),
+            _ => Expr::Lit(Val::Null),
+        }
+    }
+
+    /// A field of the run: the registered extensions, or those that generate ids (C2-X-079).
+    fn compile_run(arg: &Value) -> Expr {
+        match arg.as_str() {
+            Some("extensions") => Expr::RunExtensions,
+            Some("id_extensions") => Expr::RunIdExtensions,
             _ => Expr::Lit(Val::Null),
         }
     }
