@@ -36,15 +36,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2240", "html"),
     ("CC-2246", "html"),
     ("CC-2248", "html"),
-    // carve#6832 (carve-rs line): a bare paragraph that would not import back keeps its <p>.
-    ("CC-2398", "html"),
-    ("CC-2399", "html"),
-    ("CC-2402", "html"),
-    ("CC-2403", "html"),
-    ("CC-2406", "html"),
-    ("CC-2407", "html"),
-    ("CC-2409", "html"),
-    ("CC-2410", "html"),
     // carve#6395: named snippets, `{$name}:` definitions and `{{ $name }}` uses.
     ("CC-2347", "children"),
     ("CC-2347", "html"),

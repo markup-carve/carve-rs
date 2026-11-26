@@ -43,8 +43,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2208", "children"),
     // carve#6850: CC-1425 predates C2-M-109 moving a dropped wrapper's comments out.
     ("CC-1425", "notReported:import-element-dropped"),
-    // carve#6832 (carve-rs line): a bare paragraph that would not import back keeps its <p>.
-    ("CC-2412", "children"),
 ];
 
 /// The import entries that carry an expected `carve` source (not compared).

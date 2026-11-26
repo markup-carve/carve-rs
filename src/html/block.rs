@@ -324,6 +324,27 @@ impl<'r, 'a> Renderer<'r, 'a> {
         p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children)
     }
 
+    /// C2-H-018: a paragraph C2-H-034 or C2-H-040 writes bare keeps its `<p>`
+    /// where the bare form would not import as that one paragraph: an
+    /// image-only run splits (C2-M-013), and a following bare block image
+    /// joins the run (C2-M-012).
+    fn bare_reads_back(&self, p: &ast::Paragraph, next: Option<&Node>) -> bool {
+        if let Some(n @ Node::Paragraph(x)) = next
+            && crate::resolve::order::caption_of(n).is_none()
+            && self.bare_image(x)
+        {
+            return false;
+        }
+        !(p.children.iter().any(|c| matches!(c, Node::Image(_)))
+            && p.children.iter().all(|c| match c {
+                Node::Image(i) => i.src.is_some() || i.key.is_none(),
+                Node::Comment(_) | Node::SoftBreak(_) => true,
+                Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
+                _ => false,
+            })
+            && self.profile_allows_type("image", false))
+    }
+
     /// C2-H-020: a block image is written without `<p>` unless it renders as
     /// the text of an unresolved reference.
     fn image_block_bare(&self, children: &[Node]) -> bool {
@@ -594,9 +615,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         } else if matches!(first, Node::Paragraph(p) if crate::resolve::order::caption_of(first).is_none() && !self.bare_image(p))
         {
             let last = rest.is_empty();
+            let bare = tight
+                && matches!(first, Node::Paragraph(p) if self.bare_reads_back(p, rest.first().copied()));
             self.line_with(depth, |r, out| {
                 out.push_str(open);
-                r.paragraph_into(first, tight, out);
+                r.paragraph_into(first, bare, out);
                 if last {
                     out.push_str("</li>");
                 }
@@ -749,11 +772,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let vis: Vec<&'r Node<'a>> = children.iter().filter(|c| visible(c)).collect();
         match vis.as_slice() {
             [] => self.line(depth, &format!("{open}</dd>")),
-            [p @ Node::Paragraph(_)]
-                if crate::resolve::order::caption_of(p).is_none()
-                    && !matches!(p, Node::Paragraph(x) if self.bare_image(x)) =>
+            [p @ Node::Paragraph(x)]
+                if crate::resolve::order::caption_of(p).is_none() && !self.bare_image(x) =>
             {
-                let s = self.paragraph(p, true).unwrap_or_default();
+                let bare = self.bare_reads_back(x, None);
+                let s = self.paragraph(p, bare).unwrap_or_default();
                 self.line(depth, &format!("{open}{s}</dd>"));
             }
             [Node::Include(i)] if i.caption.is_none() => {
