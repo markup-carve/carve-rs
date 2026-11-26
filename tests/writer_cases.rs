@@ -10,7 +10,10 @@ use carve::api::{
 use serde_json::Value;
 
 /// `(entry id, reason)`.
-const HELD: &[(&str, &str)] = &[];
+const HELD: &[(&str, &str)] = &[
+    // carve#6772 (carve-rs line): the escape rounds read references from the tree.
+    ("CC-2166", "carve#6772"),
+];
 
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
