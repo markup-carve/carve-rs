@@ -1053,6 +1053,9 @@ pub(crate) enum Ranged {
     End,
 }
 
+/// A `comment-start` not yet ended: its span, its comment id, and whether an inline followed it.
+type OpenComment = (Id, Option<String>, bool);
+
 /// C2-M-113: pairs each `comment-start` span with the first later `comment-end`
 /// span of the same `data-comment-id`, in document order.
 pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMap<Id, Ranged> {
@@ -1063,28 +1066,21 @@ pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMa
             .flatten()
             .and_then(|c| attrs::class_names(c).into_iter().next())
     };
-    let starts = |id: Id| first_class(id).as_deref() == Some("comment-start");
-    if !(0..dom.nodes.len()).any(starts) {
+    if !(0..dom.nodes.len()).any(|id| first_class(id).as_deref() == Some("comment-start")) {
         return out;
     }
-    // Open starts by comment id, with whether an inline has followed each.
-    let mut open: Vec<(Id, Option<String>, bool)> = Vec::new();
+    let mut open: Vec<OpenComment> = Vec::new();
     let mut stack: Vec<Id> = dom.children(dom.root).iter().rev().copied().collect();
     while let Some(id) = stack.pop() {
         let class = first_class(id);
         if class.as_deref() == Some("comment-start") {
-            let empty = dom.plain(id).is_empty();
-            for o in &mut open {
-                o.2 = true;
-            }
-            out.insert(
-                id,
-                if empty {
-                    Ranged::Empty
-                } else {
-                    Ranged::Start { lost: false }
-                },
-            );
+            follow(&mut open);
+            let kind = if dom.plain(id).is_empty() {
+                Ranged::Empty
+            } else {
+                Ranged::Start { lost: false }
+            };
+            out.insert(id, kind);
             open.push((
                 id,
                 dom.attr(id, "data-comment-id").map(str::to_string),
@@ -1092,32 +1088,46 @@ pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMa
             ));
             continue;
         }
-        if class.as_deref() == Some("comment-end") {
-            let key = dom.attr(id, "data-comment-id");
-            if let Some(at) = open
-                .iter()
-                .position(|o| key.is_some() && o.1.as_deref() == key)
-            {
-                let (start, _, lost) = open.remove(at);
-                if let Some(Ranged::Start { lost: l }) = out.get_mut(&start) {
-                    *l = lost;
-                }
-                if matches!(out.get(&start), Some(Ranged::Start { .. } | Ranged::Empty)) {
-                    out.insert(id, Ranged::End);
-                }
-                continue;
-            }
+        if class.as_deref() == Some("comment-end")
+            && end_comment(&mut open, &mut out, id, dom.attr(id, "data-comment-id"))
+        {
+            continue;
         }
         if dom.is_element(id) {
             stack.extend(dom.children(id).iter().rev().copied());
         }
         if dom.is_element(id) || (dom.is_text(id) && !dom.text(id).is_empty()) {
-            for o in &mut open {
-                o.2 = true;
-            }
+            follow(&mut open);
         }
     }
     out
+}
+
+fn follow(open: &mut [OpenComment]) {
+    for o in open {
+        o.2 = true;
+    }
+}
+
+/// Ends the open comment of `key`, if one is open; a marker without an id ends none.
+fn end_comment(
+    open: &mut Vec<OpenComment>,
+    out: &mut std::collections::HashMap<Id, Ranged>,
+    id: Id,
+    key: Option<&str>,
+) -> bool {
+    let Some(at) = open
+        .iter()
+        .position(|o| key.is_some() && o.1.as_deref() == key)
+    else {
+        return false;
+    };
+    let (start, _, lost) = open.remove(at);
+    if let Some(Ranged::Start { lost: l }) = out.get_mut(&start) {
+        *l = lost;
+    }
+    out.insert(id, Ranged::End);
+    true
 }
 
 const NEEDS_CONTENT: &[&str] = &[
