@@ -14,7 +14,9 @@ fn run(args: &[&str], input: &str) -> (i32, String, String) {
         .spawn()
         .unwrap();
     // A usage error exits before reading stdin, so the write may hit a closed pipe.
-    let _ = child.stdin.take().unwrap().write_all(input.as_bytes());
+    if let Err(err) = child.stdin.take().unwrap().write_all(input.as_bytes()) {
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe, "{err}");
+    }
     let output = child.wait_with_output().unwrap();
     (
         output.status.code().unwrap(),
