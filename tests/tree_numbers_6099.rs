@@ -124,3 +124,20 @@ fn a_key_with_escapes_is_unescaped_in_the_path() {
         Some("/metadata/fields/a~1b~0\"c/value")
     );
 }
+
+#[test]
+fn a_call_is_refused_only_for_a_tree_it_reads() {
+    let lost = r#"{"x":9007199254740993}"#;
+    let out: Value = serde_json::from_str(&call(&format!(
+        r#"{{"call":"parse","source":"a","tree":{lost},"a":{lost}}}"#
+    )))
+    .unwrap();
+    assert!(out.get("ok").is_some(), "{out}");
+    let out: Value = serde_json::from_str(&call(&format!(
+        r#"{{"call":"diffTree","a":{},"b":{},"tree":{lost}}}"#,
+        metadata("1"),
+        metadata("9007199254740993"),
+    )))
+    .unwrap();
+    assert_eq!(out["error"]["path"], "/metadata/fields/n/value", "{out}");
+}

@@ -73,21 +73,35 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
 }
 
 /// C2-A-219: a number of a supplied tree that `serde_json` would round, read
-/// from the request text before it does.
+/// from the request text before it does. Text that does not parse names no
+/// call, so every tree member is read.
 fn lost_tree_number(request: &str, req: Option<&Value>) -> Option<Error> {
-    const TREES: [&str; 3] = ["/tree", "/a", "/b"];
+    let trees: &[&str] = match req.map(|r| r.get("call").and_then(Value::as_str)) {
+        None => &["/tree", "/a", "/b"],
+        Some(Some("diffTree")) => &["/a", "/b"],
+        Some(Some(
+            "parse"
+            | "parseWithDiagnostics"
+            | "parseWithLayout"
+            | "lint"
+            | "format"
+            | "formatWithDiagnostics"
+            | "importDocument",
+        )) => &[],
+        Some(_) => &["/tree"],
+    };
     let member = |path: &str| {
-        TREES.into_iter().find(|t| {
+        trees.iter().copied().find(|t| {
             path.strip_prefix(t)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         })
     };
-    if req.is_some_and(|r| TREES.iter().all(|t| r.pointer(t).is_none())) {
+    if req.is_some_and(|r| trees.iter().all(|t| r.pointer(t).is_none())) {
         return None;
     }
     match crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some()) {
         crate::tree_number::Scan::Lost(path) => {
-            let inner = member(&path).map_or("", |t| &path[t.len()..]);
+            let inner = member(&path).map_or("", |t| path.get(t.len()..).unwrap_or(""));
             Some(Error::Tree(crate::reader::lost_number(inner)))
         }
         _ => None,
