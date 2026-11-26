@@ -429,6 +429,11 @@ impl State<'_> {
             self.saw_root = true;
             self.root_self_closed = self_close;
         }
+        self.write_open(name, raw, is_root, self_close);
+        true
+    }
+
+    fn write_open(&mut self, name: &str, raw: &str, is_root: bool, self_close: bool) {
         let mut tag = String::with_capacity(name.len() + raw.len() + 48);
         tag.push('<');
         tag.push_str(name);
@@ -449,7 +454,6 @@ impl State<'_> {
             self.kept
                 .push((name.to_string(), self.out.len(), xlink_bound));
         }
-        true
     }
 
     fn tag_allowed(&self, name: &str) -> bool {
