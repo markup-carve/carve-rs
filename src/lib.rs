@@ -270,7 +270,7 @@ pub fn render_tree_with_diagnostics(
     let mut expanded = Vec::new();
     let _snippets = expand_tree(&mut doc, opts, &arena, &mut expanded);
     let files = resolve_tree(&mut doc, opts, &arena);
-    let (html, losses, derived, extension_nodes, destinations) =
+    let (html, losses, derived, extension_nodes, destinations, profiles) =
         html::render_tree_parts(&doc, opts, files.as_ref(), None, None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
@@ -279,8 +279,11 @@ pub fn render_tree_with_diagnostics(
         &doc,
         losses,
         derived,
-        &extension_nodes,
-        &destinations,
+        &TreeLossRecords {
+            extension_nodes: &extension_nodes,
+            destinations: &destinations,
+            profiles: &profiles,
+        },
         opts,
         None,
     ));
@@ -370,14 +373,17 @@ pub(crate) fn render_arena_hooked<'a>(
     hook: &dyn html::ExtensionHook,
     shift_override: Option<&heading_shift::Found>,
 ) -> Rendered {
-    let (html, losses, derived, extension_nodes, destinations) =
+    let (html, losses, derived, extension_nodes, destinations, profiles) =
         html::render_tree_parts(doc, opts, files, Some(hook), shift_override.cloned());
     let mut diagnostics = tree_loss_diagnostics(
         doc,
         unallowed(losses, opts),
         derived,
-        &extension_nodes,
-        &destinations,
+        &TreeLossRecords {
+            extension_nodes: &extension_nodes,
+            destinations: &destinations,
+            profiles: &profiles,
+        },
         opts,
         shift_override,
     );
@@ -584,15 +590,22 @@ fn node_paths_by<'a>(
     found
 }
 
+/// The renderer's records that name what each tree loss is about.
+struct TreeLossRecords<'r> {
+    extension_nodes: &'r [(usize, String)],
+    destinations: &'r [html::DestinationLoss],
+    profiles: &'r [html::ProfileLoss],
+}
+
 fn tree_loss_diagnostics(
     doc: &ast::Document<'_>,
     losses: Vec<&'static str>,
     derived: Option<usize>,
-    extension_nodes: &[(usize, String)],
-    destination_losses: &[html::DestinationLoss],
+    records: &TreeLossRecords<'_>,
     opts: &Options,
     shift_override: Option<&heading_shift::Found>,
 ) -> Vec<diagnostic::Diagnostic> {
+    let (extension_nodes, destination_losses) = (records.extension_nodes, records.destinations);
     let shift = opts.heading_shift.to_string();
     let targets: std::collections::HashSet<usize> = extension_nodes
         .iter()
@@ -608,6 +621,8 @@ fn tree_loss_diagnostics(
     let node_path = |target: usize| paths.get(&target).cloned();
     let mut extensions = extension_nodes.iter();
     let mut destinations = destination_losses.iter();
+    let mut profiles = records.profiles.iter();
+    let profile_name = opts.profile.name();
     losses
         .into_iter()
         .map(|code| {
@@ -616,10 +631,16 @@ fn tree_loss_diagnostics(
             } else {
                 None
             };
-            let values = match (name, code) {
-                (Some((_, name)), _) => vec![("name", name.as_str())],
-                (None, heading_shift::ABOVE_6) => vec![("shift", shift.as_str())],
-                (None, _) => Vec::new(),
+            let profile = if code == "profile-construct-degraded" {
+                profiles.next()
+            } else {
+                None
+            };
+            let values = match (name, profile, code) {
+                (Some((_, name)), _, _) => vec![("name", name.as_str())],
+                (None, Some(p), _) => vec![("profile", profile_name), ("construct", p.construct)],
+                (None, None, heading_shift::ABOVE_6) => vec![("shift", shift.as_str())],
+                (None, None, _) => Vec::new(),
             };
             let pos = (code == heading_shift::ABOVE_6)
                 .then(|| {
@@ -628,8 +649,11 @@ fn tree_loss_diagnostics(
                         .unwrap_or_else(|| heading_shift::first_above_6(doc.children, &|_| None))
                 })
                 .flatten()
-                .and_then(|(pos, _)| pos);
-            let mut finding = diagnostic::Diagnostic::new(code, &values, None, pos);
+                .and_then(|(pos, _)| pos)
+                .or_else(|| profile.and_then(|p| p.pos));
+            let variant = usize::from(profile.is_some_and(|p| p.nesting));
+            let file = profile.and_then(|p| p.file.as_deref());
+            let mut finding = diagnostic::Diagnostic::nth(code, variant, &values, file, pos);
             if code == heading_shift::ABOVE_6 {
                 finding.message = heading_shift::message(opts.heading_shift);
             }

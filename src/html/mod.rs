@@ -53,6 +53,7 @@ type TreeParts = (
     Option<usize>,
     Vec<(usize, String)>,
     Vec<DestinationLoss>,
+    Vec<ProfileLoss>,
 );
 
 pub(crate) fn render_tree_parts<'a>(
@@ -86,6 +87,7 @@ pub(crate) fn render_body_parts<'a>(
         r.derived_failure,
         r.extension_loss_nodes,
         r.destination_losses,
+        r.profile_losses,
     )
 }
 
