@@ -164,6 +164,7 @@ pub fn set_lang<'a>(node: &mut Node<'a>, lang: Option<&'a str>) {
         Node::Autolink(n) => &mut n.lang,
         Node::FootnoteRef(n) => &mut n.lang,
         Node::Symbol(n) => &mut n.lang,
+        Node::CriticComment(n) => &mut n.lang,
         Node::Image(n) => &mut n.lang,
         Node::Span(n) => &mut n.lang,
         Node::Link(n) => &mut n.lang,

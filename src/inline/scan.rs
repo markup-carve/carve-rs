@@ -769,7 +769,7 @@ impl<'a> Scanner<'_, '_, 'a> {
                 value,
                 ..Default::default()
             })),
-            false,
+            true,
         );
         true
     }

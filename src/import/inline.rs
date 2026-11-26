@@ -340,7 +340,10 @@ impl Cx {
         let children = self.inline_children(id);
         let tag = self.dom.tag_name(id);
         if let Some(kind) = format_kind(&tag) {
-            let mapped = self.plain_attrs(id);
+            let mut mapped = self.plain_attrs(id);
+            if matches!(kind, "insert" | "delete") {
+                revision_keys(&mut mapped, &[("data-author", "author")]);
+            }
             return self.non_empty(vec![with(kind, children, &mapped)], id);
         }
         match &*tag {
@@ -407,7 +410,10 @@ impl Cx {
     fn carve_inline(&mut self, id: Id) -> Option<Vec<Value>> {
         match self.dom.tag(id)? {
             "a" => self.footnote_inline(id).or_else(|| self.anchor_carrier(id)),
-            "span" => self.span_carrier(id).or_else(|| self.classed_span(id)),
+            "span" => self
+                .ranged_comment(id)
+                .or_else(|| self.span_carrier(id))
+                .or_else(|| self.classed_span(id)),
             "sup" => self.note_sup(id),
             _ => None,
         }
@@ -648,9 +654,12 @@ impl Cx {
         if first == "critic-comment" {
             let mut m = node("critic_comment");
             m.insert("value".into(), self.dom.plain(id).into());
-            self.plain_attrs(id)
-                .without_classes(&[&first])
-                .apply(&mut m);
+            let mut mapped = self.plain_attrs(id).without_classes(&[&first]);
+            revision_keys(
+                &mut mapped,
+                &[("data-author", "author"), ("data-datetime", "datetime")],
+            );
+            mapped.apply(&mut m);
             return Some(vec![Value::Object(m)]);
         }
         if first == "mention" || first == "tag" {
@@ -669,6 +678,42 @@ impl Cx {
             return Some(vec![Value::Object(m)]);
         }
         None
+    }
+
+    /// C2-M-113: a ranged comment is a point comment at its start; its end span is dropped.
+    fn ranged_comment(&mut self, id: Id) -> Option<Vec<Value>> {
+        match *self.ranged.get(&id)? {
+            Ranged::End => Some(Vec::new()),
+            Ranged::Empty => {
+                self.report(
+                    id,
+                    Code::ElementDropped,
+                    "Ranged comment without text dropped",
+                );
+                Some(Vec::new())
+            }
+            Ranged::Start { lost } => {
+                let mut m = node("critic_comment");
+                m.insert("value".into(), self.dom.plain(id).into());
+                let mut mapped = self
+                    .plain_attrs(id)
+                    .without_classes(&["comment-start"])
+                    .without_keys(&["data-comment-id"]);
+                revision_keys(
+                    &mut mapped,
+                    &[("data-author", "author"), ("data-date", "datetime")],
+                );
+                mapped.apply(&mut m);
+                if lost {
+                    self.report(
+                        id,
+                        Code::StructureRepaired,
+                        "Ranged comment read as a point comment; its range is lost",
+                    );
+                }
+                Some(vec![Value::Object(m)])
+            }
+        }
     }
 
     /// C2-H-102: a formula between the delimiters of its display.
@@ -982,6 +1027,94 @@ impl Cx {
             .apply(&mut m);
         with_destination(Value::Object(m))
     }
+}
+
+/// C2-M-044: a carrier name read back as its revision key, unless that key is authored too.
+fn revision_keys(mapped: &mut Mapped, names: &[(&str, &str)]) {
+    let kv = &mut mapped.attrs.key_values;
+    for &(from, to) in names {
+        if kv.iter().any(|(k, _)| k == to) {
+            continue;
+        }
+        if let Some(entry) = kv.iter_mut().find(|(k, _)| k == from) {
+            entry.0 = to.to_string();
+        }
+    }
+}
+
+/// The role of a span in a ranged comment (C2-M-113).
+#[derive(Clone, Copy)]
+pub(crate) enum Ranged {
+    Start {
+        lost: bool,
+    },
+    /// A start without text, dropped with its end.
+    Empty,
+    End,
+}
+
+/// C2-M-113: pairs each `comment-start` span with the first later `comment-end`
+/// span of the same `data-comment-id`, in document order.
+pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMap<Id, Ranged> {
+    let mut out = std::collections::HashMap::new();
+    let first_class = |id: Id| {
+        dom.is(id, "span")
+            .then(|| dom.attr(id, "class"))
+            .flatten()
+            .and_then(|c| attrs::class_names(c).into_iter().next())
+    };
+    let starts = |id: Id| first_class(id).as_deref() == Some("comment-start");
+    if !(0..dom.nodes.len()).any(starts) {
+        return out;
+    }
+    // Open starts by comment id, with whether an inline has followed each.
+    let mut open: Vec<(Id, Option<String>, bool)> = Vec::new();
+    let mut stack: Vec<Id> = dom.children(dom.root).iter().rev().copied().collect();
+    while let Some(id) = stack.pop() {
+        let class = first_class(id);
+        if class.as_deref() == Some("comment-start") {
+            let empty = dom.plain(id).is_empty();
+            for o in &mut open {
+                o.2 = true;
+            }
+            out.insert(
+                id,
+                if empty {
+                    Ranged::Empty
+                } else {
+                    Ranged::Start { lost: false }
+                },
+            );
+            open.push((
+                id,
+                dom.attr(id, "data-comment-id").map(str::to_string),
+                false,
+            ));
+            continue;
+        }
+        if class.as_deref() == Some("comment-end") {
+            let key = dom.attr(id, "data-comment-id");
+            if let Some(at) = open.iter().position(|o| o.1.as_deref() == key) {
+                let (start, _, lost) = open.remove(at);
+                if let Some(Ranged::Start { lost: l }) = out.get_mut(&start) {
+                    *l = lost;
+                }
+                if matches!(out.get(&start), Some(Ranged::Start { .. } | Ranged::Empty)) {
+                    out.insert(id, Ranged::End);
+                }
+                continue;
+            }
+        }
+        if dom.is_element(id) {
+            stack.extend(dom.children(id).iter().rev().copied());
+        }
+        if dom.is_element(id) || (dom.is_text(id) && !dom.text(id).is_empty()) {
+            for o in &mut open {
+                o.2 = true;
+            }
+        }
+    }
+    out
 }
 
 const NEEDS_CONTENT: &[&str] = &[

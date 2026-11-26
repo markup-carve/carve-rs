@@ -46,6 +46,8 @@ pub(crate) struct Cx {
     definitions: Vec<(String, Value)>,
     anchor_keys: HashSet<String>,
     templates: HashMap<Id, Vec<Value>>,
+    /// C2-M-113: the spans of the ranged comments.
+    ranged: HashMap<Id, inline::Ranged>,
 }
 
 /// The codes of C2-M-083.
@@ -88,6 +90,7 @@ impl Cx {
             definitions: Vec::new(),
             anchor_keys: HashSet::new(),
             templates: HashMap::new(),
+            ranged: HashMap::new(),
         }
     }
 
@@ -223,6 +226,7 @@ pub(crate) fn build(
         adapter::note_pass(&mut dom);
     }
     let mut cx = Cx::new(dom, raw_html);
+    cx.ranged = inline::ranged_comments(&cx.dom);
     if !full {
         fragment_body(input, &mut cx);
     }

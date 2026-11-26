@@ -65,6 +65,9 @@ pub struct El<'a> {
     pub skip_keys: &'static [&'static str],
     /// Semantic span keys match only the authored lower-case spelling (C2-H-075).
     pub skip_semantic_keys: crate::api::extensions::SemanticKeys,
+    /// Keys written under another name, in place; an authored key of that
+    /// name wins and the renamed one is dropped (C2-H-210).
+    pub rename: &'static [(&'static str, &'static str)],
 }
 
 /// The render switches the filter reads.
@@ -258,8 +261,20 @@ impl<'a> El<'a> {
                 }
                 self.structural.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
             }
+            let k = match self.rename.iter().find(|(from, _)| from == k) {
+                Some((_, to))
+                    if attrs
+                        .key_values
+                        .iter()
+                        .any(|(a, _)| a.eq_ignore_ascii_case(to)) =>
+                {
+                    continue;
+                }
+                Some((_, to)) => *to,
+                None => *k,
+            };
             self.generated.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
-            out.push((*k, url::filter_value_in(k, v, f.policy)));
+            out.push((k, url::filter_value_in(k, v, f.policy)));
         }
         (out, align_at)
     }

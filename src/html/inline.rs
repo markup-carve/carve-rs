@@ -28,6 +28,11 @@ fn wrapper_tag(n: &Node) -> Option<&'static str> {
     })
 }
 
+/// C2-H-210: the revision keys on `<ins>` and `<del>`, and on a comment span.
+const REVISION_KEYS: &[(&str, &str)] = &[("author", "data-author")];
+const COMMENT_REVISION_KEYS: &[(&str, &str)] =
+    &[("author", "data-author"), ("datetime", "data-datetime")];
+
 fn span_value(s: &ast::Span<'_>, key: &str, exact: bool) -> Option<String> {
     s.attrs
         .as_ref()
@@ -254,7 +259,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             Node::Comment(_) => {}
             Node::CriticComment(c) => {
-                out.push_str("<span class=\"critic-comment\">");
+                out.push_str("<span");
+                let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
+                el.base.push("critic-comment".into());
+                el.rename = COMMENT_REVISION_KEYS;
+                el.write_into(self.filter(), out);
+                out.push('>');
                 esc::text(c.value, out);
                 out.push_str("</span>");
             }
@@ -325,6 +335,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(attrs, lang).with_dir(dir);
         if small {
             el.base.push("smallcaps".into());
+        }
+        if matches!(n, Node::Insert(_) | Node::Delete(_)) {
+            el.rename = REVISION_KEYS;
         }
         el.write_into(self.filter(), out);
     }
