@@ -530,9 +530,7 @@ pub fn target(node: V<'_>, href: &str, pipes: bool) -> String {
 
 /// C2-W-075, C2-W-084: the verbatim text of a reference, where the sidecar holds it.
 pub fn raw_reference(w: &Writer<'_>, node: V<'_>, flags: u32) -> Option<String> {
-    if w.tree_refs || w.tree_ref_ids.contains(&id(node)) {
-        return None;
-    }
+    w.recorded_raw(node)?;
     verbatim_reference(w, node, flags)
 }
 

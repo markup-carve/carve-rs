@@ -286,6 +286,15 @@ impl<'t> Writer<'t> {
         self.facts.as_ref()?.get(&id(n))
     }
 
+    /// C2-W-075: the verbatim text the sidecar records for reference `n`, where the writer may take it now.
+    pub fn recorded_raw<'v>(&self, n: impl Into<V<'v>>) -> Option<&str> {
+        let n = n.into();
+        if self.tree_refs || self.tree_ref_ids.contains(&id(n)) {
+            return None;
+        }
+        self.fact(n)?.raw_ref.as_deref()
+    }
+
     /// C2-W-069: gives `n` its braced form.
     pub fn brace<'v>(&mut self, n: impl Into<V<'v>>) {
         let n = id(n);

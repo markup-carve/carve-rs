@@ -492,7 +492,7 @@ fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
     if matches!(ty(node), "emphasis" | "strong" | "comment") {
         return true;
     }
-    has(node, "key") && w.fact(node).is_some_and(|f| f.raw_ref.is_some())
+    has(node, "key") && w.recorded_raw(node).is_some()
 }
 
 /// The last text node below `node`, or `node` itself where it is one.
@@ -1114,8 +1114,7 @@ fn scan_text_note_closers<'t>(
 
 /// C2-W-075: a reference written as it was authored keeps its caret as spelled, so only a bare one takes case eight.
 fn bare_authored_caret(w: &Writer<'_>, link: V<'_>) -> bool {
-    w.fact(link)
-        .and_then(|f| f.raw_ref.as_deref())
+    w.recorded_raw(link)
         .is_none_or(|raw| raw.starts_with("[^"))
 }
 
