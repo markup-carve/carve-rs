@@ -642,3 +642,81 @@ pub(crate) fn expand<'a>(
     let before = SIDE.with(|s| s.borrow_mut().replace(side));
     Some(Guard(Some(before)))
 }
+
+/// The positions of the definitions a document transform receives, which tell
+/// a definition it kept from one it added (C2-N-095).
+pub(crate) fn definition_marks(nodes: &[Node<'_>]) -> std::collections::HashSet<(u32, u32, u32)> {
+    let mut out = std::collections::HashSet::new();
+    registry_walk(nodes, 0, None, &mut |d, _, _| {
+        if let Some(p) = d.pos {
+            out.insert((p.start_line, p.start_offset, p.end_offset));
+        }
+    });
+    out
+}
+
+/// C2-N-095: in a view a document transform returned, a snippet use is
+/// written as its source text and a definition the transform added enters no
+/// registry; each reports `snippet-unexpanded-transform`.
+pub(crate) fn refuse_transformed<'a>(
+    doc: &mut ast::Document<'a>,
+    arena: &'a Arena,
+    authored: &std::collections::HashSet<(u32, u32, u32)>,
+) -> Vec<Finding> {
+    let mut found = Vec::new();
+    refuse_list(doc.children, arena, authored, true, &mut found);
+    found
+}
+
+fn refuse_list<'a>(
+    list: &mut [Node<'a>],
+    arena: &'a Arena,
+    authored: &std::collections::HashSet<(u32, u32, u32)>,
+    top: bool,
+    found: &mut Vec<Finding>,
+) {
+    for n in list.iter_mut() {
+        refuse_node(n, arena, authored, top, found);
+    }
+}
+
+fn refuse_node<'a>(
+    n: &mut Node<'a>,
+    arena: &'a Arena,
+    authored: &std::collections::HashSet<(u32, u32, u32)>,
+    top: bool,
+    found: &mut Vec<Finding>,
+) {
+    let finding = |addr| Finding {
+        code: "snippet-unexpanded-transform",
+        name: String::new(),
+        pos: None,
+        file: None,
+        addr,
+        limit: None,
+    };
+    match n {
+        Node::SnippetUse(u) => {
+            let out = spelled(arena, u.name, u.mode == ast::SnippetUseMode::Block, u.pos);
+            found.push(finding(out.payload_addr()));
+            *n = out;
+        }
+        Node::SnippetDefinition(d) => {
+            let kept = d
+                .pos
+                .is_some_and(|p| authored.contains(&(p.start_line, p.start_offset, p.end_offset)));
+            if !top || !kept {
+                found.push(finding(n.payload_addr()));
+            }
+        }
+        Node::Include(i) => {
+            if let Some(children) = &mut i.children {
+                refuse_list(children, arena, authored, true, found);
+            }
+        }
+        _ => n.for_each_slot_mut(&mut |slot| match slot {
+            SlotMut::List(l) => refuse_list(l, arena, authored, false, found),
+            SlotMut::One(c) => refuse_node(c, arena, authored, false, found),
+        }),
+    }
+}

@@ -198,6 +198,44 @@ pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Documen
     Ok(parse_resolved_in(input, opts, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
+/// C2-N-091: expands the snippet uses of a supplied tree in its render arena;
+/// each finding names the path of the text that stands in place of its use.
+pub(crate) fn expand_tree<'a>(
+    doc: &mut ast::Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Option<snippet::expand::Guard> {
+    let mut found = Vec::new();
+    let settings = snippet::expand::Settings {
+        roundtrip: opts.roundtrip,
+        source_len: usize::try_from(doc.src_byte_length.unwrap_or(0)).unwrap_or(0),
+    };
+    let guard = snippet::expand::expand(doc, arena, settings, &mut found);
+    diags.extend(snippet_diagnostics(doc, &found));
+    guard
+}
+
+/// The diagnostics of `found`, each with the path of the node in place of its use.
+pub(crate) fn snippet_diagnostics(
+    doc: &ast::Document<'_>,
+    found: &[snippet::expand::Finding],
+) -> Vec<diagnostic::Diagnostic> {
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let targets = found.iter().map(|f| f.addr).collect();
+    let paths = node_paths_by(doc.children, &targets, |n| n.payload_addr());
+    found
+        .iter()
+        .map(|f| {
+            let mut d = f.diagnostic();
+            d.path = paths.get(&f.addr).cloned();
+            d
+        })
+        .collect()
+}
+
 #[doc(hidden)]
 /// Renders a supplied tree after running resolution anew (C2-A-135).
 ///
@@ -208,6 +246,7 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     heading_shift::apply(doc.children, opts.heading_shift);
+    let _snippets = expand_tree(&mut doc, opts, &arena, &mut Vec::new());
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses) = html::render_with_losses(&doc, opts);
@@ -227,12 +266,15 @@ pub fn render_tree_with_diagnostics(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     heading_shift::apply(doc.children, opts.heading_shift);
+    let mut expanded = Vec::new();
+    let _snippets = expand_tree(&mut doc, opts, &arena, &mut expanded);
     let files = resolve_tree(&mut doc, opts, &arena);
     let (html, losses, derived, extension_nodes, destinations) =
         html::render_tree_parts(&doc, opts, files.as_ref(), None, None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
-    let mut diagnostics = tree_loss_diagnostics(
+    let mut diagnostics = expanded;
+    diagnostics.extend(tree_loss_diagnostics(
         &doc,
         losses,
         derived,
@@ -240,7 +282,7 @@ pub fn render_tree_with_diagnostics(
         &destinations,
         opts,
         None,
-    );
+    ));
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
             diagnostic.severity = "error";
@@ -265,6 +307,25 @@ pub(crate) fn resolved_owned(tree: &ast::owned::Document, opts: &Options) -> ast
     let mut doc = tree.in_arena(&arena);
     let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
     doc.owned()
+}
+
+/// [`resolved_owned`] of the view a document transform receives: its snippet
+/// uses expanded (C2-N-091), with the findings of the expansion and the
+/// positions of its definitions.
+pub(crate) fn resolved_owned_expanded(
+    tree: &ast::owned::Document,
+    opts: &Options,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> (
+    ast::owned::Document,
+    std::collections::HashSet<(u32, u32, u32)>,
+) {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    let _snippets = expand_tree(&mut doc, opts, &arena, diags);
+    let marks = snippet::expand::definition_marks(doc.children);
+    let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
+    (doc.owned(), marks)
 }
 
 /// Resolves a supplied tree again (C2-A-135). The children of an expanded
@@ -484,6 +545,15 @@ fn node_paths(
     nodes: &[ast::Node<'_>],
     targets: &std::collections::HashSet<usize>,
 ) -> std::collections::HashMap<usize, String> {
+    node_paths_by(nodes, targets, resolve::order::addr)
+}
+
+/// [`node_paths`] with the targets named by `key`.
+fn node_paths_by(
+    nodes: &[ast::Node<'_>],
+    targets: &std::collections::HashSet<usize>,
+    key: fn(&ast::Node<'_>) -> usize,
+) -> std::collections::HashMap<usize, String> {
     use PathItem::{Array, One};
     let mut found = std::collections::HashMap::new();
     let mut pending = if targets.is_empty() {
@@ -499,7 +569,7 @@ fn node_paths(
                 }
             }
             One(node, path) => {
-                let addr = resolve::order::addr(node);
+                let addr = key(node);
                 if targets.contains(&addr) {
                     found.entry(addr).or_insert_with(|| path.clone());
                     if found.len() == targets.len() {

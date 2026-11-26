@@ -435,6 +435,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
             body_depth: None,
             node_lists: Vec::new(),
         };
+        // C2-N-094: the snippet copies drew on the budget first; the renderer goes on from what they left.
+        if let Some(b) = crate::snippet::expand::with_side(|side| side.and_then(|s| s.budget)) {
+            r.derived_remaining = b.left;
+            r.derived_exhausted = b.reported;
+        } else if let Some(lowered) = crate::snippet::expand::test_derived_bytes() {
+            r.derived_remaining = lowered;
+        }
         r.index();
         r
     }

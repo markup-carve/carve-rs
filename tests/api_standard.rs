@@ -16,13 +16,28 @@ const HELD: &[&str] = &[
     "CC-2187",
     // carve#6811: an xmlns:xlink value without whitespace stays.
     "CC-2275",
-    // carve#6395: named snippets.
-    "CC-2372", "CC-2377", "CC-2378", "CC-2379", "CC-2380", "CC-2383", "CC-2384",
-    "CC-2437", "CC-2438",
 ];
 
 fn call(request: &Value) -> Value {
     parse_json(&api::json::call(&request.to_string()))
+}
+
+/// A call with a resolver that serves exactly `files`, each under its name (includes.md, conventions).
+fn call_serving(request: &Value, files: &Value) -> Value {
+    let map: std::collections::BTreeMap<String, Vec<u8>> = files
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, f)| Some((name.clone(), f["text"].as_str()?.as_bytes().to_vec())))
+        .collect();
+    let resolver: carve::include::Resolver =
+        std::sync::Arc::new(move |r: &carve::include::Request<'_>| {
+            map.get(r.path)
+                .map(|bytes| (bytes.clone(), r.path.to_string()))
+                .ok_or(carve::include::Cause::NotFound)
+        });
+    let includes = carve::include::Includes::new(resolver);
+    parse_json(&api::json::call_with_includes(&request.to_string(), includes))
 }
 
 fn without_pos(v: &mut Value) {
@@ -54,7 +69,10 @@ fn check(case: &Value) -> Option<String> {
         } else {
             request["source"] = input.into();
         }
-        let out = call(&request);
+        let out = match case.get("files") {
+            Some(files) => call_serving(&request, files),
+            None => call(&request),
+        };
         let got = out["ok"]["html"].as_str().unwrap_or("");
         if let Some(html) = expected["html"].as_str().filter(|html| got != *html) {
             failures.push(format!(

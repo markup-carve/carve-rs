@@ -45,7 +45,12 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
         <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
     let response = match (lost_tree_number(request, parsed.as_ref().ok()), parsed) {
         (Some(lost), _) => Err(lost),
-        (None, Ok(req)) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
+        (None, Ok(req)) => match limits(&req) {
+            Ok(l) => crate::snippet::expand::with_limits(l, || {
+                host(&req).and_then(|h| dispatch(&h, &req, includes))
+            }),
+            Err(e) => Err(e),
+        },
         (None, Err(e)) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
@@ -353,6 +358,31 @@ fn render_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Res
     Ok(rendered(&host.render_with_diagnostics(input(&bytes), o)?))
 }
 
+/// `host.limits` of the conformance harness (conformance/README.md): the
+/// snippet limits and the derived-text budget of one case; no Carve option.
+fn limits(req: &Value) -> Result<crate::snippet::expand::Limits, Error> {
+    let mut out = crate::snippet::expand::Limits::default();
+    let Some(spec) = req.get("host").and_then(|h| h.get("limits")) else {
+        return Ok(out);
+    };
+    let Some(spec) = spec.as_object() else {
+        return Err(Error::option("limits", "not an object"));
+    };
+    for (key, value) in spec {
+        let n = value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| Error::option("limits", format!("{key} is not a count")))?;
+        match key.as_str() {
+            "snippetDepth" => out.depth = Some(n),
+            "snippetNodes" => out.nodes = Some(n),
+            "derivedTextBytes" => out.derived = Some(n),
+            _ => return Err(Error::option("limits", format!("unknown field {key}"))),
+        }
+    }
+    Ok(out)
+}
+
 /// PROVISIONAL: `host.documentTransforms`, a list of `{name, after, insert}` or `{name, after, setLevel}`
 /// that inserts the node `insert` after the node at the pointer `after`, in
 /// order (C2-X-053). `name` is the qualified name of the inserted extension.
@@ -365,6 +395,9 @@ fn host(req: &Value) -> Result<Carve, Error> {
         return Err(Error::option("host", "the host is not an object"));
     };
     for (key, list) in spec {
+        if key == "limits" {
+            continue;
+        }
         if key != "documentTransforms" {
             return Err(Error::option("host", format!("unknown field {key}")));
         }
@@ -382,10 +415,15 @@ fn host(req: &Value) -> Result<Carve, Error> {
             };
             let node = item.get("insert").filter(|n| n.is_object()).cloned();
             let set_level = item.get("setLevel").and_then(Value::as_i64);
-            if node.is_some() == set_level.is_some() {
+            let set_value = item.get("setValue").and_then(Value::as_str).map(str::to_string);
+            if usize::from(node.is_some())
+                + usize::from(set_level.is_some())
+                + usize::from(set_value.is_some())
+                != 1
+            {
                 return Err(Error::option(
                     "documentTransforms",
-                    "provide insert or setLevel",
+                    "provide insert, setLevel or setValue",
                 ));
             }
             let version = node
@@ -397,6 +435,8 @@ fn host(req: &Value) -> Result<Carve, Error> {
             let after = text("after")?;
             let transform: Box<dyn super::DocumentTransform> = if let Some(node) = node {
                 Box::new(super::extension::InsertTransform { after, node })
+            } else if let Some(value) = set_value {
+                Box::new(super::extension::SetValueTransform { after, value })
             } else {
                 Box::new(super::extension::SetLevelTransform {
                     after,

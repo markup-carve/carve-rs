@@ -762,6 +762,30 @@ impl DocumentTransform for InsertTransform {
     }
 }
 
+/// A conformance host action that sets the `value` of the node at `after`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetValueTransform {
+    pub after: String,
+    pub value: String,
+}
+
+impl DocumentTransform for SetValueTransform {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        let mut value: Value = crate::api::deep_json(&super::encode_tree(&view))
+            .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
+        let node = value
+            .pointer_mut(&self.after)
+            .filter(|n| n.get("value").is_some())
+            .ok_or_else(|| {
+                Error::option("documentTransforms", format!("no value at {}", self.after))
+            })?;
+        node["value"] = Value::from(self.value.clone());
+        let mut next = Tree::from_value(&value)?;
+        next.set_file(view.top.clone());
+        Ok(next)
+    }
+}
+
 /// A conformance host action that sets a heading's level after the core shift.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetLevelTransform {

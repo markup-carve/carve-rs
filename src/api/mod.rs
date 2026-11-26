@@ -1136,18 +1136,40 @@ impl Carve {
             self.extensions.has_transforms(),
         );
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
-        let (view, transform_entries) = if self.extensions.owned_transforms_only() {
-            let mut resolved = crate::resolved_owned(tree.document(), opts);
+        // C2-N-091: the view they receive is expanded; the findings of the expansion stand for it.
+        let mut snippets = Vec::new();
+        let mut authored = None;
+        let (view, mut transform_entries) = if self.extensions.owned_transforms_only() {
+            let (mut resolved, marks) =
+                crate::resolved_owned_expanded(tree.document(), opts, &mut snippets);
+            authored = Some(marks);
             self.extensions.transform_owned(&mut resolved);
             (Tree::render_view(resolved, tree.top), Vec::new())
         } else if self.extensions.has_transforms() {
-            let view = Tree::lazy_view(crate::resolved_owned(tree.document(), opts), tree.top);
+            let (resolved, marks) =
+                crate::resolved_owned_expanded(tree.document(), opts, &mut snippets);
+            authored = Some(marks);
+            let view = Tree::lazy_view(resolved, tree.top);
             self.extensions.transform(view)
         } else {
             (tree, Vec::new())
         };
         let arena = crate::Arena::new();
         let mut doc = view.document().in_arena(&arena);
+        let _guard = match &authored {
+            // C2-N-095: a view a transform returned is not expanded.
+            Some(marks) => {
+                let found = crate::snippet::expand::refuse_transformed(&mut doc, &arena, marks);
+                snippets.extend(crate::snippet_diagnostics(&doc, &found));
+                None
+            }
+            None => crate::expand_tree(&mut doc, opts, &arena, &mut snippets),
+        };
+        if !snippets.is_empty() {
+            let (mut entries, _) = record::cap_includes(&snippets);
+            entries.append(&mut transform_entries);
+            transform_entries = entries;
+        }
         let files = crate::resolve_tree(&mut doc, opts, &arena);
         self.render_arena(
             &doc,
