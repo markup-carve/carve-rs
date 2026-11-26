@@ -1,6 +1,6 @@
 //! C2-A-203, C2-A-207 and C2-A-214 annotation-range sidecar checks.
 
-use super::{TreeError, reader, schema};
+use super::{TreeError, check_opaque, extension_names, reader, schema};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -93,11 +93,40 @@ fn under(endpoint: &str, node: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
+fn qualified(name: &str) -> bool {
+    let part = |p: &str| {
+        let mut chars = p.chars();
+        chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    };
+    name.contains('.') && name.split('.').all(part)
+}
+
+/// C2-A-214: range data follows the node data rules of C2-A-029 and C2-A-189.
+/// A bad key is reported at the range's data, as the spec model does (CC-2481).
+fn check_range_data(
+    data: &Value,
+    path: &str,
+    declarations: &HashMap<String, Value>,
+) -> Result<(), TreeError> {
+    for (key, value) in data.as_object().into_iter().flatten() {
+        if !qualified(key) {
+            return Err(reader(path, "data key is not a qualified name"));
+        }
+        if !declarations.contains_key(key) {
+            return Err(reader(path, "undeclared data key"));
+        }
+        check_opaque(value, &format!("{path}/{key}"))?;
+    }
+    Ok(())
+}
+
 fn checked_ranges<'a>(
     root: &Value,
     annotations: &'a Value,
 ) -> Result<HashMap<&'a str, &'a Value>, TreeError> {
     schema::validate(annotations, sidecar_schema()?)?;
+    let declarations = extension_names(root)?;
     let mut ranges = HashMap::new();
     for (index, range) in annotations["ranges"]
         .as_array()
@@ -106,6 +135,9 @@ fn checked_ranges<'a>(
         .enumerate()
     {
         let id = range["id"].as_str().unwrap_or("");
+        if let Some(data) = range.get("data") {
+            check_range_data(data, &format!("/ranges/{index}/data"), &declarations)?;
+        }
         if ranges.insert(id, range).is_some() {
             return Err(reader(
                 &format!("/ranges/{index}/id"),
