@@ -161,3 +161,14 @@ fn carrier_inside_code_records_no_ordinal() {
     assert!(got.source.ends_with("{#n#}{{ $v }}y\n"), "{}", got.source);
     assert!(got.diagnostics.iter().any(|d| d.message == LOST));
 }
+
+#[test]
+fn block_carrier_ordinal_is_taken_before_the_range() {
+    let html = format!(
+        "<p data-carve-snippet=\"1:block:$v\">X</p>{START}{}{END}",
+        "<span data-carve-snippet=\"1:inline:$v\"></span>",
+    );
+    let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+    assert!(got.source.ends_with("{#n#}y\n"), "{}", got.source);
+    assert!(got.diagnostics.iter().all(|d| d.message != LOST));
+}

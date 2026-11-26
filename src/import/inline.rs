@@ -1165,6 +1165,14 @@ impl Walk {
         if class.as_deref() == Some("comment-end") && self.end(cx, id, place) {
             return;
         }
+        // The flow reads a block carrier before any later inline one takes its ordinal.
+        if attrs::is_block_element(&cx.dom, id)
+            && cx.dom.has(id, "data-carve-snippet")
+            && cx.block_snippet(id).is_some()
+        {
+            self.place(false);
+            return;
+        }
         let dom = &cx.dom;
         let inline = dom.is_element(id) && !opaque(dom, id) && !attrs::is_block_element(dom, id);
         let leaf = inline && dom.tag(id).is_some_and(|t| Cx::LEAVES.contains(&t));
