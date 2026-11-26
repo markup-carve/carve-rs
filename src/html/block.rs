@@ -345,6 +345,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
             && self.profile_allows_type("image", false))
     }
 
+    fn lead_bare(&self, first: &Node, next: Option<&Node>, tight: bool) -> bool {
+        tight && matches!(first, Node::Paragraph(p) if self.bare_reads_back(p, next))
+    }
+
     /// C2-H-020: a block image is written without `<p>` unless it renders as
     /// the text of an unresolved reference.
     fn image_block_bare(&self, children: &[Node]) -> bool {
@@ -615,8 +619,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         } else if matches!(first, Node::Paragraph(p) if crate::resolve::order::caption_of(first).is_none() && !self.bare_image(p))
         {
             let last = rest.is_empty();
-            let bare = tight
-                && matches!(first, Node::Paragraph(p) if self.bare_reads_back(p, rest.first().copied()));
+            let bare = self.lead_bare(first, rest.first().copied(), tight);
             self.line_with(depth, |r, out| {
                 out.push_str(open);
                 r.paragraph_into(first, bare, out);
