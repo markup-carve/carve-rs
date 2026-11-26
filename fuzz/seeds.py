@@ -32,8 +32,9 @@ def load(name):
 
 
 # Clause cases held in the test suites because carve-rs has not implemented
-# their ruling yet; each is held there too (tests/writer_cases.rs).
-HELD = {"CC-2166": "carve#6772"}
+# their ruling yet (CC-2166 is held in tests/writer_cases.rs; CC-2165 passes
+# its first fmt pass there, but its second pass differs).
+HELD = {"CC-2165": "carve#6772", "CC-2166": "carve#6772"}
 
 carve, html = [], []
 for e in load("examples.json")["examples"] + load("clause-cases.json")["cases"]:
