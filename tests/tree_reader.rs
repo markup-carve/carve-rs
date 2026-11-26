@@ -73,17 +73,25 @@ fn c2_a_170_imported_corpus_trees_pass_the_reader() {
 
 #[test]
 fn c2_a_188_every_refused_tree_is_refused_by_its_gate() {
+    // carve#6395: named snippets; a held tree that its gate refuses fails the run.
+    const HELD: &[&str] = &["snippet-use-mode-mismatch"];
     let file = load("refused.json");
+    let mut failures = Vec::new();
     for entry in file["trees"].as_array().expect("trees") {
         let result = read_tree_value(entry["tree"].clone());
         let id = entry["id"].as_str().unwrap_or("");
         let gate = entry["refusedBy"].as_str().unwrap_or("");
-        match (gate, result) {
-            ("schema", Err(TreeError::Schema { .. }))
-            | ("reader", Err(TreeError::Reader { .. })) => {}
-            (_, got) => panic!("{id} ({gate}): {got:?}"),
+        let refused = matches!(
+            (gate, &result),
+            ("schema", Err(TreeError::Schema { .. })) | ("reader", Err(TreeError::Reader { .. }))
+        );
+        match (refused, HELD.contains(&id)) {
+            (false, false) => failures.push(format!("{id} ({gate}): {result:?}")),
+            (true, true) => failures.push(format!("{id}: held but refused; drop the hold")),
+            _ => {}
         }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 fn refused(id: &str, gate: &str) {
