@@ -323,3 +323,16 @@ fn c2_x_072_a_marker_name_registers_no_bundle() {
     );
 }
 
+/// carve-rs#4847: a placed table of contents with no entries writes no empty line.
+#[test]
+fn c2_x_072_an_empty_placed_toc_writes_no_empty_line() {
+    let list = r#"["carve.tocPlacement"]"#;
+    assert_eq!(
+        render("toc-empty", list, "::: toc\n:::\n"),
+        "<nav class=\"toc\" aria-label=\"Table of contents\"></nav>\n"
+    );
+    assert_eq!(
+        render("toc-titled", list, "::: toc \"Contents\"\n:::\n"),
+        "<nav class=\"toc\" aria-labelledby=\"toc-title-1\">\n  <p class=\"admonition-title\" id=\"toc-title-1\">Contents</p>\n</nav>\n"
+    );
+}

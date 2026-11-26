@@ -961,7 +961,11 @@ impl TocRenderer {
                     cx.escape(label)
                 );
             }
-            let nav = format!("<nav{attrs}{name}>\n{head}{list}\n{lead}</nav>");
+            let nav = match (head.is_empty(), list.is_empty()) {
+                (true, true) => format!("<nav{attrs}{name}></nav>"),
+                (false, true) => format!("<nav{attrs}{name}>\n{head}{lead}</nav>"),
+                _ => format!("<nav{attrs}{name}>\n{head}{list}\n{lead}</nav>"),
+            };
             return Ok(if body.is_empty() {
                 nav
             } else {
