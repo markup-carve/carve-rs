@@ -60111,8 +60111,8 @@
     "C2-T-049",
     "C2-T-050"
    ],
-   "why": "C2-T-049: A range that two findings with different replacements report stays as written: in `~t~` under `--upgrade`, with `--rules` turning `djot-subscript-tilde` on, it and `deprecated-bare-strike` disagree, and `--rules` turning one of them off picks the other. C2-T-050: A file ends with the status that `lint` gives its fixed source (C2-T-031). Catalog djot-subscript-tilde-braced: each formed braced strike node from `{~x~}`",
-   "summary": "under upgrade, turning the subscript rule off picks the braced strike, which upgrade still reports",
+   "why": "C2-T-049: A range that two findings with different replacements report stays as written: in `~t~` under `--upgrade`, with `--rules` turning `djot-subscript-tilde` on, it and `deprecated-bare-strike` disagree, and `--rules` turning one of them off picks the other. C2-T-050: A file ends with the status that `lint` gives its fixed source (C2-T-031).",
+   "summary": "under upgrade, turning the subscript rule off picks the braced strike, which nothing then reports",
    "kind": "cli",
    "args": [
     "fix",
@@ -60123,7 +60123,7 @@
    "stdin": "a ~s~ b\n",
    "options": {},
    "expected": {
-    "status": 1,
+    "status": 0,
     "stdout": "a {~s~} b\n",
     "stderrCategory": null
    },
@@ -87687,7 +87687,7 @@
     "C2-H-195",
     "C2-I-102"
    ],
-   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 7, 13, 16, 19, 23 and 24. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
+   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 12, 15, 18, 22 and 23. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
    "summary": "a space before the hard break of a line-block line keeps the break on import (CC-156, carve#6786)",
    "kind": "import",
    "html": "<div class=\"line-block\" data-carve-line-block>\n  <p>a <br>\nb</p>\n</div>",
@@ -87731,7 +87731,7 @@
     "C2-H-195",
     "C2-A-069"
    ],
-   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 7, 13, 16, 19, 23 and 24. C2-A-069: An empty line of the body is a `line` with no children, and it ends a stanza.",
+   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 12, 15, 18, 22 and 23. C2-A-069: An empty line of the body is a `line` with no children, and it ends a stanza.",
    "summary": "a line-block line that holds only a hard break keeps it on import, so the stanza stays one (CC-157, carve#6786)",
    "kind": "import",
    "html": "<div class=\"line-block\" data-carve-line-block>\n  <p>a<br>\n<br>\nb</p>\n</div>",
@@ -87780,7 +87780,7 @@
     "C2-H-195",
     "C2-I-102"
    ],
-   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 7, 13, 16, 19, 23 and 24. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
+   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 12, 15, 18, 22 and 23. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
    "summary": "a space after a code span before the hard break of a line-block line keeps the break on import (carve#6786)",
    "kind": "import",
    "html": "<div class=\"line-block\" data-carve-line-block>\n  <p>a <code>x</code> <br>\nb</p>\n</div>",
@@ -87832,7 +87832,7 @@
     "C2-H-195",
     "C2-I-102"
    ],
-   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 7, 13, 16, 19, 23 and 24. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
+   "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 12, 15, 18, 22 and 23. C2-I-102: A backslash at the end of a line is a hard break, also where the space behind it that C2-I-002 keeps ends the line.",
    "summary": "the no-break spaces a tab writes before the hard break of a line-block line come back as spaces and keep the break (carve#6786)",
    "kind": "import",
    "html": "<div class=\"line-block\" data-carve-line-block>\n  <p>a&nbsp;&nbsp;&nbsp;<br>\nb</p>\n</div>",
@@ -87876,7 +87876,7 @@
     "C2-H-195"
    ],
    "why": "C2-H-195: Each row gives a minimal input, in which `⏎` stands for a line break, and the source that the import gives back as the canonical writer spells it.",
-   "summary": "the hard break of a line-block line that ends in no whitespace reads as the line end on import (C2-H-195 row 18)",
+   "summary": "the hard break of a line-block line that ends in no whitespace reads as the line end on import (C2-H-195 row 17)",
    "kind": "import",
    "html": "<div class=\"line-block\" data-carve-line-block>\n  <p>a<br>\nb</p>\n</div>",
    "options": {},
@@ -90796,7 +90796,7 @@
   "input": "{header-rows=1}\n| a | b |\n| 1 | 2 |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <thead>\n    <tr><td>a</td><td>b</td></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>\n"
+   "html": "<table>\n  <thead>\n    <tr><td>a</td><td>b</td></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
   },
   "from": []
  },
@@ -90812,7 +90812,7 @@
   "input": "{header-rows=0}\n|= a |\n| 1 |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <tbody>\n    <tr><th scope=\"row\">a</th></tr>\n    <tr><td>1</td></tr>\n  </tbody>\n</table>\n"
+   "html": "<table>\n  <tbody>\n    <tr><th scope=\"row\">a</th></tr>\n    <tr><td>1</td></tr>\n  </tbody>\n</table>"
   },
   "from": []
  },
@@ -90827,7 +90827,7 @@
   "input": "{header-rows=1}\n|= a |\n|= b |\n| 1 |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><th scope=\"row\">b</th></tr>\n    <tr><td>1</td></tr>\n  </tbody>\n</table>\n"
+   "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><th scope=\"row\">b</th></tr>\n    <tr><td>1</td></tr>\n  </tbody>\n</table>"
   },
   "from": []
  },
@@ -90843,7 +90843,7 @@
   "input": "{header-rows=1 footer-rows=1}\n| a |\n| b |\n| c |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <thead>\n    <tr><td>a</td></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n  <tfoot>\n    <tr><td>c</td></tr>\n  </tfoot>\n</table>\n"
+   "html": "<table>\n  <thead>\n    <tr><td>a</td></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n  <tfoot>\n    <tr><td>c</td></tr>\n  </tfoot>\n</table>"
   },
   "from": []
  },
@@ -90953,7 +90953,7 @@
   "input": "{footer-rows=2 body-rows}\n|= F |\n| x |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <tfoot>\n    <tr><th scope=\"row\">F</th></tr>\n    <tr><td>x</td></tr>\n  </tfoot>\n</table>\n"
+   "html": "<table>\n  <tfoot>\n    <tr><th scope=\"row\">F</th></tr>\n    <tr><td>x</td></tr>\n  </tfoot>\n</table>"
   },
   "from": []
  },
@@ -90985,7 +90985,7 @@
   "input": "{footer-rows=3 body-rows}\n|= A |\n|= F |\n",
   "options": {},
   "expected": {
-   "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">A</th></tr>\n    <tr><th scope=\"col\">F</th></tr>\n  </thead>\n</table>\n"
+   "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">A</th></tr>\n    <tr><th scope=\"col\">F</th></tr>\n  </thead>\n</table>"
   },
   "from": []
  },
@@ -95381,17 +95381,18 @@
  {
   "id": "CC-2414",
   "clauses": [
-   "C2-H-035"
+   "C2-H-035",
+   "C2-H-138"
   ],
-  "why": "C2-H-035: In a loose list every paragraph of every item gets `<p>`.",
-  "summary": "under roundtrip a loose list of image-only items writes no tight carrier",
+  "why": "C2-H-035: In a loose list every paragraph of every item gets `<p>`. C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items.",
+  "summary": "under roundtrip a loose list of image-only items writes the loose carrier and no tight carrier",
   "kind": "render",
   "input": "- ![x](a.png)![y](b.png)\n\n- ![z](c.png)![w](d.png)\n",
   "options": {
    "roundtrip": true
   },
   "expected": {
-   "html": "<ul>\n  <li><p><img src=\"a.png\" alt=\"x\"><img src=\"b.png\" alt=\"y\"></p></li>\n  <li><p><img src=\"c.png\" alt=\"z\"><img src=\"d.png\" alt=\"w\"></p></li>\n</ul>"
+   "html": "<ul data-carve-loose>\n  <li><p><img src=\"a.png\" alt=\"x\"><img src=\"b.png\" alt=\"y\"></p></li>\n  <li><p><img src=\"c.png\" alt=\"z\"><img src=\"d.png\" alt=\"w\"></p></li>\n</ul>"
   },
   "from": []
  },
@@ -96481,7 +96482,7 @@
    "C2-H-075",
    "C2-M-047"
   ],
-  "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 7, 13, 16, 19, 23 and 24. C2-H-075: Several keys nest in the fixed order `abbr`, `time`, `kbd` from inside out, and the remaining attributes go on the outermost element. C2-M-047: `<kbd>` is a `span` with the key `kbd` and an empty value",
+  "why": "C2-H-195: Rendering that source again gives the same HTML, except for rows 1, 5, 6, 12, 15, 18, 22 and 23. C2-H-075: Several keys nest in the fixed order `abbr`, `time`, `kbd` from inside out, and the remaining attributes go on the outermost element. C2-M-047: `<kbd>` is a `span` with the key `kbd` and an empty value",
   "summary": "nested kbd and abbr elements import as nested spans, one key each",
   "kind": "import",
   "html": "<p><kbd><abbr>v</abbr></kbd></p>",
@@ -96527,6 +96528,857 @@
    "carve": "[[v]{abbr}]{kbd}\n",
    "diagnostics": [],
    "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2440",
+  "clauses": [
+   "C2-H-138"
+  ],
+  "why": "C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items.",
+  "summary": "under roundtrip a loose list of block images writes the loose carrier",
+  "kind": "render",
+  "input": "- ![x](j.png)\n\n- ![x](k.png)\n",
+  "options": {
+   "roundtrip": true
+  },
+  "expected": {
+   "html": "<ul data-carve-loose>\n  <li>\n    <img src=\"j.png\" alt=\"x\">\n  </li>\n  <li>\n    <img src=\"k.png\" alt=\"x\">\n  </li>\n</ul>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2441",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-033"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-033: These tests apply only to a list on which the importer accepted no spacing carrier, `data-carve-tight` or `data-carve-loose` (C2-H-186).",
+  "summary": "import: the loose carrier keeps a list of block images loose",
+  "kind": "import",
+  "html": "<ul data-carve-loose>\n  <li>\n    <img src=\"j.png\" alt=\"x\">\n  </li>\n  <li>\n    <img src=\"k.png\" alt=\"x\">\n  </li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "role": "image",
+         "children": [
+          {
+           "type": "image",
+           "src": "j.png",
+           "alt": "x"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "role": "image",
+         "children": [
+          {
+           "type": "image",
+           "src": "k.png",
+           "alt": "x"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "loose"
+    }
+   ],
+   "carve": "- ![x](j.png)\n\n- ![x](k.png)\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2442",
+  "clauses": [
+   "C2-H-138"
+  ],
+  "why": "C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items.",
+  "summary": "under roundtrip a loose list of quotes writes the loose carrier",
+  "kind": "render",
+  "input": "- > a\n\n- > b\n",
+  "options": {
+   "roundtrip": true
+  },
+  "expected": {
+   "html": "<ul data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2443",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-033"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-033: These tests apply only to a list on which the importer accepted no spacing carrier, `data-carve-tight` or `data-carve-loose` (C2-H-186).",
+  "summary": "import: the loose carrier keeps a list of quotes loose",
+  "kind": "import",
+  "html": "<ul data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "b"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "loose"
+    }
+   ],
+   "carve": "- > a\n\n- > b\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2444",
+  "clauses": [
+   "C2-H-138"
+  ],
+  "why": "C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items.",
+  "summary": "under roundtrip a loose list of paragraphs writes the loose carrier too, with no test on its items",
+  "kind": "render",
+  "input": "- a\n\n- b\n",
+  "options": {
+   "roundtrip": true
+  },
+  "expected": {
+   "html": "<ul data-carve-loose>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2445",
+  "clauses": [
+   "C2-H-138",
+   "C2-H-010"
+  ],
+  "why": "C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items. C2-H-010: A structural attribute is one the element derives from its own marker, destination or resolution: `type`, `start` and `data-delim` on `<ol>`",
+  "summary": "under roundtrip a loose ordered list writes the loose carrier after start",
+  "kind": "render",
+  "input": "3. > a\n\n4. > b\n",
+  "options": {
+   "roundtrip": true
+  },
+  "expected": {
+   "html": "<ol start=\"3\" data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ol>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2446",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-033"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-033: These tests apply only to a list on which the importer accepted no spacing carrier, `data-carve-tight` or `data-carve-loose` (C2-H-186).",
+  "summary": "import: the loose carrier keeps an ordered list of quotes loose",
+  "kind": "import",
+  "html": "<ol start=\"3\" data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ol>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "b"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "ordered",
+      "style": "1",
+      "delimiter": ".",
+      "start": 3
+     },
+     "spacing": "loose"
+    }
+   ],
+   "carve": "{start=3}\n. > a\n\n. > b\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2447",
+  "clauses": [
+   "C2-H-138",
+   "C2-H-037"
+  ],
+  "why": "C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items. C2-H-037: Under `roundtrip` it is carried by `data-marker` (C2-H-112).",
+  "summary": "under roundtrip a loose star list writes the marker and the loose carrier",
+  "kind": "render",
+  "input": "* a\n\n* b\n",
+  "options": {
+   "roundtrip": true
+  },
+  "expected": {
+   "html": "<ul data-marker=\"*\" data-carve-loose>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2448",
+  "clauses": [
+   "C2-H-112",
+   "C2-H-138"
+  ],
+  "why": "C2-H-112: It is off by default. C2-H-138: `data-carve-loose` is written on every loose list with two or more items, also with no test on its items.",
+  "summary": "without roundtrip a loose list of quotes writes no loose carrier",
+  "kind": "render",
+  "input": "- > a\n\n- > b\n",
+  "options": {},
+  "expected": {
+   "html": "<ul>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2449",
+  "clauses": [
+   "C2-M-091",
+   "C2-M-033"
+  ],
+  "why": "C2-M-091: Without the carrier, each element reads as it stands; the rows of `losses` in `data/import-html.json` say what comes back C2-M-033: A list is loose when an item has a `<p>` with no attribute as its first child, after whitespace and the task box, since a tight list writes that paragraph bare (C2-H-034). A list is also loose when an item holds more than one block that is no list. Otherwise it is tight.",
+  "summary": "import: a loose list of quotes without the carrier reads as tight, a listed loss",
+  "kind": "import",
+  "html": "<ul>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "b"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight"
+    }
+   ],
+   "carve": "- > a\n- > b\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2450",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-009"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-009: A carrier that `html.md` ignores is reported with `import-carrier-ignored`, with the element as the locator.",
+  "summary": "import: the loose carrier on a one-item list is ignored and the list is tight",
+  "kind": "import",
+  "html": "<ul data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight"
+    }
+   ],
+   "carve": "- > a\n",
+   "diagnostics": [
+    {
+     "code": "import-carrier-ignored",
+     "channel": "render-loss",
+     "severity": "warning",
+     "line": 1,
+     "column": 1
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2451",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-009"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-009: A carrier that `html.md` ignores is reported with `import-carrier-ignored`, with the element as the locator.",
+  "summary": "import: the loose carrier over a bare paragraph run is ignored and the list is tight",
+  "kind": "import",
+  "html": "<ul data-carve-loose>\n  <li>a</li>\n  <li>b</li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight"
+    }
+   ],
+   "carve": "- a\n- b\n",
+   "diagnostics": [
+    {
+     "code": "import-carrier-ignored",
+     "channel": "render-loss",
+     "severity": "warning",
+     "line": 1,
+     "column": 1
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2452",
+  "clauses": [
+   "C2-H-185",
+   "C2-H-186",
+   "C2-M-033"
+  ],
+  "why": "C2-H-185: A carrier whose value is malformed, which contradicts the HTML around it or which contradicts another carrier of its element is ignored. ... Where two carriers contradict each other, both are ignored. C2-M-033: These tests apply only to a list on which the importer accepted no spacing carrier, `data-carve-tight` or `data-carve-loose` (C2-H-186).",
+  "summary": "import: the tight and the loose carrier on one list are both ignored and C2-M-033 decides",
+  "kind": "import",
+  "html": "<ul data-carve-tight data-carve-loose>\n  <li>\n    <blockquote><p>a</p></blockquote>\n  </li>\n  <li>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "a"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "block_quote",
+         "children": [
+          {
+           "type": "paragraph",
+           "children": [
+            {
+             "type": "text",
+             "value": "b"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "tight"
+    }
+   ],
+   "carve": "- > a\n- > b\n",
+   "diagnostics": [
+    {
+     "code": "import-carrier-ignored",
+     "channel": "render-loss",
+     "severity": "warning",
+     "line": 1,
+     "column": 1
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2453",
+  "clauses": [
+   "C2-H-186",
+   "C2-M-033"
+  ],
+  "why": "C2-H-186: An importer never keeps a reserved name as an authored attribute, whether it reads the carrier or ignores it. C2-M-033: These tests apply only to a list on which the importer accepted no spacing carrier, `data-carve-tight` or `data-carve-loose` (C2-H-186).",
+  "summary": "import: the loose carrier over items that begin with <p> is accepted",
+  "kind": "import",
+  "html": "<ul data-carve-loose>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "list",
+     "children": [
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "a"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "list_item",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "b"
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "marker": {
+      "kind": "bullet",
+      "char": "-"
+     },
+     "spacing": "loose"
+    }
+   ],
+   "carve": "- a\n\n- b\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2454",
+  "clauses": [
+   "C2-H-116",
+   "C2-H-115"
+  ],
+  "why": "C2-H-116: An authored attribute with a reserved name is dropped on every element, with `roundtrip` on or off, and reported as the render loss `carrier-attribute-dropped`. C2-H-115: The set is a list, not a prefix: another `data-carve-` name is an ordinary authored attribute.",
+  "summary": "an authored data-carve-loose on a list is dropped and reported",
+  "kind": "render",
+  "input": "{data-carve-loose}\n- a\n- b\n",
+  "options": {},
+  "expected": {
+   "html": "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>",
+   "diagnostics": [
+    {
+     "code": "carrier-attribute-dropped",
+     "channel": "render-loss",
+     "severity": "warning",
+     "line": 1,
+     "column": 2
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2455",
+  "clauses": [
+   "C2-X-078"
+  ],
+  "why": "C2-X-078: A cell's `align` and `valign` are read as C2-H-015 reads an authored `align`: ASCII whitespace at the ends of the value is removed and its ASCII letters are folded to lower case. C2-X-078: Another value has no effect and is not written, and the cell takes that axis from its column's `aligns` or `valigns` entry, where there is one.",
+  "summary": "an invalid cell align or valign takes its column's entry, and a valid one is trimmed and folded (carve#6858)",
+  "kind": "render",
+  "input": "{aligns=right valigns=top}\n::: list-table\n- -{align=bogus valign=bogus} a\n  -{align=RIGHT} b\n  -{align=\" Left \"} c\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td style=\"text-align: right; vertical-align: top;\">a</td><td style=\"text-align: right;\">b</td><td style=\"text-align: left;\">c</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2456",
+  "clauses": [
+   "C2-X-078",
+   "C2-H-057"
+  ],
+  "why": "C2-X-078: A valid `align` is `left`, `right` or `center`, and a valid `valign` is `top`, `middle`, `bottom` or `baseline` (C2-A-092); a valid value, folded, is the cell's own mark for that axis (C2-B-213). C2-H-057: A resolved vertical alignment adds `vertical-align: VALUE;` after it, one space apart, and stands alone where the cell has no horizontal alignment: `style=\"vertical-align: top;\"`.",
+  "summary": "baseline is a valid valign of a cell (carve#6858)",
+  "kind": "render",
+  "input": "::: list-table\n- -{valign=baseline} a\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td style=\"vertical-align: baseline;\">a</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2457",
+  "clauses": [
+   "C2-X-078"
+  ],
+  "why": "C2-X-078: Another value has no effect and is not written, and the cell takes that axis from its column's `aligns` or `valigns` entry, where there is one. C2-X-078: A cell's `align` and `valign` are read as C2-H-015 reads an authored `align`: ASCII whitespace at the ends of the value is removed and its ASCII letters are folded to lower case.",
+  "summary": "an invalid cell align without a column entry has no effect and is not written (carve#6858)",
+  "kind": "render",
+  "input": "::: list-table\n- -{align=justify valign=\" BOTTOM \"} a\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td style=\"vertical-align: bottom;\">a</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2458",
+  "clauses": [
+   "C2-X-078",
+   "C2-B-213"
+  ],
+  "why": "C2-X-078: A valid `align` is `left`, `right` or `center`, and a valid `valign` is `top`, `middle`, `bottom` or `baseline` (C2-A-092); a valid value, folded, is the cell's own mark for that axis (C2-B-213). C2-B-213: The cell's own mark for that axis (C2-B-182) wins.",
+  "summary": "a valid cell align and valign win over the column entries (carve#6858)",
+  "kind": "render",
+  "input": "{aligns=right,right valigns=top,top}\n::: list-table\n- -{align=center valign=Bottom} a\n  - b\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td style=\"text-align: center; vertical-align: bottom;\">a</td><td style=\"text-align: right; vertical-align: top;\">b</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2459",
+  "clauses": [
+   "C2-X-078"
+  ],
+  "why": "C2-X-078: `aligns`, `valigns` and `widths` set the columns as on a pipe table (C2-B-211, C2-B-212): the whole value is checked before any entry is applied and entries are compared as written, so `right,x` and `Right` set no column. A value that is not valid has no effect (C2-B-227), and none of the three is written on `<table>`, valid or not (C2-H-153).",
+  "summary": "an aligns list with one malformed entry sets no column and is not written (carve#6858)",
+  "kind": "render",
+  "input": "{aligns=right,x}\n::: list-table\n- - a\n  - b\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2460",
+  "clauses": [
+   "C2-X-078"
+  ],
+  "why": "C2-X-078: `aligns`, `valigns` and `widths` set the columns as on a pipe table (C2-B-211, C2-B-212): the whole value is checked before any entry is applied and entries are compared as written, so `right,x` and `Right` set no column. A value that is not valid has no effect (C2-B-227), and none of the three is written on `<table>`, valid or not (C2-H-153).",
+  "summary": "aligns entries are compared as written, so Right sets no column (carve#6858)",
+  "kind": "render",
+  "input": "{aligns=Right}\n::: list-table\n- - a\n  - b\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2461",
+  "clauses": [
+   "C2-X-078",
+   "C2-B-211"
+  ],
+  "why": "C2-X-078: `aligns`, `valigns` and `widths` set the columns as on a pipe table (C2-B-211, C2-B-212): the whole value is checked before any entry is applied and entries are compared as written, so `right,x` and `Right` set no column. A value that is not valid has no effect (C2-B-227), and none of the three is written on `<table>`, valid or not (C2-H-153). C2-B-211: `valigns` is the same list for the vertical axis: an entry is `top`, `middle` or `bottom` and sets `valign` of that `table_column`.",
+  "summary": "baseline is no valigns entry, so the list sets no column (carve#6858)",
+  "kind": "render",
+  "input": "{valigns=baseline}\n::: list-table\n- - a\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2462",
+  "clauses": [
+   "C2-X-078",
+   "C2-B-212"
+  ],
+  "why": "C2-X-078: `aligns`, `valigns` and `widths` set the columns as on a pipe table (C2-B-211, C2-B-212): the whole value is checked before any entry is applied and entries are compared as written, so `right,x` and `Right` set no column. A value that is not valid has no effect (C2-B-227), and none of the three is written on `<table>`, valid or not (C2-H-153). C2-B-212: An empty entry or any other entry makes the whole value invalid, so that it sets no column.",
+  "summary": "a widths list with one malformed entry sets no width and is not written (carve#6858)",
+  "kind": "render",
+  "input": "{widths=30,x}\n::: list-table\n- - a\n  - b\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2463",
+  "clauses": [
+   "C2-X-078"
+  ],
+  "why": "C2-X-078: `aligns`, `valigns` and `widths` set the columns as on a pipe table (C2-B-211, C2-B-212): the whole value is checked before any entry is applied and entries are compared as written, so `right,x` and `Right` set no column. A value that is not valid has no effect (C2-B-227), and none of the three is written on `<table>`, valid or not (C2-H-153).",
+  "summary": "valid aligns, valigns and widths set the columns and are not written (carve#6858)",
+  "kind": "render",
+  "input": "{aligns=\" right , center\" valigns=top,bottom widths=25,75}\n::: list-table\n- - a\n  - b\n:::\n",
+  "options": {
+   "extensions": [
+    "carve.listTable"
+   ],
+   "renderers": {
+    "carve.listTable": "standard"
+   }
+  },
+  "expected": {
+   "html": "<table>\n  <colgroup>\n    <col style=\"width: 25%;\">\n    <col style=\"width: 75%;\">\n  </colgroup>\n  <tbody>\n    <tr><td style=\"text-align: right; vertical-align: top;\">a</td><td style=\"text-align: center; vertical-align: bottom;\">b</td></tr>\n  </tbody>\n</table>"
   },
   "from": []
  }

@@ -8,6 +8,7 @@ mod inline;
 mod notes;
 mod profile;
 mod table;
+pub(crate) use table::percent;
 pub mod url;
 pub(crate) use inline::CORE_SEMANTIC_KEYS;
 

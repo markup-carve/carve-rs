@@ -32,18 +32,21 @@ const CLAUSE_HELD: &[(&str, &str)] = &[
     ("CC-2228", "html"),
     // carve#6804 (carve-rs line): an image whose alt is unknown writes no `alt`.
     ("CC-2210", "html"),
-    // carve#6837: the expected HTML of these G1 cases ends in a line feed no render writes;
-    // `table_import_g1.rs` checks them without it.
-    ("CC-2237", "html"),
-    ("CC-2238", "html"),
-    ("CC-2239", "html"),
-    ("CC-2240", "html"),
-    ("CC-2246", "html"),
-    ("CC-2248", "html"),
+    // carve#6844 (carve-rs line): `data-carve-loose` under `roundtrip`.
+    ("CC-2414", "html"),
+    ("CC-2440", "html"),
+    ("CC-2442", "html"),
+    ("CC-2444", "html"),
+    ("CC-2445", "html"),
+    ("CC-2447", "html"),
+    ("CC-2454", "html"),
 ];
 
 /// `(entry id, checked field)` of `c2_t_005_parse_and_render_clause_diagnostics` held.
-const DIAGNOSTICS_HELD: &[(&str, &str)] = &[];
+const DIAGNOSTICS_HELD: &[(&str, &str)] = &[
+    // carve#6844 (carve-rs line): an authored `data-carve-loose` is dropped.
+    ("CC-2454", "diagnostic:carrier-attribute-dropped"),
+];
 
 /// `(entry id, checked field)` of `c2_conformance_examples` held.
 const EXAMPLES_HELD: &[(&str, &str)] = &[];

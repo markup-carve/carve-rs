@@ -45,6 +45,17 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2435", "children"),
     ("CC-2435", "diagnostic:import-structure-repaired"),
     ("CC-2436", "children"),
+    // carve#6844 (carve-rs line): the importer reads `data-carve-loose`.
+    ("CC-2441", "children"),
+    ("CC-2443", "children"),
+    ("CC-2446", "children"),
+    ("CC-2450", "children"),
+    ("CC-2450", "diagnostic:import-carrier-ignored"),
+    ("CC-2451", "children"),
+    ("CC-2451", "diagnostic:import-carrier-ignored"),
+    ("CC-2452", "children"),
+    ("CC-2452", "diagnostic:import-carrier-ignored"),
+    ("CC-2453", "children"),
 ];
 
 /// `(entry id, checked field)` of the import examples held.
@@ -67,7 +78,8 @@ const WITH_CARVE_CLAUSE: &[&str] = &[
     "CC-2201", "CC-2202", "CC-2203", "CC-2204", "CC-2207", "CC-2208", "CC-2209", "CC-2220",
     "CC-2229", "CC-2230", "CC-2231", "CC-2232", "CC-2233", "CC-2234", "CC-2235", "CC-2236",
     "CC-2244", "CC-2245", "CC-2250", "CC-2252", "CC-2253", "CC-2254", "CC-2255", "CC-2256",
-    "CC-2257", "CC-2394", "CC-2433", "CC-2434", "CC-2435", "CC-2436", "CC-2439",
+    "CC-2257", "CC-2394", "CC-2433", "CC-2434", "CC-2435", "CC-2436", "CC-2439", "CC-2441",
+    "CC-2443", "CC-2446", "CC-2449", "CC-2450", "CC-2451", "CC-2452", "CC-2453",
 ];
 
 fn load(name: &str) -> Value {
