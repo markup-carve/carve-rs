@@ -366,6 +366,9 @@ impl Cx {
         }
     }
 
+    /// The elements [`Cx::leaf_inline`] reads whole, without reading their children.
+    const LEAVES: &[&str] = &["br", "img", "math", "ruby", "code"];
+
     fn leaf_inline(&mut self, id: Id) -> Option<Vec<Value>> {
         Some(match self.dom.tag(id)? {
             "br" => vec![json!({ "type": "hard_break" })],
@@ -1163,8 +1166,10 @@ impl Walk {
             return;
         }
         let dom = &cx.dom;
-        let descend = dom.is_element(id) && !opaque(dom, id);
-        if descend && !attrs::is_block_element(dom, id) {
+        let inline = dom.is_element(id) && !opaque(dom, id) && !attrs::is_block_element(dom, id);
+        let leaf = inline && dom.tag(id).is_some_and(|t| Cx::LEAVES.contains(&t));
+        let descend = dom.is_element(id) && !opaque(dom, id) && !leaf;
+        if inline {
             self.own.push(false);
             stack.push(Step::Exit(id, place, self.held));
         } else {

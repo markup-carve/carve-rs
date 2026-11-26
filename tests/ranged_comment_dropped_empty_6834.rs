@@ -148,3 +148,16 @@ fn repeated_snippet_ordinal_is_ignored_in_the_probe() {
         );
     }
 }
+
+/// A `<code>` is read from its text, so a carrier inside it records no
+/// ordinal, and a later carrier with that ordinal stands in the range.
+#[test]
+fn carrier_inside_code_records_no_ordinal() {
+    let html = format!(
+        "<p><code><span data-carve-snippet=\"1:inline:$v\">X</span></code></p>{START}{}{END}",
+        "<span data-carve-snippet=\"1:inline:$v\"></span>",
+    );
+    let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+    assert!(got.source.ends_with("{#n#}{{ $v }}y\n"), "{}", got.source);
+    assert!(got.diagnostics.iter().any(|d| d.message == LOST));
+}
