@@ -1058,7 +1058,10 @@ type OpenComment = (Id, Option<String>, bool);
 
 /// C2-M-113: pairs each `comment-start` span with the first later `comment-end`
 /// span of the same `data-comment-id`, in document order.
-pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMap<Id, Ranged> {
+pub(crate) fn ranged_comments(
+    dom: &super::dom::Dom,
+    raw_html: bool,
+) -> std::collections::HashMap<Id, Ranged> {
     let mut out = std::collections::HashMap::new();
     let first_class = |id: Id| {
         dom.is(id, "span")
@@ -1074,10 +1077,10 @@ pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMa
     while let Some(id) = stack.pop() {
         let class = first_class(id);
         if class.as_deref() == Some("comment-start") {
-            follow(&mut open);
             let kind = if dom.plain(id).is_empty() {
                 Ranged::Empty
             } else {
+                follow(&mut open);
                 Ranged::Start { lost: false }
             };
             out.insert(id, kind);
@@ -1093,14 +1096,44 @@ pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMa
         {
             continue;
         }
-        if dom.is_element(id) {
-            stack.extend(dom.children(id).iter().rev().copied());
-        }
-        if dom.is_element(id) || (dom.is_text(id) && !dom.text(id).is_empty()) {
+        if holds(dom, id, raw_html) {
             follow(&mut open);
+        }
+        if dom.is_element(id) && !opaque(dom, id) {
+            stack.extend(dom.children(id).iter().rev().copied());
         }
     }
     out
+}
+
+/// An element whose content gives no inline of its own: it is dropped or kept whole as raw.
+fn opaque(dom: &super::dom::Dom, id: Id) -> bool {
+    matches!(attrs::treatment(dom, id), Treatment::Drop | Treatment::Raw)
+        || attrs::is_raw_span(dom, id)
+        || dom.is(id, "input")
+}
+
+/// Whether a node gives an inline by itself, so it stands in an open range.
+fn holds(dom: &super::dom::Dom, id: Id, raw_html: bool) -> bool {
+    if dom.is_text(id) {
+        return !dom.text(id).is_empty();
+    }
+    if dom.is_comment(id) {
+        return raw_html;
+    }
+    if !dom.is_element(id) || attrs::treatment(dom, id) == Treatment::Drop {
+        return false;
+    }
+    if opaque(dom, id) {
+        return raw_html;
+    }
+    if !dom.children(id).is_empty() {
+        return false;
+    }
+    // C2-M-069: an empty inline container without attributes is dropped.
+    let container =
+        dom.is(id, "span") || dom.is(id, "a") || dom.tag(id).and_then(format_kind).is_some();
+    !dom.attrs(id).is_empty() || !container
 }
 
 fn follow(open: &mut [OpenComment]) {

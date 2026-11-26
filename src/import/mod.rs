@@ -226,7 +226,7 @@ pub(crate) fn build(
         adapter::note_pass(&mut dom);
     }
     let mut cx = Cx::new(dom, raw_html);
-    cx.ranged = inline::ranged_comments(&cx.dom);
+    cx.ranged = inline::ranged_comments(&cx.dom, raw_html);
     if !full {
         fragment_body(input, &mut cx);
     }
