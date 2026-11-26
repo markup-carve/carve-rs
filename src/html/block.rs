@@ -897,7 +897,21 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-047, C2-H-048.
     pub(super) fn code_block(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::CodeBlock(c) = n else { return };
+        let captioned = self.caption_inner == Some(addr(n));
+        let (classes, keys) = match c.attrs {
+            Some(a) if captioned => line_options(a, true),
+            _ => (Vec::new(), Vec::new()),
+        };
+        let kept = Attrs {
+            id: None,
+            classes: &classes,
+            key_values: &keys,
+        };
+        let kept = (!kept.is_empty()).then_some(&kept);
         let mut el = self.el(c.attrs, c.lang, n);
+        if kept.is_some() {
+            el.attrs = kept;
+        }
         if let Some(t) = &c.title {
             el.structural
                 .push(("title", Some(crate::resolve::plain::text_of(t).into())));
@@ -921,6 +935,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let s = match &self.opts.code_block_renderer {
             Some(host) => serde_json::to_value(n)
                 .ok()
+                .map(|mut node| {
+                    if captioned {
+                        inner_node(&mut node, kept);
+                    }
+                    node
+                })
                 .and_then(|node| (host.0)(&node, &s))
                 .unwrap_or(s),
             None => s,
@@ -965,7 +985,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::BlockQuote(q) => q.lang,
             _ => None,
         };
-        let mut el = self.el(n.attrs(), lang, n);
+        let (classes, keys) = match (n, n.attrs()) {
+            (Node::CodeBlock(_), Some(a)) => line_options(a, false),
+            _ => (Vec::new(), Vec::new()),
+        };
+        let outer = n.attrs().map(|a| Attrs {
+            id: a.id,
+            classes: &classes,
+            key_values: &keys,
+        });
+        let attrs = match n {
+            Node::CodeBlock(_) => outer.as_ref().filter(|a| !a.is_empty()),
+            _ => n.attrs(),
+        };
+        let mut el = self.el(attrs, lang, n);
         if panel {
             el.base.push("carve-figure-panel".into());
         }
@@ -1041,6 +1074,41 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.block(b, depth + 1);
         }
         self.line(depth, &format!("</{tag}>"));
+    }
+}
+
+/// C2-H-063, C2-H-211: the line options of a captioned code block, which
+/// stay on its `<pre>` (`kept`), or the attributes left for the `<figure>`.
+fn line_options<'x>(a: &Attrs<'x>, kept: bool) -> (Vec<&'x str>, Vec<(&'x str, &'x str)>) {
+    let classes = a
+        .classes
+        .iter()
+        .copied()
+        .filter(|c| (*c == "line-numbers") == kept);
+    let classes = if kept {
+        classes.take(1).collect()
+    } else {
+        classes.collect()
+    };
+    let keys = a
+        .key_values
+        .iter()
+        .copied()
+        .filter(|(k, _)| matches!(*k, "data-line-start" | "data-highlight") == kept)
+        .collect();
+    (classes, keys)
+}
+
+/// C2-H-206: the node of a captioned code block as the host sees it.
+fn inner_node(node: &mut serde_json::Value, kept: Option<&Attrs>) {
+    let Some(m) = node.as_object_mut() else {
+        return;
+    };
+    for key in ["caption", "attrs", "lang", "dir"] {
+        m.remove(key);
+    }
+    if let Some(a) = kept.and_then(|a| serde_json::to_value(a).ok()) {
+        m.insert("attrs".into(), a);
     }
 }
 

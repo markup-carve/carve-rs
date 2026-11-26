@@ -127,5 +127,5 @@ fn the_json_boundary_takes_the_harness_function_of_the_clause_cases() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 14);
+    assert_eq!(checked, 15);
 }
