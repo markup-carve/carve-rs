@@ -1183,20 +1183,21 @@ fn loss_diagnostics(
                 .and_then(|id| included_sources.get(id))
                 .map(|text| source::Source::new(text));
             let loss_source = included_source.as_ref().unwrap_or(&source);
+            let record = LossPosition {
+                raw,
+                include_pos,
+                profile,
+                destination,
+                carrier,
+                file: file.as_deref(),
+            };
             let pos = render_loss_position(
                 c,
                 &source,
                 loss_source,
                 opts,
                 parse_diags,
-                &LossPosition {
-                    raw,
-                    include_pos,
-                    profile,
-                    destination,
-                    carrier,
-                    file: file.as_deref(),
-                },
+                &record,
                 &mut carrier_cursors,
             );
             let pos = shift.map_or(pos, |s| s.0);
@@ -1208,12 +1209,7 @@ fn loss_diagnostics(
                 .collect();
             let mut diagnostic =
                 diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
-            let at = include_pos
-                .or_else(|| raw.and_then(|r| r.pos))
-                .or_else(|| destination.and_then(|d| d.pos))
-                .or_else(|| carrier.and_then(|c| c.pos))
-                .or_else(|| profile.and_then(|p| p.pos))
-                .or_else(|| shift.and_then(|s| s.0));
+            let at = record.recorded().or_else(|| shift.and_then(|s| s.0));
             diagnostic.included_by = details.chain(file.as_deref(), at);
             if *c == heading_shift::ABOVE_6 {
                 diagnostic.message = heading_shift::message(opts.heading_shift);
@@ -1234,6 +1230,17 @@ struct LossPosition<'a> {
     destination: Option<&'a html::DestinationLoss>,
     carrier: Option<&'a html::CarrierLoss>,
     file: Option<&'a str>,
+}
+
+impl LossPosition<'_> {
+    /// The position the loss record itself carries, before any source lookup.
+    fn recorded(&self) -> Option<ast::Pos> {
+        self.include_pos
+            .or_else(|| self.raw.and_then(|r| r.pos))
+            .or_else(|| self.destination.and_then(|d| d.pos))
+            .or_else(|| self.carrier.and_then(|c| c.pos))
+            .or_else(|| self.profile.and_then(|p| p.pos))
+    }
 }
 
 fn render_loss_position(
