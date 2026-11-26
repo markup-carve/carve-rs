@@ -49,7 +49,7 @@ fn output_equals_carve_php_on_its_parity_rows() {
     // carve-php f23005e8 and 7f531fa writes them.
     let deltas: Vec<Value> =
         serde_json::from_str(include_str!("data/svg-sanitize/parity-js-first.json")).unwrap();
-    assert_eq!(deltas.len(), 128);
+    assert_eq!(deltas.len(), 130);
     for delta in &deltas {
         let row = &mut rows[usize::try_from(delta["index"].as_u64().unwrap()).unwrap()];
         assert_eq!(row["src"], delta["src"], "delta {}", delta["index"]);
@@ -313,6 +313,130 @@ fn an_empty_prefixed_namespace_declaration_is_dropped() {
     );
     assert_eq!(
         sanitize("<svg><g xmlns:xlink=\" \"/></svg>").svg,
-        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g xmlns:xlink=\" \"/></svg>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g/></svg>"
+    );
+}
+
+const OPEN: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"";
+const XLINK_DECL: &str = " xmlns:xlink=\"http://www.w3.org/1999/xlink\"";
+
+#[test]
+fn the_xlink_prefix_is_bound_on_the_root() {
+    // carve#6782: a written xlink:href with no xmlns:xlink in scope.
+    assert_eq!(
+        sanitize("<svg><use xlink:href=\"#a\"/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}{XLINK_DECL}><use xlink:href=\"#a\"/></svg>"),
+            ok: true,
+        }
+    );
+    let cases = [
+        (
+            "<svg xlink:href=\"#a\" id=\"r\"/>",
+            format!("{OPEN}{XLINK_DECL} xlink:href=\"#a\" id=\"r\"/>"),
+        ),
+        (
+            "<svg xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></svg>",
+            format!("{OPEN} xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></svg>"),
+        ),
+        (
+            "<svg><use xlink:href=\"#a\" xmlns:xlink=\"urn:x\"/></svg>",
+            format!("{OPEN}><use xlink:href=\"#a\" xmlns:xlink=\"urn:x\"/></svg>"),
+        ),
+        (
+            "<svg><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g></svg>",
+            format!("{OPEN}><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g></svg>"),
+        ),
+        // A declaration inside a subtree binds only that subtree.
+        (
+            "<svg><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g><use xlink:href=\"#b\"/></svg>",
+            format!(
+                "{OPEN}{XLINK_DECL}><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g><use xlink:href=\"#b\"/></svg>"
+            ),
+        ),
+        // A dropped declaration binds nothing.
+        (
+            "<svg><g xmlns:xlink=\" \"><use xlink:href=\"#a\"/></g></svg>",
+            format!("{OPEN}{XLINK_DECL}><g><use xlink:href=\"#a\"/></g></svg>"),
+        ),
+        // Nothing is added when the xlink attribute is dropped.
+        (
+            "<svg><use xlink:href=\"https://e/x\"/><use XLINK:HREF=\"#a\"/></svg>",
+            format!("{OPEN}><use/><use/></svg>"),
+        ),
+        (
+            "<svg><script><use xlink:href=\"#a\"/></script></svg>",
+            format!("{OPEN}/>"),
+        ),
+    ];
+    for (source, want) in cases {
+        assert_eq!(sanitize(source).svg, want, "{source}");
+    }
+}
+
+#[test]
+fn a_prefixed_name_in_another_spelling_is_dropped() {
+    // carve#6783: only lower-case xmlns: declares, and prefixes are case-sensitive.
+    assert_eq!(
+        sanitize("<svg XMLNS:XLINK=\"http://www.w3.org/1999/xlink\"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize(
+            "<svg Xmlns:xlink=\"urn:x\" XML:SPACE=\"preserve\" data-a:b=\"1\" aria-x:y=\"2\" xml:space=\"preserve\"/>"
+        )
+        .svg,
+        format!("{OPEN} xml:space=\"preserve\"/>")
+    );
+}
+
+#[test]
+fn a_namespace_declaration_with_whitespace_is_dropped() {
+    // carve#6783: whitespace only; carve#6811: whitespace or U+00A0 anywhere,
+    // literal or as a reference.
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\" \"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    let values = [
+        "\t",
+        " \n ",
+        "\r",
+        "&#32;",
+        "&#x20;&#9;",
+        "&#xA;",
+        "&#13;",
+        "&#x0D;",
+        " urn:x",
+        "urn:x ",
+        "urn: x",
+        "urn:x\tb",
+        "\u{A0}",
+        "urn:\u{A0}x",
+        "&#160;",
+        "urn:&#xA0;x",
+        "&#32;urn:x",
+        "urn:&nbsp;x",
+        " urn:x ",
+    ];
+    for value in values {
+        assert_eq!(
+            sanitize(&format!("<svg><g xmlns:xlink=\"{value}\"/></svg>")),
+            SanitizeResult {
+                svg: format!("{OPEN}><g/></svg>"),
+                ok: true,
+            },
+            "{value:?}"
+        );
+    }
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=\"urn:x\"/></svg>").svg,
+        format!("{OPEN}><g xmlns:xlink=\"urn:x\"/></svg>")
     );
 }

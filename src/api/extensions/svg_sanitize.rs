@@ -16,6 +16,12 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
+const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
+
+/// The only prefixed names written, each exactly in this spelling: prefixes
+/// are case-sensitive and the root binds `xlink` when needed (carve#6782,
+/// carve#6783).
+const PREFIXED_NAMES: &[&str] = &["xlink:href", "xmlns:xlink", "xml:space"];
 
 /// A decoded lone surrogate, which a `str` cannot hold, reads as this.
 const SURROGATE_STANDIN: char = '\u{E000}';
@@ -279,6 +285,7 @@ pub fn sanitize_svg(source: &str, opts: &SanitizeSvgOptions) -> SanitizeResult {
         kept: Vec::new(),
         saw_root: false,
         root_self_closed: false,
+        bind_xlink: false,
     };
     state.run(source).map_or_else(
         || SanitizeResult {
@@ -293,10 +300,19 @@ struct State<'o> {
     opts: &'o SanitizeSvgOptions,
     out: Vec<String>,
     drop_stack: Vec<String>,
-    /// Name and the output index where its content starts.
-    kept: Vec<(String, usize)>,
+    /// Name, the output index where its content starts, and whether a written
+    /// `xmlns:xlink` is in scope.
+    kept: Vec<(String, usize, bool)>,
     saw_root: bool,
     root_self_closed: bool,
+    /// An `xlink:href` was written with no `xmlns:xlink` in scope (carve#6782).
+    bind_xlink: bool,
+}
+
+#[derive(Default)]
+struct XlinkUse {
+    declared: bool,
+    used: bool,
 }
 
 impl State<'_> {
@@ -317,6 +333,10 @@ impl State<'_> {
             || !self.drop_stack.is_empty()
         {
             return None;
+        }
+        if self.bind_xlink {
+            let at = "<svg xmlns=\"".len() + SVG_NS.len() + 1;
+            self.out[0].insert_str(at, &format!(" xmlns:xlink=\"{XLINK_NS}\""));
         }
         let svg = self.out.concat();
         let head = svg.as_bytes();
@@ -373,7 +393,7 @@ impl State<'_> {
         if !self.drop_stack.is_empty() {
             return self.drop_stack.pop().as_deref() == Some(name);
         }
-        let Some((open, at)) = self.kept.pop() else {
+        let Some((open, at, _)) = self.kept.pop() else {
             return false;
         };
         if open != name {
@@ -409,6 +429,11 @@ impl State<'_> {
             self.saw_root = true;
             self.root_self_closed = self_close;
         }
+        self.write_open(name, raw, is_root, self_close);
+        true
+    }
+
+    fn write_open(&mut self, name: &str, raw: &str, is_root: bool, self_close: bool) {
         let mut tag = String::with_capacity(name.len() + raw.len() + 48);
         tag.push('<');
         tag.push_str(name);
@@ -417,13 +442,18 @@ impl State<'_> {
             tag.push_str(SVG_NS);
             tag.push('"');
         }
-        self.sanitize_attrs(raw, name, is_root, &mut tag);
+        let mut xlink = XlinkUse::default();
+        self.sanitize_attrs(raw, name, is_root, &mut tag, &mut xlink);
+        let xlink_bound = xlink.declared || self.kept.last().is_some_and(|k| k.2);
+        if xlink.used && !xlink_bound {
+            self.bind_xlink = true;
+        }
         tag.push_str(if self_close { "/>" } else { ">" });
         self.out.push(tag);
         if !self_close {
-            self.kept.push((name.to_string(), self.out.len()));
+            self.kept
+                .push((name.to_string(), self.out.len(), xlink_bound));
         }
-        true
     }
 
     fn tag_allowed(&self, name: &str) -> bool {
@@ -436,7 +466,14 @@ impl State<'_> {
             || (self.opts.allow_external_images && lower == "image")
     }
 
-    fn sanitize_attrs(&self, raw: &str, tag: &str, is_root: bool, out: &mut String) {
+    fn sanitize_attrs(
+        &self,
+        raw: &str,
+        tag: &str,
+        is_root: bool,
+        out: &mut String,
+        xlink: &mut XlinkUse,
+    ) {
         let lower_tag = tag.to_ascii_lowercase();
         let external_href = (self.opts.allow_links && lower_tag == "a")
             || (self.opts.allow_external_images && lower_tag == "image");
@@ -459,7 +496,12 @@ impl State<'_> {
             {
                 continue;
             }
+            let before = out.len();
             self.sanitize_attribute(name, &lower, value, external_href, out);
+            if out.len() > before {
+                xlink.used |= name == "xlink:href";
+                xlink.declared |= name == "xmlns:xlink";
+            }
         }
     }
 
@@ -471,17 +513,21 @@ impl State<'_> {
         external_href: bool,
         out: &mut String,
     ) {
-        if attribute_always_dropped(lower, value) {
+        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
+        let Some(value) = value else {
+            return;
+        };
+        if lower.starts_with("on") || namespace_unwritable(name, value) {
             return;
         }
         if lower == "href" || lower == "xlink:href" {
-            if let Some(value) = value.filter(|v| self.url_value_allowed(v, external_href)) {
+            if self.url_value_allowed(value, external_href) {
                 write_attr(out, name, value);
             }
             return;
         }
         if lower == "style" {
-            if let Some(value) = value.filter(|v| self.opts.allow_style && !style_is_dangerous(v)) {
+            if self.opts.allow_style && !style_is_dangerous(value) {
                 write_attr(out, name, value);
             }
             return;
@@ -492,10 +538,6 @@ impl State<'_> {
         {
             return;
         }
-        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
-        let Some(value) = value else {
-            return;
-        };
         let unsafe_value = if REF_VALUE_ATTRS.contains(&lower) {
             ref_attr_unsafe(value)
         } else {
@@ -1019,8 +1061,19 @@ fn escape_attr(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// An event handler, or an empty prefixed namespace declaration, which
-/// Namespaces in XML forbids as undeclaring the prefix (carve#6779).
-fn attribute_always_dropped(lower: &str, value: Option<&str>) -> bool {
-    lower.starts_with("on") || (value == Some("") && lower.starts_with("xmlns:"))
+/// A prefixed name off [`PREFIXED_NAMES`], or an `xmlns:xlink` whose value,
+/// references read, is empty (Namespaces in XML forbids undeclaring a prefix,
+/// carve#6779) or holds XML whitespace or U+00A0, which is no URI reference
+/// (carve#6783, carve#6811).
+fn namespace_unwritable(name: &str, value: &str) -> bool {
+    if !name.contains(':') {
+        return false;
+    }
+    if !PREFIXED_NAMES.contains(&name) {
+        return true;
+    }
+    name == "xmlns:xlink" && {
+        let decoded = decode_entities(value);
+        decoded.is_empty() || decoded.contains([' ', '\t', '\n', '\r', '\u{A0}'])
+    }
 }
