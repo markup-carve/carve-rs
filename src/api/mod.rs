@@ -1139,16 +1139,19 @@ impl Carve {
         // C2-N-091: the view they receive is expanded; the findings of the expansion stand for it.
         let mut snippets = Vec::new();
         let mut authored = None;
+        let mut kept = crate::snippet::expand::Kept::default();
         let (view, mut transform_entries) = if self.extensions.owned_transforms_only() {
-            let (mut resolved, marks) =
+            let (mut resolved, marks, carried) =
                 crate::resolved_owned_expanded(tree.document(), opts, &mut snippets);
             authored = Some(marks);
+            kept = carried;
             self.extensions.transform_owned(&mut resolved);
             (Tree::render_view(resolved, tree.top), Vec::new())
         } else if self.extensions.has_transforms() {
-            let (resolved, marks) =
+            let (resolved, marks, carried) =
                 crate::resolved_owned_expanded(tree.document(), opts, &mut snippets);
             authored = Some(marks);
+            kept = carried;
             let view = Tree::lazy_view(resolved, tree.top);
             self.extensions.transform(view)
         } else {
@@ -1161,7 +1164,8 @@ impl Carve {
             Some(marks) => {
                 let found = crate::snippet::expand::refuse_transformed(&mut doc, &arena, marks);
                 snippets.extend(crate::snippet_diagnostics(&doc, &found));
-                None
+                // C2-H-215: the nodes a transform kept still carry their snippet carriers.
+                crate::snippet::expand::restore(doc.children, kept)
             }
             None => crate::expand_tree(&mut doc, opts, &arena, &mut snippets),
         };

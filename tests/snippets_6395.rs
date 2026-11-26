@@ -97,3 +97,62 @@ fn a_source_without_uses_takes_no_snippet_path() {
         "<template data-carve-snippets>{$v}: X</template>\n<p>A b</p>"
     );
 }
+
+fn render_transformed(source: &str) -> Value {
+    let request = json!({
+        "call": "renderWithDiagnostics",
+        "source": source,
+        "options": {"roundtrip": true},
+        "host": {"documentTransforms": [{
+            "name": "sample.a",
+            "after": "/children/2",
+            "insert": {"type": "paragraph", "children": [{"type": "text", "value": "b"}]},
+        }]},
+    });
+    parse_json(&api::json::call(&request.to_string()))["ok"].clone()
+}
+
+/// C2-H-215: the nodes a document transform keeps carry their snippet carriers
+/// and note marks into the render of the view it returns.
+#[test]
+fn carriers_survive_a_transform_that_keeps_their_nodes() {
+    let out = render_transformed("{$v}: X\n\nA {{ $v }} and {{ $w }}\n\n{$w}: *W*\n");
+    assert_eq!(
+        out["html"],
+        "<template data-carve-snippets>{$v}: X</template>\n\
+         <p>A <span data-carve-snippet=\"1:inline:$v\">X</span> and \
+         <strong data-carve-snippet=\"2:inline:$w\">W</strong></p>\n\
+         <template data-carve-snippets>{$w}: *W*</template>\n<p>b</p>"
+    );
+    let out = render_transformed("{$s}: x[^n]\n\n[Go {{ $s }}](/u)\n\n[^n]: N\n");
+    let html = out["html"].as_str().unwrap_or("");
+    assert!(
+        html.starts_with(
+            "<template data-carve-snippets>{$s}: x[^n]</template>\n\
+             <p><a href=\"/u\">Go <span data-carve-snippet=\"1:inline:$s\">x</span></a>\
+             <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-carve-footnote-label=\"n\" \
+             data-carve-snippet-mark=\"1\"><sup>1</sup></a></p>\n<p>b</p>\n"
+        ),
+        "{html}"
+    );
+}
+
+/// C2-N-090: a file included twice repeats its definitions; the second include's lose.
+#[test]
+fn a_file_included_twice_reports_its_second_definitions() {
+    let out = render(
+        "{{ d.crv }}\n\n{{ d.crv }}\n\n{{ $v }}\n",
+        &[("d.crv", "{$v}: Y\n")],
+        false,
+    );
+    assert_eq!(out["html"], "<p>Y</p>");
+    let found = codes(&out);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|(code, _)| code == "duplicate-snippet")
+            .count(),
+        1,
+        "{found:?}"
+    );
+}

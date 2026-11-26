@@ -707,7 +707,11 @@ pub(crate) fn expand<'a>(
     findings: &mut Vec<Finding>,
 ) -> Option<Guard> {
     if !holds_use(doc.children) {
-        return None;
+        // C2-H-216: a template still marks the definitions of an included file.
+        return settings
+            .roundtrip
+            .then(|| install(included_side(doc.children)))
+            .flatten();
     }
     let mut entries = Vec::new();
     let mut names = std::collections::HashMap::new();
@@ -758,8 +762,139 @@ pub(crate) fn expand<'a>(
     let mut side = pass.side;
     side.budget = Some(pass.budget);
     side.included_defs = included_defs;
+    install(Some(side))
+}
+
+/// The side tables of a render that expanded no use: the definitions of included files.
+fn included_side(nodes: &[Node<'_>]) -> Option<Side> {
+    let mut side = Side::default();
+    registry_walk(nodes, 0, None, &mut |d, include, _| {
+        if include != 0 {
+            side.included_defs.insert(std::ptr::from_ref(d).addr());
+        }
+    });
+    (!side.included_defs.is_empty()).then_some(side)
+}
+
+/// Makes `side` the side tables of the running render until the guard drops.
+fn install(side: Option<Side>) -> Option<Guard> {
+    let side = side?;
     let before = SIDE.with(|s| s.borrow_mut().replace(side));
     Some(Guard(Some(before)))
+}
+
+/// What one node carries in the side tables, kept across a document transform.
+#[derive(Debug, Clone)]
+struct Carried {
+    carrier: Option<Carrier>,
+    mark: Option<usize>,
+    /// The include of the copy's definition by its place among the includes, 0 for the top.
+    scope: Option<usize>,
+}
+
+/// The side tables of an expanded view as tree JSON, to find again in the view a
+/// document transform returns: its nodes have new addresses there (C2-H-215, C2-N-092).
+#[derive(Debug, Default)]
+pub(crate) struct Kept {
+    nodes: Vec<(Value, Carried)>,
+    budget: Option<Budget>,
+}
+
+/// Visits every node in document order with the place of each include among the includes.
+fn each_node<'a>(nodes: &[Node<'a>], f: &mut dyn FnMut(&Node<'a>)) {
+    for n in nodes {
+        f(n);
+        if let Node::Include(i) = n {
+            if let Some(children) = i.children.as_deref() {
+                each_node(children, f);
+            }
+            continue;
+        }
+        for c in crate::resolve::order::slots(n) {
+            each_node(std::slice::from_ref(c), f);
+        }
+    }
+}
+
+/// The side tables of the running render, keyed by the JSON of each node.
+pub(crate) fn keep(nodes: &[Node<'_>]) -> Kept {
+    with_side(|side| {
+        let Some(side) = side else {
+            return Kept::default();
+        };
+        let mut includes = std::collections::HashMap::new();
+        each_node(nodes, &mut |n| {
+            if matches!(n, Node::Include(_)) {
+                let at = includes.len() + 1;
+                includes.insert(n.payload_addr(), at);
+            }
+        });
+        let mut kept = Kept {
+            nodes: Vec::new(),
+            budget: side.budget,
+        };
+        each_node(nodes, &mut |n| {
+            let at = n.payload_addr();
+            let carried = Carried {
+                carrier: side.carriers.get(&at).cloned(),
+                mark: side.marks.get(&at).copied(),
+                scope: side.scope.get(&at).map(|i| {
+                    if *i == 0 {
+                        0
+                    } else {
+                        includes.get(i).copied().unwrap_or(0)
+                    }
+                }),
+            };
+            if carried.carrier.is_some() || carried.mark.is_some() || carried.scope.is_some() {
+                if let Ok(v) = serde_json::to_value(n) {
+                    kept.nodes.push((v, carried));
+                }
+            }
+        });
+        kept
+    })
+}
+
+/// Finds the kept nodes again in `nodes`, in document order, and makes their
+/// side tables those of the render until the guard drops.
+pub(crate) fn restore(nodes: &[Node<'_>], kept: Kept) -> Option<Guard> {
+    let mut side = included_side(nodes).unwrap_or_default();
+    side.budget = kept.budget;
+    let mut includes = Vec::new();
+    each_node(nodes, &mut |n| {
+        if matches!(n, Node::Include(_)) {
+            includes.push(n.payload_addr());
+        }
+    });
+    let mut pending = kept.nodes.into_iter().peekable();
+    each_node(nodes, &mut |n| {
+        let Some((value, _)) = pending.peek() else {
+            return;
+        };
+        if serde_json::to_value(n).ok().as_ref() != Some(value) {
+            return;
+        }
+        let Some((_, carried)) = pending.next() else {
+            return;
+        };
+        let at = n.payload_addr();
+        if let Some(c) = carried.carrier {
+            side.carriers.insert(at, c);
+        }
+        if let Some(m) = carried.mark {
+            side.marks.insert(at, m);
+        }
+        if let Some(i) = carried.scope {
+            let include = if i == 0 {
+                0
+            } else {
+                includes.get(i - 1).copied().unwrap_or(0)
+            };
+            side.scope.insert(at, include);
+        }
+    });
+    install(Some(side))
 }
 
 /// The positions of the definitions a document transform receives, which tell

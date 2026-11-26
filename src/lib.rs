@@ -310,13 +310,19 @@ pub(crate) fn resolved_owned_expanded(
 ) -> (
     ast::owned::Document,
     std::collections::HashSet<(u32, u32, u32)>,
+    snippet::expand::Kept,
 ) {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
-    let _snippets = expand_tree(&mut doc, opts, &arena, diags);
+    let snippets = expand_tree(&mut doc, opts, &arena, diags);
     let marks = snippet::expand::definition_marks(doc.children);
     let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
-    (doc.owned(), marks)
+    let kept = if snippets.is_some() {
+        snippet::expand::keep(doc.children)
+    } else {
+        snippet::expand::Kept::default()
+    };
+    (doc.owned(), marks, kept)
 }
 
 /// Resolves a supplied tree again (C2-A-135). The children of an expanded
@@ -993,34 +999,32 @@ fn cross_file_snippet_duplicates(
     sources: &std::collections::HashMap<&str, &str>,
     diags: &mut Vec<diagnostic::Diagnostic>,
 ) {
-    let mut first: std::collections::HashMap<&str, Option<&str>> = std::collections::HashMap::new();
-    snippet::expand::registry_walk(
-        doc.children,
-        0,
-        None,
-        &mut |d, _, file| match first.get(d.name) {
-            None => {
-                first.insert(d.name, file);
-            }
-            Some(winner) if *winner != file => {
-                let text = file.and_then(|f| sources.get(f).copied());
-                let own = text.map(source::Source::new);
-                let at = own.as_ref().unwrap_or(src);
-                let pos = d.pos.and_then(|p| {
-                    let marker = format!("{{${}", d.name);
-                    let start = p.start() + at.text().get(p.start()..)?.find(&marker)?;
-                    Some(at.pos(start + 1, start + 2 + d.name.len()))
-                });
-                diags.push(diagnostic::Diagnostic::new(
-                    "duplicate-snippet",
-                    &[("name", d.name)],
-                    file,
-                    pos,
-                ));
-            }
-            Some(_) => {}
-        },
-    );
+    // The include each name's winner stands in, 0 for the top: a file included twice repeats its definitions.
+    let mut first: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    snippet::expand::registry_walk(doc.children, 0, None, &mut |d, include, file| match first
+        .get(d.name)
+    {
+        None => {
+            first.insert(d.name, include);
+        }
+        Some(winner) if *winner != include => {
+            let text = file.and_then(|f| sources.get(f).copied());
+            let own = text.map(source::Source::new);
+            let at = own.as_ref().unwrap_or(src);
+            let pos = d.pos.and_then(|p| {
+                let marker = format!("{{${}", d.name);
+                let start = p.start() + at.text().get(p.start()..)?.find(&marker)?;
+                Some(at.pos(start + 1, start + 2 + d.name.len()))
+            });
+            diags.push(diagnostic::Diagnostic::new(
+                "duplicate-snippet",
+                &[("name", d.name)],
+                file,
+                pos,
+            ));
+        }
+        Some(_) => {}
+    });
 }
 
 /// C2-A-218: a metadata key is authored by its attribute line, so its range
