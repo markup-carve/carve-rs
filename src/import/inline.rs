@@ -1009,7 +1009,16 @@ impl Cx {
         if let Some(s) = &safe {
             m.insert("src".into(), s.clone().into());
         }
-        m.insert("alt".into(), self.dom.attr(id, "alt").unwrap_or("").into());
+        // C2-M-050: no `alt` attribute leaves the alt unknown; an empty one is decorative.
+        match self.dom.attr(id, "alt") {
+            Some("") => {
+                m.insert("decorative".into(), true.into());
+            }
+            Some(alt) => {
+                m.insert("alt".into(), alt.into());
+            }
+            None => {}
+        }
         if reference.is_none()
             && let Some(t) = self.dom.attr(id, "title")
         {

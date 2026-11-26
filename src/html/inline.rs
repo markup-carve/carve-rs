@@ -592,6 +592,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if let Some(d) = &i.long_description {
             self.long_desc.push(d);
         }
+        // C2-H-080: an unknown alt (neither `alt` nor `decorative`) writes no `alt` attribute.
+        let known = i.alt.is_some() || i.decorative == Some(true);
         let alt = if i.decorative == Some(true) {
             ""
         } else {
@@ -614,7 +616,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             "src",
             Some(self.destination(src, i.pos, true, file, Some(n))),
         ));
-        el.structural.push(("alt", Some(alt.into())));
+        if known {
+            el.structural.push(("alt", Some(alt.into())));
+        }
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
         }

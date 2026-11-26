@@ -864,6 +864,9 @@ fn image_node(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
     }
     let pipes = flags & IN_CELL != 0;
     lose_broken_title(w, node);
+    if !has(node, "alt") && node.get("decorative").and_then(V::as_bool) != Some(true) {
+        w.unknown_alts.insert(id(node));
+    }
     let alt = image_alt(w, node);
     let alt = collapsed_alt(w, node, alt);
     let alt = if pipes { escape_pipes(&alt) } else { alt };
@@ -888,7 +891,7 @@ fn collapsed_alt(w: &mut Writer<'_>, node: V<'_>, alt: String) -> String {
         .is_some_and(|img| {
             ty(img) == "image"
                 && s(img, "key") == Some(key)
-                && img.get("alt").map(V::to_value) == node.get("alt").map(V::to_value)
+                && s(img, "alt") == Some(s(node, "alt").unwrap_or(""))
         });
     if ok { key.to_string() } else { alt }
 }

@@ -117,7 +117,7 @@ fn tabs_wrapper_replaces_generated_role_without_case_sensitivity() {
 #[test]
 fn writer_loss_messages_use_the_catalog_template() {
     let tree = json!({"type":"document","astVersion":"2.0","children":[
-        {"type":"paragraph","role":"image","children":[{"type":"image","src":"i.png","decorative":true}]}
+        {"type":"paragraph","role":"image","children":[{"type":"image","src":"i.png","decorative":false,"alt":"a"}]}
     ]});
     let reply = call(&json!({"call":"writeWithDiagnostics","tree":tree}));
     let diagnostic = reply["ok"]["diagnostics"]
@@ -140,7 +140,7 @@ fn writer_loss_messages_use_the_catalog_template() {
 fn source_only_write_error_carries_loss_diagnostics() {
     let tree = json!({"type":"document","astVersion":"2.0","children":[
         {"type":"paragraph","role":"image","children":[
-            {"type":"image","src":"i.png","decorative":true}
+            {"type":"image","src":"i.png","decorative":false,"alt":"a"}
         ]}
     ]});
     let reply = call(&json!({"call":"write","tree":tree}));

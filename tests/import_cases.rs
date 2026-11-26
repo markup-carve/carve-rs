@@ -33,10 +33,6 @@ const HELD: &[(&str, &str)] = &[
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
-    // carve#6804: an imported image whose alt is unknown.
-    ("CC-2207", "children"),
-    ("CC-2207", "diagnostic:image-alt-unknown"),
-    ("CC-2208", "children"),
     // carve#6853 (carve-rs line): the listTable import option skips an empty row.
     ("CC-2433", "children"),
     ("CC-2433", "diagnostic:import-structure-repaired"),

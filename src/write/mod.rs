@@ -1451,10 +1451,25 @@ fn read_abbreviations(w: &mut Writer<'_>, doc: V<'_>) {
     w.abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
 }
 
+const UNKNOWN_ALT: &str =
+    "Carve source cannot spell an unknown alt text; the image is written with an empty one";
+
 /// C2-W-158: the record in document order of its paths. Entries at one place keep the order they were found in.
 fn located(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
-    let wanted: AddrSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
+    let mut wanted: AddrSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
+    wanted.extend(w.unknown_alts.iter().copied());
     let found = node::places(doc, &wanted);
+    // C2-W-011: an image whose alt text is unknown, reported once at the image.
+    let unknown = w.unknown_alts.iter().filter(|n| found.contains_key(n));
+    let alt_losses: Vec<state::Loss> = unknown
+        .map(|&n| state::Loss {
+            code: "image-alt-unknown",
+            message: UNKNOWN_ALT.into(),
+            node: Some(n),
+            step: None,
+        })
+        .collect();
+    let losses = w.sp.losses.iter().chain(&alt_losses);
     let mut nodes: AddrMap<usize, V<'_>> = AddrMap::default();
     if !wanted.is_empty() {
         let mut all = vec![doc];
@@ -1466,25 +1481,23 @@ fn located(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
         }
     }
     let mut keys = Vec::new();
-    let mut entries: Vec<Entry> =
-        w.sp.losses
-            .iter()
-            .map(|l| {
-                let place = l.node.and_then(|n| found.get(&n));
-                keys.push(place.map(|(_, rank)| (*rank, usize::from(l.step.is_some()))));
-                let path = place.map(|(p, _)| p.clone()).unwrap_or_default()
-                    + l.step.as_deref().unwrap_or("");
-                let range = place
-                    .and(l.node)
-                    .and_then(|n| nodes.get(&n).copied())
-                    .and_then(span)
-                    .map(|(start_offset, end_offset)| Range {
-                        start_offset,
-                        end_offset,
-                    });
-                loss_entry(l.code, l.message.clone(), path, range)
-            })
-            .collect();
+    let mut entries: Vec<Entry> = losses
+        .map(|l| {
+            let place = l.node.and_then(|n| found.get(&n));
+            keys.push(place.map(|(_, rank)| (*rank, usize::from(l.step.is_some()))));
+            let path =
+                place.map(|(p, _)| p.clone()).unwrap_or_default() + l.step.as_deref().unwrap_or("");
+            let range = place
+                .and(l.node)
+                .and_then(|n| nodes.get(&n).copied())
+                .and_then(span)
+                .map(|(start_offset, end_offset)| Range {
+                    start_offset,
+                    end_offset,
+                });
+            loss_entry(l.code, l.message.clone(), path, range)
+        })
+        .collect();
     root_metadata_losses(doc, &mut entries);
     // The fields of the document stand before its blocks.
     keys.resize(entries.len(), Some((0, 1)));

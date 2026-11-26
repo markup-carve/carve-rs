@@ -30,8 +30,6 @@ const CLAUSE_HELD: &[(&str, &str)] = &[
     ("CC-1284", "html"),
     ("CC-1286", "html"),
     ("CC-2228", "html"),
-    // carve#6804 (carve-rs line): an image whose alt is unknown writes no `alt`.
-    ("CC-2210", "html"),
     // carve#6844 (carve-rs line): `data-carve-loose` under `roundtrip`.
     ("CC-2414", "html"),
     ("CC-2440", "html"),
