@@ -54,6 +54,8 @@ pub(crate) struct Cx {
     snippet_ordinals: HashSet<String>,
     /// C2-M-113: the spans of the ranged comments.
     ranged: HashMap<Id, inline::Ranged>,
+    /// C2-M-113: while ranges are measured, the nodes known to give nothing.
+    probe_skip: Option<HashSet<Id>>,
     /// C2-H-186: the `<li>` elements a bare run gave a paragraph.
     bare_items: HashSet<Id>,
 }
@@ -103,6 +105,7 @@ impl Cx {
             templates: HashMap::new(),
             snippet_ordinals: HashSet::new(),
             ranged: HashMap::new(),
+            probe_skip: None,
             bare_items: HashSet::new(),
         }
     }
@@ -242,7 +245,6 @@ pub(crate) fn build(
     }
     let mut cx = Cx::new(dom, raw_html);
     cx.list_table = list_table;
-    cx.ranged = inline::ranged_comments(&cx.dom, raw_html);
     if !full {
         fragment_body(input, &mut cx);
     }
@@ -253,6 +255,7 @@ pub(crate) fn build(
         audit(&mut cx, child);
     }
     template::collect(&mut cx, &top);
+    cx.ranged = inline::ranged_comments(&mut cx);
     let children = match top.first() {
         Some(&first) => blocks::flow(&mut cx, &top, first, blocks::Reader::DocumentChild),
         None => Vec::new(),
