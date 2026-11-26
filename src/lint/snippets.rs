@@ -35,11 +35,35 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
     Some((start, pos.get("startColumn")?.as_u64()?))
 }
 
-/// C2-B-236: the end of the marker of a definition line that a marker with an id made text.
-fn id_marker(line: &str) -> Option<usize> {
+/// C2-B-236: the start and end of the marker of a definition line that an id
+/// made text, an id in the marker or in the attribute lines above it.
+fn id_marker(text: &str) -> Option<(usize, usize)> {
+    let mut at = 0;
+    let mut line_id = false;
+    loop {
+        let line = text.get(at..)?.split('\n').next()?;
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let Some((block, end)) = line
+            .starts_with('{')
+            .then(|| crate::attr::parse_glued(line, 0))
+            .flatten()
+        else {
+            break;
+        };
+        if block.empty || !line.get(end..).is_some_and(crate::chars::is_blank_line) {
+            break;
+        }
+        line_id |= crate::snippet::holds_id(&block);
+        at += text.get(at..)?.find('\n')? + 1;
+    }
+    let line = text.get(at..)?.split('\n').next()?;
+    if !line.starts_with("{$") {
+        return None;
+    }
     let m = crate::snippet::marker(line)?;
     let value = line.get(m.end..)?;
-    (m.has_id && value.starts_with(' ') && !value.trim().is_empty()).then_some(m.end)
+    ((m.has_id || line_id) && value.starts_with(' ') && !value.trim().is_empty())
+        .then_some((at, at + m.end))
 }
 
 struct Scan<'s, 'v> {
@@ -68,12 +92,10 @@ impl<'v> Scan<'_, 'v> {
                 out.push(d);
             }
             Some("paragraph") if self.ids && column == 1 => {
-                let line = source.get(start..).unwrap_or("");
-                let line = line.split('\n').next().unwrap_or("");
-                let Some(end) = line.starts_with("{$").then(|| id_marker(line)).flatten() else {
+                let Some((from, end)) = id_marker(source.get(start..).unwrap_or("")) else {
                     return;
                 };
-                let pos = self.positions.pos(start, start + end);
+                let pos = self.positions.pos(start + from, start + end);
                 let mut d = Diagnostic::nth("snippet-definition-id", 0, &[], None, Some(pos));
                 d.path = Some(format!("/children/{index}"));
                 out.push(d);

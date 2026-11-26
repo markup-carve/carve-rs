@@ -573,6 +573,7 @@ fn c2_a_tree_gate_fixtures() {
         "examples-html",
         "examples-writer",
         "examples-includes",
+        "positions",
     ] {
         let path = format!("{}/spec-trees/{name}.json", env!("CARGO_MANIFEST_DIR"));
         let v = parse_json(&std::fs::read_to_string(path).unwrap_or_default());
@@ -593,6 +594,13 @@ fn c2_a_tree_gate_fixtures() {
             let input = t["source"].as_str().unwrap_or("");
             let got = parse_json(&carve::tree_json(input, &opts));
             let (want, got) = (sorted(&t["tree"]), sorted(&got));
+            // A `fails` tree is one the position check refuses (C2-A-145), so the parser must not give it.
+            if t.get("fails").is_some() {
+                run.check(id, "refused tree", want != got, || {
+                    format!("{input}\n--- the parser gives the refused tree\n{got}")
+                });
+                continue;
+            }
             run.check(id, "tree", want == got, || {
                 format!("{input}\n--- expected\n{want}\n--- got\n{got}")
             });

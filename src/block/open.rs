@@ -859,6 +859,13 @@ impl Parser<'_> {
         let Some(value) = crate::snippet::value_start(r, &m) else {
             return false;
         };
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| crate::snippet::holds_id(&p.attrs))
+        {
+            return false;
+        }
         let name = r.get(2..m.name_end).unwrap_or("").to_string();
         let own = (!m.block.attrs.is_empty() || m.block.lang.is_some()).then_some(m.block);
         let (s, attrs) = self.take_pending(start, own);
