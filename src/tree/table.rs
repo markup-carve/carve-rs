@@ -112,13 +112,21 @@ impl<'a> Builder<'_, 'a> {
         });
         let marked = has_marks(&data.rows);
         let n = data.rows.len();
-        let head = end_head(head_rows(&data.rows, marked), n, attrs.as_ref());
+        // C2-B-186: a valid `header-rows` count sets the head whatever the cells.
+        let declared = attrs
+            .as_ref()
+            .and_then(|a| a.get("header-rows"))
+            .and_then(count);
+        let head = declared.map_or_else(
+            || end_head(head_rows(&data.rows, marked), n, attrs.as_ref()),
+            |count| count.min(n),
+        );
         let foot = footer_count(attrs.as_ref()).min(n - head);
         let plan = body_plan(attrs.as_ref(), n - head - foot);
         let body_starts = body_starts(head, plan.as_ref());
         let spans = marked.then(|| join_spans(&mut data.rows, head, n - foot, &body_starts));
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
-        let (columns, attrs) = columns(self.arena, ncols, attrs, false, plan.is_some());
+        let (columns, attrs) = columns(self.arena, ncols, attrs, plan.is_some());
         let mut groups: Vec<Node<'a>> = Vec::new();
         if head > 0 {
             groups.push(self.group(
@@ -230,7 +238,6 @@ impl<'a> Builder<'_, 'a> {
             self.arena,
             ncols,
             attrs.filter(|a| !a.is_empty()),
-            true,
             body_valid,
         );
         Node::Table(self.arena.alloc(ast::Table {
@@ -733,7 +740,6 @@ fn columns<'a>(
     arena: &'a Arena,
     ncols: usize,
     attrs: Option<Attrs>,
-    header_applies: bool,
     body_valid: bool,
 ) -> (&'a mut [Node<'a>], Option<Attrs>) {
     let mut cols: Vec<ast::TableColumn<'a>> =
@@ -778,7 +784,7 @@ fn columns<'a>(
             col.width = Some(width);
         }
     }
-    let header_valid = header_applies && a.get("header-rows").is_some_and(|v| count(v).is_some());
+    let header_valid = a.get("header-rows").is_some_and(|v| count(v).is_some());
     let footer_valid = a.get("footer-rows").is_some_and(|v| count(v).is_some());
     let consumed = ConsumedKeys(
         u8::from(aligns.is_some())
@@ -824,10 +830,10 @@ fn width(e: &str) -> Option<f64> {
     (v > 0.0 && v <= 100.0).then_some(v / 100.0)
 }
 
-/// C2-B-187: an empty `body-rows` ends the head above a footer count smaller than the rows.
+/// C2-B-187: an empty `body-rows` ends the head above a footer count up to the rows.
 fn end_head(head: usize, rows: usize, attrs: Option<&Attrs>) -> usize {
     let foot = footer_count(attrs);
-    if foot < rows
+    if foot <= rows
         && head > rows - foot
         && body_plan(attrs, 0).is_some_and(|plan| plan.data_rows.is_empty())
     {

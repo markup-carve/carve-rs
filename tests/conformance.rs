@@ -28,18 +28,23 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2228", "html"),
     // carve#6804 (carve-rs line): an image whose alt is unknown writes no `alt`.
     ("CC-2210", "html"),
-    // carve#6663 (carve#6812 G1): header-rows sets the head of a pipe table.
+    // carve#6837: the expected HTML of these G1 cases ends in a line feed no render writes;
+    // `table_import_g1.rs` checks them without it.
     ("CC-2237", "html"),
     ("CC-2238", "html"),
     ("CC-2239", "html"),
     ("CC-2240", "html"),
-    ("syntax-blocks-219", "html"),
-    ("syntax-blocks-219", "tree"),
-    // carve#6664 (carve#6812 G1): an empty body-rows with a footer count makes the rows a foot.
-    ("CC-2068", "html"),
-    ("CC-2068", "children"),
     ("CC-2246", "html"),
     ("CC-2248", "html"),
+    // carve#6832 (carve-rs line): a bare paragraph that would not import back keeps its <p>.
+    ("CC-2398", "html"),
+    ("CC-2399", "html"),
+    ("CC-2402", "html"),
+    ("CC-2403", "html"),
+    ("CC-2406", "html"),
+    ("CC-2407", "html"),
+    ("CC-2409", "html"),
+    ("CC-2410", "html"),
     // carve#6099 (carve#6812 G7): a tree number must keep its binary64 value.
     ("CC-2313", "refusal"),
     ("CC-2314", "refusal"),

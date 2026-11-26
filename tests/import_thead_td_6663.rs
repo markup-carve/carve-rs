@@ -1,6 +1,6 @@
-//! C2-M-037 (carve#6663, ruling A): every `<td>` of the `<thead>` that becomes
-//! the `table_head` is a header cell, reported once at the `<thead>`.
-//! CC-2100 to CC-2104 are inlined: the pinned spec commit predates them.
+//! C2-M-037 (carve#6663, ruling audit of carve#6812 G1): the `<td>` of the
+//! `<thead>` stay data cells and nothing is reported; the writer spells the
+//! head with `header-rows` (C2-W-066). CC-2100 to CC-2104, inlined.
 
 use carve::api::{self, ImportOptions};
 
@@ -38,7 +38,7 @@ fn cc_2100_thead_row_of_td_cells() {
     let html = "<table><thead><tr><td>a</td><td>b</td></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>";
     assert_eq!(
         import(html),
-        ("|= a |= b |\n| 1 | 2 |\n".into(), vec![repaired_at(7)])
+        ("{header-rows=1}\n| a | b |\n| 1 | 2 |\n".into(), vec![])
     );
 }
 
@@ -48,8 +48,8 @@ fn cc_2101_empty_td_corner_and_td_labels() {
     assert_eq!(
         import(html),
         (
-            "|= |= Q1 |= Q2 |\n|= North | 1 | 2 |\n".into(),
-            vec![repaired_at(7)]
+            "{header-rows=1}\n| | Q1 | Q2 |\n|= North | 1 | 2 |\n".into(),
+            vec![]
         )
     );
 }
@@ -60,18 +60,18 @@ fn cc_2102_empty_td_corner_beside_th_labels() {
     assert_eq!(
         import(html),
         (
-            "|= |= Q1 |= Q2 |\n|= North | 1 | 2 |\n".into(),
-            vec![repaired_at(7)]
+            "{header-rows=1}\n| |= Q1 |= Q2 |\n|= North | 1 | 2 |\n".into(),
+            vec![]
         )
     );
 }
 
 #[test]
-fn cc_2103_two_td_rows_report_once() {
+fn cc_2103_two_td_rows() {
     let html = "<table><thead><tr><td>a</td></tr><tr><td>b</td></tr></thead><tbody><tr><td>1</td></tr></tbody></table>";
     assert_eq!(
         import(html),
-        ("|= a |\n|= b |\n| 1 |\n".into(), vec![repaired_at(7)])
+        ("{header-rows=2}\n| a |\n| b |\n| 1 |\n".into(), vec![])
     );
 }
 
@@ -99,6 +99,6 @@ fn td_thead_above_a_header_cell_foot_reads_back() {
         "<table><thead><tr><td>a</td></tr></thead><tfoot><tr><th>F</th></tr></tfoot></table>";
     assert_eq!(
         import(html).0,
-        "{footer-rows=1 body-rows}\n|= a |\n|= F |\n"
+        "{header-rows=1 footer-rows=1}\n| a |\n|= F |\n"
     );
 }

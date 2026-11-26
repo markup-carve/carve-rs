@@ -247,9 +247,14 @@ fn is_head_row(row: V<'_>) -> bool {
 fn head_ends_above_foot(table: V<'_>) -> bool {
     let head = rows_of(table, "table_head");
     let foot = rows_of(table, "table_foot");
-    !head.is_empty()
-        && head.iter().all(|r| is_head_row(*r))
-        && foot.first().is_some_and(|r| is_header_row(*r))
+    head.iter().all(|r| is_head_row(*r)) && foot.first().is_some_and(|r| is_header_row(*r))
+}
+
+/// C2-W-066, C2-B-186: a pipe table spells its head with `header-rows` where a head row holds a
+/// data cell.
+fn pipe_header_rows(table: V<'_>) -> Option<usize> {
+    let head = rows_of(table, "table_head");
+    (!head.iter().all(|r| is_head_row(*r))).then_some(head.len())
 }
 
 fn body_keys(table: V<'_>) -> Vec<(String, String)> {
@@ -683,7 +688,7 @@ fn ends_with_group_comment(table: V<'_>) -> bool {
 }
 
 fn pipe_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u32) {
-    let parts = table_keys(Some(w), table, None);
+    let parts = table_keys(Some(w), table, pipe_header_rows(table));
     let block = brace_block(table, &parts);
     if w.prewritten == Some(id(table)) {
         w.prewritten = None;
@@ -974,7 +979,7 @@ pub fn write_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u3
 /// C2-W-122: the same table attribute line before an intervening comment as before the table itself.
 pub fn table_attribute(w: &Writer<'_>, table: V<'_>) -> String {
     if table_format(w, table) == "pipe" {
-        return brace_block(table, &table_keys(None, table, None));
+        return brace_block(table, &table_keys(None, table, pipe_header_rows(table)));
     }
     brace_block(table, &delimited_keys(None, table, header_rows(w, table)))
 }

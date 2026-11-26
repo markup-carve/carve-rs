@@ -1510,7 +1510,7 @@ impl Cx {
             children.insert(0, parent("table_body", direct));
         }
         if let Some(h) = head {
-            let rows = self.head_cells(h);
+            let rows = self.rows(h, true);
             let mapped = self.plain_attrs(h);
             children.insert(0, with("table_head", rows, &mapped));
         } else if !head_rows.is_empty() {
@@ -1524,30 +1524,6 @@ impl Cx {
         children
     }
 
-    /// carve#6663: a head holds header cells only (C2-B-178), so each `<td>` of the `<thead>` is one, reported once.
-    fn head_cells(&mut self, head: Id) -> Vec<Value> {
-        let mut rows = self.rows(head, true);
-        let mut changed = false;
-        for cell in rows
-            .iter_mut()
-            .filter_map(|r| r["children"].as_array_mut())
-            .flatten()
-        {
-            if cell["header"] == false {
-                cell["header"] = true.into();
-                changed = true;
-            }
-        }
-        if changed {
-            self.report(
-                head,
-                Code::StructureRepaired,
-                "The data cells of a table head read as header cells",
-            );
-        }
-        rows
-    }
-
     /// The rows of a body; `lead` splits its leading column-heading rows off into `head_rows`.
     fn body_rows(&mut self, all: &[Id], lead: bool, head_rows: &mut Vec<Value>) -> Vec<Value> {
         if !lead {
@@ -1556,7 +1532,30 @@ impl Cx {
         let split = all.iter().take_while(|&&r| self.heads_columns(r)).count();
         let (lead_rows, rest) = all.split_at(split);
         *head_rows = self.rows_of(lead_rows, true);
-        self.rows_of(rest, false)
+        let mut rows = self.rows_of(rest, false);
+        // C2-M-037: an unscoped `<th>` of a leading all-`<th>` row that stays in the body heads
+        // its column.
+        for (&tr, row) in rest.iter().zip(&mut rows) {
+            let cells = self.cell_elements(tr);
+            if cells.is_empty() || !cells.iter().all(|&c| self.dom.is(c, "th")) {
+                break;
+            }
+            let values = row["children"].as_array_mut().into_iter().flatten();
+            for (&c, cell) in cells.iter().zip(values) {
+                if !self.dom.has(c, "scope") {
+                    cell["scope"] = "col".into();
+                }
+            }
+        }
+        rows
+    }
+
+    fn cell_elements(&self, tr: Id) -> Vec<Id> {
+        self.dom
+            .elements(tr)
+            .into_iter()
+            .filter(|&c| self.dom.is(c, "th") || self.dom.is(c, "td"))
+            .collect()
     }
 
     /// C2-H-152: the widths of a column group, a fraction each.
@@ -1576,13 +1575,13 @@ impl Cx {
             }
             let style = self.dom.attr(col, "style").map(str::to_string);
             let (width, only) = style.as_deref().map_or((None, true), col_style_width);
-            // C2-M-041: a col style is no key; one that gives no width or holds
-            // another declaration is reported.
+            // C2-M-041: a col style is no key; one that gives no width, holds
+            // another declaration or marks its width important is reported.
             if style.is_some() && (width.is_none() || !only) {
                 self.report(
                     col,
                     Code::AttributeDropped,
-                    "A col style that gives no width or holds another declaration dropped",
+                    "A col style that gives no width, holds another declaration or marks its width important dropped",
                 );
             }
             out.push(width);
@@ -1793,20 +1792,40 @@ fn col_style_width(style: &str) -> (Option<f64>, bool) {
     fn trim(s: &str) -> &str {
         s.trim_matches(|c: char| c.is_ascii_whitespace())
     }
-    let mut width = None;
+    // C2-M-041: the last width marked important applies, else the last width.
+    let mut last: Option<&str> = None;
+    let mut important: Option<&str> = None;
     let mut count = 0usize;
     for piece in style.split(';').map(trim).filter(|p| !p.is_empty()) {
         count += 1;
         let Some((name, value)) = piece.split_once(':') else {
             continue;
         };
-        if trim(name).eq_ignore_ascii_case("width")
-            && let Some(w) = percent_width(trim(value))
-        {
-            width = Some(w);
+        if !trim(name).eq_ignore_ascii_case("width") {
+            continue;
+        }
+        let value = trim(value);
+        match important_value(value) {
+            Some(v) => important = Some(v),
+            None => last = Some(value),
         }
     }
-    (width, count == 1)
+    let width = important.or(last).and_then(percent_width);
+    (width, count == 1 && important.is_none())
+}
+
+/// C2-M-041: the value without its `!important` mark, where it carries one.
+fn important_value(value: &str) -> Option<&str> {
+    let cut = value.len().checked_sub("important".len())?;
+    let (rest, mark) = (value.get(..cut)?, value.get(cut..)?);
+    if !mark.eq_ignore_ascii_case("important") {
+        return None;
+    }
+    let rest = rest.trim_end_matches(|c: char| c.is_ascii_whitespace());
+    Some(
+        rest.strip_suffix('!')?
+            .trim_end_matches(|c: char| c.is_ascii_whitespace()),
+    )
 }
 
 fn percent_width(value: &str) -> Option<f64> {

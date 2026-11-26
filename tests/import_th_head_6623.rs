@@ -51,15 +51,6 @@ fn th_head_clause_cases_write_and_record() {
         }
     }
     assert_eq!(seen, ids.len(), "clause cases missing from the corpus");
-    // carve#6623 (carve#6812 G1): the unscoped cell of a scope row header row is reported.
-    let held = ["CC-2063:"];
-    for h in held {
-        assert!(
-            failures.iter().any(|f| f.starts_with(h)),
-            "{h} held but passes; drop the hold"
-        );
-    }
-    failures.retain(|f| !held.iter().any(|h| f.starts_with(h)));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
