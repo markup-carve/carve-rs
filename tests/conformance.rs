@@ -25,6 +25,9 @@ const HELD: &[(&str, &str)] = &[
     ("CC-1283", "html"),
     ("CC-1284", "html"),
     ("CC-1286", "html"),
+    ("CC-2228", "html"),
+    // carve#6804 (carve-rs line): an image whose alt is unknown writes no `alt`.
+    ("CC-2210", "html"),
 ];
 
 /// A case with extensions or a host runs through the JSON boundary in

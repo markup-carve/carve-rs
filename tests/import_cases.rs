@@ -27,6 +27,11 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2184", "children"),
     ("CC-2161", "diagnostic:import-structure-repaired"),
     ("CC-2163", "diagnostic:import-attribute-dropped"),
+    // carve#6804 (carve-rs line): an img without alt imports with an unknown alt.
+    ("CC-2207", "children"),
+    ("CC-2207", "diagnostic:field-unspellable"),
+    ("CC-2208", "children"),
+    ("CC-2208", "diagnostic:field-unspellable"),
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
@@ -46,7 +51,8 @@ const WITH_CARVE_CLAUSE: &[&str] = &[
     "CC-2153", "CC-2156", "CC-2159", "CC-2160", "CC-2161", "CC-2162", "CC-2163", "CC-2167",
     "CC-2168", "CC-2169", "CC-2170", "CC-2171", "CC-2177", "CC-2178", "CC-2179", "CC-2180",
     "CC-2181", "CC-2182", "CC-2183", "CC-2184", "CC-2197", "CC-2198", "CC-2199", "CC-2200",
-    "CC-2201", "CC-2202", "CC-2203", "CC-2204",
+    "CC-2201", "CC-2202", "CC-2203", "CC-2204", "CC-2207", "CC-2208", "CC-2209", "CC-2220",
+    "CC-2229",
 ];
 
 fn load(name: &str) -> Value {

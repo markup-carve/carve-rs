@@ -89901,6 +89901,599 @@
    "carve": "[x]{.comment-end}\n"
   },
   "from": []
- }
+ },
+ {
+  "id": "CC-2205",
+  "clauses": [
+   "C2-A-115",
+   "C2-I-074"
+  ],
+  "why": "C2-A-115: It always produces `alt`, the empty string for `![](x)`, so the unknown state comes only from an import or a supplied tree.",
+  "summary": "a parse of an image with empty brackets gives an empty alt, not the unknown state",
+  "kind": "parse",
+  "input": "![](x)\n",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x",
+       "alt": ""
+      }
+     ]
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2206",
+  "clauses": [
+   "C2-A-115"
+  ],
+  "why": "C2-A-115: An image is in one of three states: it has alt text, held in `alt`; its alt text is unknown, with neither `alt` nor `decorative`; or it is decorative, with `decorative: true` and no `alt`.",
+  "summary": "a tree with an image that has neither alt nor decorative is accepted",
+  "kind": "tree",
+  "json": "{\"type\":\"document\",\"astVersion\":\"2.0\",\"children\":[{\"type\":\"paragraph\",\"role\":\"image\",\"children\":[{\"type\":\"image\",\"src\":\"x\"}]}]}",
+  "options": {},
+  "expected": {
+   "tree": {
+    "type": "document",
+    "astVersion": "2.0",
+    "children": [
+     {
+      "type": "paragraph",
+      "role": "image",
+      "children": [
+       {
+        "type": "image",
+        "src": "x"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2207",
+  "clauses": [
+   "C2-M-050",
+   "C2-A-115"
+  ],
+  "why": "C2-M-050: an `<img>` with no `alt` attribute has neither field, its alt text unknown (C2-A-115) C2-A-115: An image is in one of three states: it has alt text, held in `alt`; its alt text is unknown, with neither `alt` nor `decorative`; or it is decorative, with `decorative: true` and no `alt`.",
+  "summary": "an img with no alt attribute imports as an image whose alt is unknown, reported by the writer at the image",
+  "kind": "import",
+  "html": "<p><img src=\"x\"></p>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x"
+      }
+     ]
+    }
+   ],
+   "carve": "![](x)\n",
+   "diagnostics": [
+    {
+     "code": "field-unspellable",
+     "path": "/children/0/children/0",
+     "channel": "render-loss",
+     "severity": "warning"
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2208",
+  "clauses": [
+   "C2-M-050",
+   "C2-A-115"
+  ],
+  "why": "C2-M-050: an `alt` attribute with the empty value makes it decorative, `decorative: true` and no `alt` C2-A-115: An image is in one of three states: it has alt text, held in `alt`; its alt text is unknown, with neither `alt` nor `decorative`; or it is decorative, with `decorative: true` and no `alt`.",
+  "summary": "an img with an empty alt attribute imports as a decorative image",
+  "kind": "import",
+  "html": "<p><img src=\"x\" alt=\"\"></p>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x",
+       "decorative": true
+      }
+     ]
+    }
+   ],
+   "carve": "![](x)\n",
+   "diagnostics": [
+    {
+     "code": "field-unspellable",
+     "path": "/children/0/children/0/decorative",
+     "channel": "render-loss",
+     "severity": "warning"
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2209",
+  "clauses": [
+   "C2-M-050"
+  ],
+  "why": "C2-M-050: `<img>` is an `image` with `src`, `alt` and `tooltip` from `title`",
+  "summary": "near miss: an img with alt text imports with that alt and nothing to report",
+  "kind": "import",
+  "html": "<p><img src=\"x\" alt=\"A\"></p>",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x",
+       "alt": "A"
+      }
+     ]
+    }
+   ],
+   "carve": "![A](x)\n",
+   "notReported": [
+    "field-unspellable"
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2210",
+  "clauses": [
+   "C2-H-080",
+   "C2-A-115"
+  ],
+  "why": "C2-H-080: `alt` is written empty for a decorative image and not at all for an image whose alt text is unknown, which has neither `alt` nor `decorative` (C2-A-115)",
+  "summary": "an image whose alt is unknown renders with no alt attribute",
+  "kind": "render",
+  "tree": {
+   "type": "document",
+   "astVersion": "2.0",
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x"
+      }
+     ]
+    }
+   ]
+  },
+  "options": {},
+  "expected": {
+   "html": "<img src=\"x\">"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2211",
+  "clauses": [
+   "C2-H-080",
+   "C2-A-115"
+  ],
+  "why": "C2-H-080: `alt` is written empty for a decorative image and not at all for an image whose alt text is unknown, which has neither `alt` nor `decorative` (C2-A-115)",
+  "summary": "a decorative image renders an empty alt attribute",
+  "kind": "render",
+  "tree": {
+   "type": "document",
+   "astVersion": "2.0",
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x",
+       "decorative": true
+      }
+     ]
+    }
+   ]
+  },
+  "options": {},
+  "expected": {
+   "html": "<img src=\"x\" alt=\"\">"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2212",
+  "clauses": [
+   "C2-H-080",
+   "C2-A-115"
+  ],
+  "why": "C2-H-080: `alt` is written empty for a decorative image and not at all for an image whose alt text is unknown, which has neither `alt` nor `decorative` (C2-A-115) C2-A-115: It always produces `alt`, the empty string for `![](x)`, so the unknown state comes only from an import or a supplied tree.",
+  "summary": "near miss: a source image with empty brackets renders an empty alt attribute",
+  "kind": "render",
+  "input": "a ![](x) b\n",
+  "options": {},
+  "expected": {
+   "html": "<p>a <img src=\"x\" alt=\"\"> b</p>"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2213",
+  "clauses": [
+   "C2-W-011",
+   "C2-A-115"
+  ],
+  "why": "C2-W-011: An image with neither `alt` nor `decorative`, whose alt text is unknown (C2-A-115), is written with empty brackets, which read back as an empty `alt`, and reported with `field-unspellable` at the path of the image, since the absent field has no path of its own.",
+  "summary": "the writer writes an image whose alt is unknown with empty brackets and reports it at the image",
+  "kind": "write",
+  "tree": {
+   "type": "document",
+   "astVersion": "2.0",
+   "children": [
+    {
+     "type": "paragraph",
+     "role": "image",
+     "children": [
+      {
+       "type": "image",
+       "src": "x"
+      }
+     ]
+    }
+   ]
+  },
+  "options": {},
+  "expected": {
+   "carve": "![](x)\n",
+   "diagnostics": [
+    {
+     "code": "field-unspellable",
+     "path": "/children/0/children/0",
+     "severity": "warning",
+     "channel": "render-loss"
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2214",
+  "clauses": [
+   "C2-T-034",
+   "C2-M-050"
+  ],
+  "why": "C2-T-034: Without it, a writer loss of C2-W-134 fails the file with the category `writer-refused`. C2-M-050: an `<img>` with no `alt` attribute has neither field, its alt text unknown (C2-A-115)",
+  "summary": "import of an img with no alt fails with writer-refused",
+  "kind": "cli",
+  "args": [
+   "import",
+   "--from",
+   "html",
+   "-"
+  ],
+  "stdin": "<p><img src=\"x\"></p>",
+  "options": {},
+  "expected": {
+   "status": 1,
+   "stderrCategory": "writer-refused"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2215",
+  "clauses": [
+   "C2-T-027",
+   "C2-T-034",
+   "C2-M-050"
+  ],
+  "why": "C2-T-027: An allowed code is neither written on standard error nor in the report. C2-T-034: Without it, a writer loss of C2-W-134 fails the file with the category `writer-refused`. C2-M-050: an `<img>` with no `alt` attribute has neither field, its alt text unknown (C2-A-115)",
+  "summary": "import of an img with no alt and field-unspellable allowed writes empty brackets",
+  "kind": "cli",
+  "args": [
+   "import",
+   "--from",
+   "html",
+   "--allow-loss",
+   "field-unspellable",
+   "-"
+  ],
+  "stdin": "<p><img src=\"x\"></p>",
+  "options": {},
+  "expected": {
+   "status": 0,
+   "stdout": "![](x)\n",
+   "stderrCategory": null
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2216",
+  "clauses": [
+   "C2-W-106",
+   "C2-A-115"
+  ],
+  "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-A-115: It always produces `alt`, the empty string for `![](x)`, so the unknown state comes only from an import or a supplied tree.",
+  "summary": "an inline image with empty brackets is reported as having no alternative text",
+  "kind": "lint",
+  "input": "a ![](x) b\n",
+  "options": {},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "a11y/image-alt",
+     "line": 1,
+     "column": 3,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+  {
+   "id": "CC-2217",
+   "clauses": [
+    "C2-H-211",
+    "C2-H-048"
+   ],
+   "why": "C2-H-211: Line options are attributes, not syntax: the class `line-numbers` asks a host for a line-number gutter, `data-line-start` names the number of the first line, and `data-highlight` names the lines to highlight. The renderer gives them no meaning and writes them on `<pre>` as any other attribute of the block (C2-H-048)",
+   "summary": "the three line options of a code block are written on its <pre>",
+   "kind": "render",
+   "input": "{.line-numbers data-line-start=\"42\" data-highlight=\"1,3-5\"}\n```php \"src/app.php\"\n$a = 1;\n$b = 2;\n```\n",
+   "options": {},
+   "expected": {
+    "html": "<pre title=\"src/app.php\" class=\"line-numbers\" data-line-start=\"42\" data-highlight=\"1,3-5\"><code class=\"language-php\">$a = 1;\n$b = 2;\n</code></pre>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2218",
+   "clauses": [
+    "C2-H-211",
+    "C2-H-063"
+   ],
+   "why": "C2-H-211: The renderer gives them no meaning and writes them on `<pre>` as any other attribute of the block (C2-H-048), also where the block has a caption (C2-H-063) C2-H-063: The line options of a code block (C2-H-211) are the exception: the class `line-numbers` and the keys `data-line-start` and `data-highlight` stay on its `<pre>` and are not written on the `<figure>`.",
+   "summary": "the line options of a captioned code block stay on its <pre>",
+   "kind": "render",
+   "input": "{.line-numbers data-line-start=42 data-highlight=1,3-5}\n```php\n$a = 1;\n```\n^ The app.\n",
+   "options": {},
+   "expected": {
+    "html": "<figure>\n  <pre class=\"line-numbers\" data-line-start=\"42\" data-highlight=\"1,3-5\"><code class=\"language-php\">$a = 1;\n</code></pre>\n  <figcaption>The app.</figcaption>\n</figure>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2219",
+   "clauses": [
+    "C2-H-211"
+   ],
+   "why": "C2-H-211: the writer and the HTML importer keep them as any other key.",
+   "summary": "the writer keeps the line options of a code block",
+   "kind": "format",
+   "input": "{.line-numbers data-line-start=\"42\" data-highlight=\"1,3-5\"}\n```php \"src/app.php\"\n$a = 1;\n$b = 2;\n```\n",
+   "options": {},
+   "expected": {
+    "carve": "{.line-numbers data-line-start=42 data-highlight=1,3-5}\n```php \"src/app.php\"\n$a = 1;\n$b = 2;\n```\n"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2220",
+   "clauses": [
+    "C2-H-211"
+   ],
+   "why": "C2-H-211: the writer and the HTML importer keep them as any other key.",
+   "summary": "the HTML importer keeps the line options of a <pre>",
+   "kind": "import",
+   "html": "<pre class=\"line-numbers\" data-line-start=\"42\" data-highlight=\"1,3-5\"><code class=\"language-php\">a\n</code></pre>\n",
+   "options": {},
+   "expected": {
+    "carve": "{.line-numbers data-line-start=42 data-highlight=1,3-5}\n```php\na\n```\n"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2221",
+   "clauses": [
+    "C2-H-211",
+    "C2-B-122"
+   ],
+   "why": "C2-H-211: The info string takes none of them (C2-B-122). C2-B-122: An unquoted title or further words in the info string do not stop the block from opening, and `fence-title-syntax` reports them.",
+   "summary": "a line range in the info string is no line option",
+   "kind": "render",
+   "input": "```js {1,3}\na\n```\n",
+   "options": {},
+   "expected": {
+    "html": "<pre><code class=\"language-js\">a\n</code></pre>",
+    "diagnostics": [
+     "fence-title-syntax"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2222",
+   "clauses": [
+    "C2-H-212"
+   ],
+   "why": "C2-H-212: a value outside this shape highlights no line. The renderer and lint check neither value.",
+   "summary": "values outside the shape of the line options are written as they are",
+   "kind": "render",
+   "input": "{.line-numbers data-line-start=042 data-highlight=\"3-1,0,x,1, 2\"}\n```js\na\n```\n",
+   "options": {},
+   "expected": {
+    "html": "<pre class=\"line-numbers\" data-line-start=\"042\" data-highlight=\"3-1,0,x,1, 2\"><code class=\"language-js\">a\n</code></pre>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2223",
+   "clauses": [
+    "C2-H-212"
+   ],
+   "why": "C2-H-212: The renderer and lint check neither value.",
+   "summary": "lint reports no value of the line options",
+   "kind": "lint",
+   "input": "{.line-numbers data-line-start=0 data-highlight=\"5-2,1, 2\"}\n```js\na\n```\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2224",
+   "clauses": [
+    "C2-H-212"
+   ],
+   "why": "C2-H-212: Items may overlap and stand in any order, a line past the last line of the block is not highlighted",
+   "summary": "overlapping, unordered and past-the-end ranges are written as they are",
+   "kind": "render",
+   "input": "{data-highlight=2,1-2,1-99}\n```\na\nb\n```\n",
+   "options": {},
+   "expected": {
+    "html": "<pre data-highlight=\"2,1-2,1-99\"><code>a\nb\n</code></pre>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2225",
+   "clauses": [
+    "C2-H-213",
+    "C2-N-042"
+   ],
+   "why": "C2-H-213: A code include gives its child no line option of its own: the child carries the attribute line of the include (C2-N-042)",
+   "summary": "a code include with a lines selection adds no data-line-start",
+   "kind": "render",
+   "input": "{.line-numbers}\n{{ src.js @code:js @lines:2-3 }}\n",
+   "files": {
+    "src.js": {
+     "text": "l1\nl2\nl3\nl4\n"
+    }
+   },
+   "options": {},
+   "expected": {
+    "html": "<pre class=\"line-numbers\"><code class=\"language-js\">l2\nl3\n</code></pre>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2226",
+   "clauses": [
+    "C2-H-213"
+   ],
+   "why": "C2-H-213: `data-line-start=auto` is the text `auto`, no value of C2-H-212.",
+   "summary": "data-line-start=auto on a code include is written as the text auto",
+   "kind": "render",
+   "input": "{.line-numbers data-line-start=auto}\n{{ src.js @code:js @lines:2-3 }}\n",
+   "files": {
+    "src.js": {
+     "text": "l1\nl2\nl3\nl4\n"
+    }
+   },
+   "options": {},
+   "expected": {
+    "html": "<pre class=\"line-numbers\" data-line-start=\"auto\"><code class=\"language-js\">l2\nl3\n</code></pre>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2227",
+   "clauses": [
+    "C2-H-063",
+    "C2-H-009"
+   ],
+   "why": "C2-H-063: The line options of a code block (C2-H-211) are the exception: the class `line-numbers` and the keys `data-line-start` and `data-highlight` stay on its `<pre>` and are not written on the `<figure>`.",
+   "summary": "a captioned code block keeps its other attributes on the figure and its line options on <pre>",
+   "kind": "render",
+   "input": "{#c .wide .line-numbers lang=de data-line-start=42 data-highlight=1 data-x=y}\n```php \"src/app.php\"\n$a = 1;\n```\n^ The app.\n",
+   "options": {},
+   "expected": {
+    "html": "<figure id=\"c\" class=\"wide\" lang=\"de\" data-x=\"y\">\n  <pre title=\"src/app.php\" class=\"line-numbers\" data-line-start=\"42\" data-highlight=\"1\"><code class=\"language-php\">$a = 1;\n</code></pre>\n  <figcaption>The app.</figcaption>\n</figure>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2228",
+   "clauses": [
+    "C2-H-206",
+    "C2-H-063"
+   ],
+   "why": "C2-H-206: For a code block with a caption it is called for the block inside the `<figure>` (C2-H-062), so the node has no `caption`, `lang` or `dir`, its `attrs` hold only the line options that stay on `<pre>` (C2-H-063), and the default HTML carries no other of their attributes",
+   "summary": "the default HTML of a captioned code block carries its line options",
+   "kind": "render",
+   "input": "{#f .line-numbers data-highlight=1}\n```ts\nx\n```\n^ cap\n",
+   "options": {
+    "codeBlockRenderer": {
+     "result": "<div>{default}</div>"
+    }
+   },
+   "expected": {
+    "html": "<figure id=\"f\">\n  <div><pre class=\"line-numbers\" data-highlight=\"1\"><code class=\"language-ts\">x\n</code></pre></div>\n  <figcaption>cap</figcaption>\n</figure>",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2229",
+   "clauses": [
+    "C2-M-043",
+    "C2-H-211"
+   ],
+   "why": "C2-M-043: Any other `<figure>` that holds one block, which C2-A-082 lets carry a caption and which has none yet, and a `<figcaption>` is that block with the caption in its `caption` slot, and with the attributes of the `<figure>` and of the block element as its attributes, merged as consecutive attribute blocks are (C2-A-035), the figure's first: classes add up",
+   "summary": "the HTML importer reads the line options of a captioned <pre> back onto the code block",
+   "kind": "import",
+   "html": "<figure id=\"c\" class=\"wide\">\n  <pre class=\"line-numbers\" data-line-start=\"42\"><code class=\"language-php\">a\n</code></pre>\n  <figcaption>Cap.</figcaption>\n</figure>\n",
+   "options": {},
+   "expected": {
+    "carve": "{#c .wide .line-numbers data-line-start=42}\n```php\na\n```\n^ Cap.\n"
+   },
+   "from": []
+  }
  ]
 }
