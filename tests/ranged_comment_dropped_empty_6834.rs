@@ -183,3 +183,29 @@ fn carrier_inside_an_accepted_carrier_records_no_ordinal() {
     assert!(got.source.ends_with("{#n#}{{ $w }}y\n"), "{}", got.source);
     assert!(got.diagnostics.iter().any(|d| d.message == LOST));
 }
+
+/// A critic comment span is read from its text, so a carrier inside it
+/// records no ordinal.
+#[test]
+fn carrier_inside_a_critic_comment_records_no_ordinal() {
+    let html = format!(
+        "<p><span class=\"critic-comment\"><span data-carve-snippet=\"1:inline:$v\">X</span></span></p>{START}{}{END}",
+        "<span data-carve-snippet=\"1:inline:$v\"></span>",
+    );
+    let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+    assert!(got.source.ends_with("{#n#}{{ $v }}y\n"), "{}", got.source);
+    assert!(got.diagnostics.iter().any(|d| d.message == LOST));
+}
+
+/// The ruby reader reads its children, so markers inside it still pair.
+#[test]
+fn markers_inside_ruby_pair() {
+    let html = "<p><ruby><span class=\"comment-start\" data-comment-id=\"1\">n</span>漢<span class=\"comment-end\" data-comment-id=\"1\"></span><rt>kan</rt></ruby>y</p>";
+    let base = api::import_document(html, &ImportOptions::default()).expect("import");
+    let main_like = base
+        .diagnostics
+        .iter()
+        .filter(|d| d.message == LOST)
+        .count();
+    assert_eq!(main_like, 1, "{:?}", base.diagnostics);
+}

@@ -249,6 +249,12 @@ impl Cx {
     }
 
     pub(crate) fn inline(&mut self, id: Id) -> Vec<Value> {
+        if let Some((parent, read)) = self.probe_reads.as_mut()
+            && *parent != id
+        {
+            read.push(id);
+            return Vec::new();
+        }
         if self.probe_skip.as_ref().is_some_and(|s| s.contains(&id)) {
             return Vec::new();
         }
@@ -365,9 +371,6 @@ impl Cx {
             }
         }
     }
-
-    /// The elements [`Cx::leaf_inline`] reads whole, without reading their children.
-    const LEAVES: &[&str] = &["br", "img", "math", "ruby", "code"];
 
     fn leaf_inline(&mut self, id: Id) -> Option<Vec<Value>> {
         Some(match self.dom.tag(id)? {
@@ -1074,9 +1077,9 @@ type OpenComment = (Id, Option<String>, usize);
 
 enum Step {
     Enter(Id),
-    /// An inline element, decided once its content is walked: its place and the
-    /// inlines found before its content.
-    Exit(Id, usize, usize),
+    /// An inline element, decided once its content is walked: its place, the
+    /// inlines found before its content, and the nodes the reader reads for it.
+    Exit(Id, usize, usize, Vec<Id>),
 }
 
 fn first_class(dom: &super::dom::Dom, id: Id) -> Option<String> {
@@ -1106,7 +1109,7 @@ pub(crate) fn ranged_comments(cx: &mut Cx) -> std::collections::HashMap<Id, Rang
     while let Some(step) = stack.pop() {
         match step {
             Step::Enter(id) => walk.enter(cx, id, &mut stack),
-            Step::Exit(id, place, before) => walk.settle(cx, id, place, before),
+            Step::Exit(id, place, before, read) => walk.settle(cx, id, place, before, &read),
         }
     }
     walk.finish(cx)
@@ -1180,19 +1183,19 @@ impl Walk {
             }
         }
         let dom = &cx.dom;
-        let inline = dom.is_element(id) && !opaque(dom, id) && !attrs::is_block_element(dom, id);
-        let leaf = inline && dom.tag(id).is_some_and(|t| Cx::LEAVES.contains(&t));
-        let descend = dom.is_element(id) && !opaque(dom, id) && !leaf;
-        if inline {
+        let descend = dom.is_element(id) && !opaque(dom, id);
+        if descend && !attrs::is_block_element(dom, id) {
+            // The walk goes where the reader goes: into the nodes it reads for the element.
+            let read = Probe::reads(cx, id);
             self.own.push(false);
-            stack.push(Step::Exit(id, place, self.held));
-        } else {
-            let gives = holds(dom, id, cx.raw_html);
-            let nothing = !gives && !descend;
-            self.place(gives);
-            if nothing {
-                skip(cx, id);
-            }
+            stack.push(Step::Exit(id, place, self.held, read.clone()));
+            stack.extend(read.into_iter().rev().map(Step::Enter));
+            return;
+        }
+        let gives = holds(dom, id, cx.raw_html);
+        self.place(gives);
+        if !gives && !descend {
+            skip(cx, id);
         }
         if descend {
             stack.extend(cx.dom.children(id).iter().rev().map(|&c| Step::Enter(c)));
@@ -1217,9 +1220,9 @@ impl Walk {
         true
     }
 
-    fn settle(&mut self, cx: &mut Cx, id: Id, place: usize, before: usize) {
+    fn settle(&mut self, cx: &mut Cx, id: Id, place: usize, before: usize, read: &[Id]) {
         let content = self.held > before;
-        if Probe::keeps(cx, id, content) {
+        if Probe::keeps(cx, id, content, read) {
             if let Some(g) = self.own.get_mut(place) {
                 *g = true;
             }
@@ -1281,14 +1284,22 @@ impl Probe {
         }
     }
 
+    /// The nodes the reader asks for when it reads the element, each read as nothing.
+    fn reads(cx: &mut Cx, id: Id) -> Vec<Id> {
+        cx.probe_reads = Some((id, Vec::new()));
+        cx.inline(id);
+        let mut read = cx.probe_reads.take().map(|r| r.1).unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        read.retain(|&n| seen.insert(n));
+        read
+    }
+
     /// C2-M-069: whether the reader keeps a node for the inline element. When
     /// its content gave an inline, it is read without that content.
-    fn keeps(cx: &mut Cx, id: Id, content: bool) -> bool {
+    fn keeps(cx: &mut Cx, id: Id, content: bool, read: &[Id]) -> bool {
         let hidden: Vec<Id> = if content {
             let skipped = cx.probe_skip.as_ref();
-            cx.dom
-                .children(id)
-                .iter()
+            read.iter()
                 .copied()
                 .filter(|c| !skipped.is_some_and(|s| s.contains(c)))
                 .collect()

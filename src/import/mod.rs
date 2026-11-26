@@ -56,6 +56,8 @@ pub(crate) struct Cx {
     ranged: HashMap<Id, inline::Ranged>,
     /// C2-M-113: while ranges are measured, the nodes known to give nothing.
     probe_skip: Option<HashSet<Id>>,
+    /// C2-M-113: while an element is read shallow, the element and the nodes asked for.
+    probe_reads: Option<(Id, Vec<Id>)>,
     /// C2-H-186: the `<li>` elements a bare run gave a paragraph.
     bare_items: HashSet<Id>,
 }
@@ -106,6 +108,7 @@ impl Cx {
             snippet_ordinals: HashSet::new(),
             ranged: HashMap::new(),
             probe_skip: None,
+            probe_reads: None,
             bare_items: HashSet::new(),
         }
     }
