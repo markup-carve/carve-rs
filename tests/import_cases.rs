@@ -44,6 +44,14 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2207", "children"),
     ("CC-2207", "diagnostic:image-alt-unknown"),
     ("CC-2208", "children"),
+    // carve#6853 (carve-rs line): the listTable import option skips an empty row.
+    ("CC-2433", "children"),
+    ("CC-2433", "diagnostic:import-structure-repaired"),
+    ("CC-2434", "children"),
+    ("CC-2434", "diagnostic:import-structure-repaired"),
+    ("CC-2435", "children"),
+    ("CC-2435", "diagnostic:import-structure-repaired"),
+    ("CC-2436", "children"),
 ];
 
 /// `(entry id, checked field)` of the import examples held.
@@ -66,7 +74,7 @@ const WITH_CARVE_CLAUSE: &[&str] = &[
     "CC-2201", "CC-2202", "CC-2203", "CC-2204", "CC-2207", "CC-2208", "CC-2209", "CC-2220",
     "CC-2229", "CC-2230", "CC-2231", "CC-2232", "CC-2233", "CC-2234", "CC-2235", "CC-2236",
     "CC-2244", "CC-2245", "CC-2250", "CC-2252", "CC-2253", "CC-2254", "CC-2255", "CC-2256",
-    "CC-2257", "CC-2394",
+    "CC-2257", "CC-2394", "CC-2433", "CC-2434", "CC-2435", "CC-2436",
 ];
 
 fn load(name: &str) -> Value {
