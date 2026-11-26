@@ -3,6 +3,7 @@
 //! reference looks in its own file first and then outward.
 
 use crate::ast::{Document, Node};
+use crate::diagnostic::IncludeSite;
 use crate::hash::AddrMap;
 use std::collections::HashMap;
 
@@ -27,6 +28,8 @@ struct File<'a> {
     links: HashMap<&'a str, &'a str>,
     abbrs: HashMap<&'a str, &'a str>,
     notes: HashMap<&'a str, usize>,
+    /// The include node that read this file (C2-N-087).
+    site: Option<IncludeSite>,
 }
 
 /// File 0 is the top-level document.
@@ -40,6 +43,8 @@ pub struct Files<'a> {
     inside: crate::hash::AddrSet<usize>,
     of_pos: AddrMap<usize, usize>,
     sources: HashMap<&'a str, &'a str>,
+    /// C2-N-087: the first reach of each position of an included file, in document order.
+    first: HashMap<(&'a str, usize, usize), usize>,
 }
 
 impl<'a> Files<'a> {
@@ -50,14 +55,21 @@ impl<'a> Files<'a> {
             sources,
             ..Files::default()
         };
-        f.add(&*doc.children, None, None);
+        f.add(&*doc.children, None, None, None);
         f
     }
 
-    fn add(&mut self, top: &[Node<'a>], parent: Option<usize>, id: Option<&'a str>) {
+    fn add(
+        &mut self,
+        top: &[Node<'a>],
+        parent: Option<usize>,
+        id: Option<&'a str>,
+        site: Option<IncludeSite>,
+    ) {
         let mut file = File {
             id,
             parent,
+            site,
             ..File::default()
         };
         for c in top {
@@ -85,9 +97,20 @@ impl<'a> Files<'a> {
         if depth > super::WALK_CAP {
             return;
         }
+        let id = self.list.get(file).and_then(|f| f.id);
+        if let Some((id, p)) = id.zip(n.pos()) {
+            self.first.entry((id, p.start(), p.end())).or_insert(file);
+        }
         if let Node::Include(i) = n {
             if let Some(children) = i.children.as_deref() {
-                self.add(children, Some(file), i.file);
+                let site = i.pos.map(|pos| IncludeSite {
+                    file: id.map(str::to_string),
+                    line: pos.start_line,
+                    column: pos.start_column,
+                    start_offset: pos.start(),
+                    end_offset: pos.end(),
+                });
+                self.add(children, Some(file), i.file, site);
             }
             return;
         }
@@ -140,6 +163,20 @@ impl<'a> Files<'a> {
         self.list
             .get(*self.of_pos.get(&std::ptr::from_ref(pos).addr())?)?
             .id
+    }
+
+    /// C2-N-087: the include sites of the first reach of `pos` in `file`, outermost first.
+    #[must_use]
+    pub fn included_by(&self, file: &str, pos: &crate::ast::Pos) -> Vec<IncludeSite> {
+        let mut at = self.first.get(&(file, pos.start(), pos.end())).copied();
+        let mut chain = Vec::new();
+        while let Some(i) = at.filter(|&i| i > 0) {
+            let Some(f) = self.list.get(i) else { break };
+            chain.extend(f.site.clone());
+            at = f.parent;
+        }
+        chain.reverse();
+        chain
     }
 
     /// The accepted source texts of expanded included files.

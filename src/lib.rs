@@ -982,6 +982,37 @@ struct RenderDetails {
     places: Vec<(Option<String>, String, Option<ast::Pos>)>,
     losses: html::LossDetails,
     included_sources: std::collections::HashMap<String, String>,
+    /// C2-N-087: the include chain of each loss position, by file and range.
+    chains: std::collections::HashMap<(String, usize, usize), Vec<diagnostic::IncludeSite>>,
+}
+
+impl RenderDetails {
+    fn record_chains(&mut self, files: &resolve::files::Files<'_>) {
+        let l = &self.losses;
+        let places = l
+            .raws
+            .iter()
+            .map(|r| (&r.file, r.pos))
+            .chain(l.destinations.iter().map(|d| (&d.file, d.pos)))
+            .chain(l.carriers.iter().map(|c| (&c.file, c.pos)))
+            .chain(l.profiles.iter().map(|p| (&p.file, p.pos)))
+            .chain(l.shift.iter().map(|s| (&s.1, s.0)))
+            .chain(self.places.iter().map(|p| (&p.0, p.2)));
+        for (file, pos) in places {
+            if let (Some(file), Some(pos)) = (file, pos) {
+                self.chains
+                    .entry((file.clone(), pos.start(), pos.end()))
+                    .or_insert_with(|| files.included_by(file, &pos));
+            }
+        }
+    }
+
+    fn chain(&self, file: Option<&str>, pos: Option<ast::Pos>) -> Vec<diagnostic::IncludeSite> {
+        file.zip(pos)
+            .and_then(|(f, p)| self.chains.get(&(f.to_string(), p.start(), p.end())))
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 fn render_parts(
@@ -1016,6 +1047,7 @@ fn render_parts(
         let src = source::Source::new(input);
         let (out, mut losses) =
             html::render_files(&doc, opts, src.text(), &files, Some(&mut details.losses));
+        details.record_chains(&files);
         losses.extend(extra);
         return Ok((out, losses));
     }
@@ -1177,6 +1209,13 @@ fn loss_diagnostics(
                 .collect();
             let mut diagnostic =
                 diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
+            let at = include_pos
+                .or_else(|| raw.and_then(|r| r.pos))
+                .or_else(|| destination.and_then(|d| d.pos))
+                .or_else(|| carrier.and_then(|c| c.pos))
+                .or_else(|| profile.and_then(|p| p.pos))
+                .or_else(|| shift.and_then(|s| s.0));
+            diagnostic.included_by = details.chain(file.as_deref(), at);
             if *c == heading_shift::ABOVE_6 {
                 diagnostic.message = heading_shift::message(opts.heading_shift);
             }
