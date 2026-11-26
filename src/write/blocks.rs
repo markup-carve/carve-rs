@@ -738,7 +738,7 @@ fn div_name<'n>(w: &Writer<'_>, node: V<'n>) -> Option<&'n str> {
 }
 
 /// C2-W-081: the opener of a hard-break block stands for the class, which it adds last.
-fn uses_hard_break_opener(w: &Writer<'_>, node: V<'_>) -> bool {
+pub(super) fn uses_hard_break_opener(w: &Writer<'_>, node: V<'_>) -> bool {
     if classes(node).last() != Some(&HARD_BREAKS_CLASS)
         || has(node, "title")
         || has(node, "groupLabel")
