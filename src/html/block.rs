@@ -75,7 +75,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
         // C2-N-090: a snippet definition renders nothing, whatever the profile.
-        if matches!(n, Node::SnippetDefinition(_)) {
+        // C2-H-178: an abbreviation definition is never degraded nor reported.
+        if matches!(n, Node::SnippetDefinition(_) | Node::AbbreviationDef(_)) {
             return;
         }
         if matches!(

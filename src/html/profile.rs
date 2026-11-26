@@ -43,7 +43,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.profile_loss(n, true);
         } else if let Node::Paragraph(p) = n {
             for child in p.children.iter() {
-                if matches!(child, Node::CriticComment(_)) && !self.profile_allows(child, false) {
+                if matches!(child, Node::CriticComment(_) | Node::Comment(_))
+                    && !self.profile_allows(child, false)
+                {
                     self.profile_loss(child, false);
                 }
             }
@@ -178,9 +180,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-165: an inline node outside the profile becomes its plain text.
     pub(super) fn degrade_inline(&mut self, n: &Node, out: &mut String) {
-        if matches!(n, Node::Comment(_)) {
-            return;
-        }
         self.profile_loss(n, false);
         if let Node::Xref(x) = n {
             let target = x.href.and_then(|href| href.strip_prefix('#'));
