@@ -1405,9 +1405,13 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     }
     references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
     let tree = w.lines.clone();
-    let reads = |w: &mut Writer<'t>| {
+    // With `known`, the lines of the rounds read back, so the same lines need no parse.
+    let reads = |w: &mut Writer<'t>, known: bool| {
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
+        if known && w.lines == tree {
+            return true;
+        }
         let chunk = written_chunk(w, group, first);
         let parsed = children(chunk.parse(w));
         parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
@@ -1417,19 +1421,19 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     if w.sp.losses.len() != reported {
         // C2-W-075 (carve-js `settleLosses`): a loss of the rounds is provisional where the group written with
         // every verbatim text reads back.
-        if reads(w) {
+        if reads(w, false) {
             w.sp.losses.truncate(reported);
         } else {
             w.lines = tree;
         }
-    } else if !reads(w) {
+    } else if !reads(w, true) {
         w.tree_ref_ids.extend(references.iter().map(|&n| id(n)));
         for &n in references.iter().take(MAX_VERBATIM_TRIALS) {
             if exhausted(w) {
                 break;
             }
             w.tree_ref_ids.remove(&id(n));
-            if !reads(w) {
+            if !reads(w, true) {
                 w.tree_ref_ids.insert(id(n));
             }
         }
