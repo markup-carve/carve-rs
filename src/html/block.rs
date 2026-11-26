@@ -17,6 +17,7 @@ pub(super) fn visible(n: &Node) -> bool {
         | Node::LinkReferenceDefinition(_)
         | Node::AbbreviationDef(_)
         | Node::Footnote(_)
+        | Node::SnippetDefinition(_)
         | Node::CitationDefinition(_) => false,
         Node::Paragraph(p) => !comments_only(p.children),
         _ => true,
@@ -73,6 +74,10 @@ fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
 impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
+        // C2-N-090: a snippet definition renders nothing, whatever the profile.
+        if matches!(n, Node::SnippetDefinition(_)) {
+            return;
+        }
         if matches!(
             n,
             Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_)

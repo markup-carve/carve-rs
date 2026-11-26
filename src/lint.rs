@@ -15,6 +15,7 @@ mod data_rules;
 mod includes;
 mod lines;
 mod nodes;
+mod snippets;
 mod pairs;
 use crate::view::V;
 mod walk;
@@ -220,6 +221,9 @@ fn lint_core<'a>(
             .filter_map(|range| range.footnote_key)
             .collect();
         nodes::scan(source, opts, items, &references, &mut out);
+    }
+    if let Some(tree) = tree {
+        snippets::scan(source, tree, opts, &mut out);
     }
     if let Some(tree) = tree {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));

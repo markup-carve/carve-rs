@@ -6,7 +6,20 @@ use super::dom::Id;
 use super::notes::is_footnote_section;
 use serde_json::Value;
 
-fn definitions(text: &str) -> Option<Vec<Value>> {
+fn without_pos(v: &mut Value) {
+    match v {
+        Value::Object(m) => {
+            m.remove("pos");
+            m.remove("segments");
+            m.values_mut().for_each(without_pos);
+        }
+        Value::Array(a) => a.iter_mut().for_each(without_pos),
+        _ => {}
+    }
+}
+
+/// The definitions of `ty` a template text holds, or `None` where it holds anything else.
+fn definitions(text: &str, ty: &str) -> Option<Vec<Value>> {
     let tree: Value =
         serde_json::from_str(&crate::tree_json(text, &crate::Options::default())).ok()?;
     let mut out = Vec::new();
@@ -16,19 +29,28 @@ fn definitions(text: &str) -> Option<Vec<Value>> {
         .into_iter()
         .flatten()
     {
-        if child["type"] != "abbreviation_def" {
+        if child["type"] != ty {
             return None;
         }
         let mut child = child.clone();
-        if let Some(m) = child.as_object_mut() {
-            m.remove("pos");
-        }
+        without_pos(&mut child);
         out.push(child);
     }
     (!out.is_empty()).then_some(out)
 }
 
-fn read(cx: &mut Cx, id: Id) -> Option<Vec<Value>> {
+/// The carrier a template holds: the abbreviation or, C2-H-216, the snippet template.
+fn carrier_of(cx: &Cx, id: Id) -> Option<&'static str> {
+    if cx.dom.has(id, "data-carve-abbreviations") {
+        Some("data-carve-abbreviations")
+    } else if cx.dom.has(id, "data-carve-snippets") {
+        Some("data-carve-snippets")
+    } else {
+        None
+    }
+}
+
+fn read(cx: &mut Cx, id: Id, carrier: &str) -> Option<Vec<Value>> {
     let nodes: Vec<Id> = cx
         .dom
         .node(id)
@@ -36,17 +58,20 @@ fn read(cx: &mut Cx, id: Id) -> Option<Vec<Value>> {
         .map(|c| cx.dom.children(c).to_vec())
         .unwrap_or_default();
     if !nodes.iter().all(|&n| cx.dom.is_text(n)) {
-        cx.ignored_carrier(id, "data-carve-abbreviations", "the template holds markup");
+        cx.ignored_carrier(id, carrier, "the template holds markup");
         return None;
     }
     let text: String = nodes.iter().map(|&n| cx.dom.text(n)).collect();
-    let found = definitions(&text);
+    let ty = if carrier == "data-carve-snippets" {
+        "snippet_definition"
+    } else {
+        "abbreviation_def"
+    };
+    let found = definitions(&text, ty);
     if found.is_none() {
-        cx.ignored_carrier(
-            id,
-            "data-carve-abbreviations",
-            "the template holds more than definitions",
-        );
+        cx.ignored_carrier(id, carrier, "the template holds more than definitions");
+    } else if carrier == "data-carve-snippets" {
+        cx.snippet_scope(id);
     }
     found
 }
@@ -59,9 +84,10 @@ pub(crate) fn collect(cx: &mut Cx, nodes: &[Id]) {
         if !cx.dom.is_element(n) {
             continue;
         }
-        if cx.dom.is(n, "template") && cx.dom.has(n, "data-carve-abbreviations") {
-            let found = read(cx, n).unwrap_or_default();
-            for definition in &found {
+        let carrier = cx.dom.is(n, "template").then(|| carrier_of(cx, n)).flatten();
+        if let Some(carrier) = carrier {
+            let found = read(cx, n, carrier).unwrap_or_default();
+            for definition in found.iter().filter(|d| d["type"] == "abbreviation_def") {
                 let key = definition["key"].as_str().unwrap_or("").to_string();
                 cx.abbreviations
                     .entry(key)
@@ -82,10 +108,10 @@ impl Cx {
         if let Some(found) = self.templates.get(&id) {
             return Some(found.clone());
         }
-        if self.dom.has(id, "data-carve-abbreviations") {
+        if let Some(carrier) = carrier_of(self, id) {
             self.ignored_carrier(
                 id,
-                "data-carve-abbreviations",
+                carrier,
                 "a render writes a template only in the flow of the document",
             );
         }

@@ -36,6 +36,7 @@ fn is_definition(n: &Node<'_>) -> bool {
         Node::LinkReferenceDefinition(_)
             | Node::Footnote(_)
             | Node::AbbreviationDef(_)
+            | Node::SnippetDefinition(_)
             | Node::CitationDefinition(_)
     )
 }

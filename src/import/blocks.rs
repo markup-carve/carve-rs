@@ -317,6 +317,9 @@ impl Cx {
     }
 
     fn block_element(&mut self, id: Id) -> Vec<Value> {
+        if let Some(u) = self.block_snippet(id) {
+            return u;
+        }
         if let Some(t) = self.treated_block(id) {
             return t;
         }

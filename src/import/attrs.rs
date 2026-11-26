@@ -141,6 +141,10 @@ pub(crate) const CARRIERS: &[&str] = &[
     "data-carve-line-block",
     "data-carve-src",
     "data-carve-source-level",
+    "data-carve-snippet",
+    "data-carve-snippet-mark",
+    "data-carve-snippet-scope",
+    "data-carve-snippets",
 ];
 
 /// C2-H-208: the level of a heading before `headingShift`.

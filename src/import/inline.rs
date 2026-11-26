@@ -328,6 +328,9 @@ impl Cx {
     }
 
     fn inline_element(&mut self, id: Id) -> Vec<Value> {
+        if let Some(u) = self.inline_snippet(id) {
+            return u;
+        }
         if let Some(own) = self.carve_inline(id) {
             return own;
         }
@@ -459,6 +462,9 @@ impl Cx {
         }
         if !self.is_note_ref(id) {
             return None;
+        }
+        if self.dropped_mark(id) {
+            return Some(Vec::new());
         }
         let href = self.dom.attr(id, "href").unwrap_or("").to_string();
         let target = href.strip_prefix('#').unwrap_or(&href).to_string();
