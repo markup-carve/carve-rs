@@ -35,40 +35,31 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
     Some((start, pos.get("startColumn")?.as_u64()?))
 }
 
-/// The offset behind the attribute lines at the start of `text`, and whether one holds an id.
-fn attribute_lines(text: &str) -> (usize, bool) {
-    let (mut at, mut id) = (0, false);
-    while let Some(rest) = text.get(at..) {
-        let line = rest.split('\n').next().unwrap_or("");
+/// Whether an attribute line among `lines` holds an id.
+fn lines_hold_id(lines: &str) -> bool {
+    lines.split('\n').any(|line| {
         let line = line.strip_suffix('\r').unwrap_or(line);
-        let block = line
-            .starts_with('{')
-            .then(|| crate::attr::parse_glued(line, 0))
-            .flatten()
-            .filter(|(b, end)| {
-                !b.empty && line.get(*end..).is_some_and(crate::chars::is_blank_line)
-            });
-        let (Some((block, _)), Some(next)) = (block, rest.find('\n')) else {
-            break;
-        };
-        id |= crate::snippet::holds_id(&block);
-        at += next + 1;
-    }
-    (at, id)
+        line.starts_with('{')
+            && crate::attr::parse_glued(line, 0).is_some_and(|(b, end)| {
+                !b.empty
+                    && line.get(end..).is_some_and(crate::chars::is_blank_line)
+                    && crate::snippet::holds_id(&b)
+            })
+    })
 }
 
-/// C2-B-236: the start and end of the marker of a definition line that an id
-/// made text, an id in the marker or in the attribute lines above it.
-fn id_marker(text: &str) -> Option<(usize, usize)> {
-    let (at, line_id) = attribute_lines(text);
-    let line = text.get(at..)?.split('\n').next()?;
+/// C2-B-236: the end of the marker at `start`, the first line of a paragraph
+/// that begins at `block`, when an id in the marker or in the attribute lines
+/// between made it text.
+fn id_marker(source: &str, block: usize, start: usize) -> Option<usize> {
+    let line = source.get(start..)?.split('\n').next()?;
     if !line.starts_with("{$") {
         return None;
     }
     let m = crate::snippet::marker(line)?;
     let value = line.get(m.end..)?;
-    ((m.has_id || line_id) && value.starts_with(' ') && !value.trim().is_empty())
-        .then_some((at, at + m.end))
+    let id = m.has_id || source.get(block..start).is_some_and(lines_hold_id);
+    (id && value.starts_with(' ') && !value.trim().is_empty()).then_some(start + m.end)
 }
 
 struct Scan<'s, 'v> {
@@ -97,10 +88,17 @@ impl<'v> Scan<'_, 'v> {
                 out.push(d);
             }
             Some("paragraph") if self.ids && column == 1 => {
-                let Some((from, end)) = id_marker(source.get(start..).unwrap_or("")) else {
+                // C2-A-148: the paragraph starts at the attribute lines it took; its text starts at the marker.
+                let first = child
+                    .get("children")
+                    .and_then(V::as_array)
+                    .and_then(|c| c.get(0))
+                    .and_then(start_of);
+                let Some((text, 1)) = first else { return };
+                let Some(end) = id_marker(source, start, text) else {
                     return;
                 };
-                let pos = self.positions.pos(start + from, start + end);
+                let pos = self.positions.pos(text, end);
                 let mut d = Diagnostic::nth("snippet-definition-id", 0, &[], None, Some(pos));
                 d.path = Some(format!("/children/{index}"));
                 out.push(d);

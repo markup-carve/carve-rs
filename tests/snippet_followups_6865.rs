@@ -53,6 +53,14 @@ fn an_id_anywhere_in_the_attribute_lines_refuses_the_definition() {
 fn a_marker_id_under_an_attribute_line_is_reported_at_the_marker() {
     let found = codes("{.k}\n{$v #x}: a\n", &LintOptions::default());
     assert!(found.contains(&("snippet-definition-id".into(), None, 2)));
+    // C2-B-137: a comment line between the attribute line and the marker.
+    for source in ["{#i}\n%% note\n{$v}: X\n", "{.k}\n%% note\n{$v #m}: X\n"] {
+        let found = codes(source, &LintOptions::default());
+        assert!(
+            found.contains(&("snippet-definition-id".into(), None, 3)),
+            "{source}"
+        );
+    }
 }
 
 /// C2-N-096: a use in an included file counts for a definition of the entry,
