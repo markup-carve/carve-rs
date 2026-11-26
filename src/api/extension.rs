@@ -309,6 +309,25 @@ impl Registry {
             .map(|e| e.declaration.clone())
     }
 
+    /// Whether the extension of this name has a renderer.
+    pub(crate) fn renders(&self, name: &str) -> bool {
+        self.list
+            .iter()
+            .any(|e| e.declaration.name == name && !e.renderers.is_empty())
+    }
+
+    /// Puts `extension` in the place of the registered one of its name and version.
+    pub(crate) fn replace(&mut self, extension: Extension) {
+        let d = &extension.declaration;
+        if let Some(slot) = self
+            .list
+            .iter_mut()
+            .find(|e| e.declaration.name == d.name && e.declaration.version == d.version)
+        {
+            *slot = Arc::new(extension);
+        }
+    }
+
     pub(crate) fn register(&mut self, extension: Extension) -> Result<(), Error> {
         let d = &extension.declaration;
         if !d.name.contains('.') || d.name.starts_with('.') || d.name.ends_with('.') {

@@ -292,3 +292,28 @@ fn bundle_member_beside_its_bundle_registers_once() {
         }
     }
 }
+
+#[test]
+fn a_member_keeps_the_renderer_its_own_name_asks_for() {
+    let source = "See :term[API].\n\n::: glossary\n:: API\n: An interface.\n:::\n";
+    let mut host = Carve::new();
+    host.enable_standard("carve.glossary", false).unwrap();
+    let plain = host.render(source, &Options::default()).unwrap();
+    host.enable_standard("carve.term", true).unwrap();
+    let out = host.render(source, &Options::default()).unwrap();
+    assert_ne!(plain, out);
+    assert!(
+        out.contains("<a href=\"#gloss-API\" class=\"term\">API</a>"),
+        "{out}"
+    );
+}
+
+#[test]
+fn only_a_member_another_standard_name_brought_is_shared() {
+    let mut twice = Carve::new();
+    twice.enable_standard("carve.term", true).unwrap();
+    assert!(twice.enable_standard("carve.term", true).is_err());
+    let mut custom = Carve::new();
+    custom.register(extensions::glossary()).unwrap();
+    assert!(custom.enable_standard("carve.term", true).is_err());
+}
