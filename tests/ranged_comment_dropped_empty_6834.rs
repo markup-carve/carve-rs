@@ -209,3 +209,14 @@ fn markers_inside_ruby_pair() {
         .count();
     assert_eq!(main_like, 1, "{:?}", base.diagnostics);
 }
+
+#[test]
+fn carrier_inside_pre_records_no_ordinal() {
+    let html = format!(
+        "<pre><span data-carve-snippet=\"1:inline:$v\">X</span></pre>{START}{}{END}",
+        "<span data-carve-snippet=\"1:inline:$v\"></span>",
+    );
+    let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+    assert!(got.source.ends_with("{#n#}{{ $v }}y\n"), "{}", got.source);
+    assert!(got.diagnostics.iter().any(|d| d.message == LOST));
+}
