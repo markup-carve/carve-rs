@@ -83,11 +83,14 @@ impl Writer for CarveWriter {
             layout: None,
             source: None,
             link_keys: None,
+            fallback_source: None,
         }
         .with_layout(opts.layout.as_ref());
-        // C2-W-127: `normalize` drops the sidecar's spellings; the authored-block fallback of C2-W-088 still reads its source.
+        // C2-W-127: `normalize` writes as if there were no sidecar, but the authored-block fallback of C2-W-088 still
+        // reads its source.
         if opts.normalize {
             settings.layout = None;
+            settings.fallback_source = settings.source.take();
         }
         let (output, diagnostics) = crate::write::write_value(&doc, &settings);
         Ok(Written {

@@ -65,6 +65,8 @@ pub struct Settings {
     pub source: Option<String>,
     /// The link keys of the document around a nested write, in place of its definitions.
     pub link_keys: Option<LinkKeys>,
+    /// C2-W-088, C2-W-127: the source only the authored-block fallback reads, where `source` is withheld.
+    pub fallback_source: Option<String>,
 }
 
 impl Settings {
@@ -1377,7 +1379,11 @@ fn write_tree_once<'t>(
         .is_some_and(|f| f.values().any(|x| x.raw_ref.is_some()));
     w.tree_refs = tree_refs && verbatim;
     // C2-W-088, C2-W-127: the authored-block fallback reads the source under `normalize` too.
-    w.authored.clone_from(&settings.source);
+    w.authored = settings
+        .fallback_source
+        .as_ref()
+        .or(settings.source.as_ref())
+        .cloned();
     w.report_behind = report;
     let written = write_document(&mut w, doc);
     let source = controls::keep_above(&w, written, settings.source.as_deref());
