@@ -3,8 +3,15 @@
 //! and the complete record that `import_cases.rs` does not compare.
 mod common;
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, ImportOptions};
 use common::parse_json;
+use holds::{Gate, Holds};
+
+/// `(case id, cause)`.
+const HELD: Holds = &[];
 
 #[test]
 fn col_style_clause_cases_write_and_record() {
@@ -15,19 +22,20 @@ fn col_style_clause_cases_write_and_record() {
     let corpus = parse_json(&std::fs::read_to_string(path).unwrap_or_default());
     let ids: Vec<String> = (2046..=2053).map(|n| format!("CC-{n}")).collect();
     let mut seen = 0;
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("col style cases", HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         let id = c["id"].as_str().unwrap_or("");
         if !ids.iter().any(|i| i == id) {
             continue;
         }
         seen += 1;
+        let mut failures = Vec::new();
         let html = c["html"].as_str().unwrap_or("");
         let expected = &c["expected"];
         let got = match api::import_document(html, &ImportOptions::default()) {
             Ok(g) => g,
             Err(e) => {
-                failures.push(format!("{id}: refused: {e}"));
+                gate.problems(id, &[format!("{id}: refused: {e}")]);
                 continue;
             }
         };
@@ -48,9 +56,10 @@ fn col_style_clause_cases_write_and_record() {
         if want != codes {
             failures.push(format!("{id}: record {codes:?}, expected {want:?}"));
         }
+        gate.problems(id, &failures);
     }
     assert_eq!(seen, ids.len(), "clause cases missing from the corpus");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 #[test]

@@ -1,7 +1,11 @@
 //! C2-A-219 (carve#6099): a tree number is a finite binary64 value that
 //! keeps its value through encodeTree.
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, json::call};
+use holds::{Gate, Holds};
 use serde_json::{Value, json};
 
 fn corpus() -> Value {
@@ -23,31 +27,39 @@ fn metadata(number: &str) -> String {
 
 /// Fingerprint cases with a `json` input hash the tree of that text as the
 /// engine reads it, its numbers spelled as written.
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_a_219_fingerprint_cases_of_json_text() {
+    let mut gate = Gate::new("fingerprint cases", HELD);
     let mut seen = 0;
     for c in corpus()["cases"].as_array().unwrap() {
         let Some(text) = c["json"].as_str().filter(|_| c["kind"] == "fingerprint") else {
             continue;
         };
         seen += 1;
-        let out: Value = serde_json::from_str(&call(&format!(
-            r#"{{"call":"treeFingerprint","tree":{text}}}"#
-        )))
-        .unwrap();
-        assert_eq!(
-            out["ok"]["fingerprint"], c["expected"]["fingerprint"],
-            "{}: {out}",
-            c["id"]
-        );
-        let tree = api::decode_tree(text).unwrap();
-        assert_eq!(
-            Some(api::tree_fingerprint(&tree).as_str()),
-            c["expected"]["fingerprint"].as_str(),
-            "{}",
-            c["id"]
-        );
+        let id = c["id"].as_str().unwrap_or("");
+        gate.case(id, || {
+            let out: Value = serde_json::from_str(&call(&format!(
+                r#"{{"call":"treeFingerprint","tree":{text}}}"#
+            )))
+            .unwrap();
+            assert_eq!(
+                out["ok"]["fingerprint"], c["expected"]["fingerprint"],
+                "{}: {out}",
+                c["id"]
+            );
+            let tree = api::decode_tree(text).unwrap();
+            assert_eq!(
+                Some(api::tree_fingerprint(&tree).as_str()),
+                c["expected"]["fingerprint"].as_str(),
+                "{}",
+                c["id"]
+            );
+        });
     }
+    gate.finish();
     assert!(seen >= 3, "{seen} fingerprint cases with json");
 }
 

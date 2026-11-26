@@ -2,14 +2,26 @@
 //! carve-js#5574): the written source and the complete record, which
 //! `import_cases.rs` does not compare.
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::api::{self, ImportOptions};
 use common::parse_json;
+use holds::{Gate, Holds, expect_held};
 use serde_json::Value;
 
 const CASES: &[u32] = &[
     2063, 2100, 2101, 2102, 2103, 2104, 2244, 2245, 2250, 2252, 2253, 2254, 2255, 2256, 2257,
 ];
+
+/// `(case id, cause)` of `g1_table_import_cases_write_and_record`.
+const IMPORT_HELD: Holds = &[];
+
+/// `(case id, cause)` of `g1_table_render_cases`.
+const RENDER_HELD: Holds = &[];
+
+/// `(case id, cause)` of `cc_2251_import_refuses_a_derived_scope`.
+const CC_2251_HELD: Holds = &[];
 
 fn line_column(input: &str, offset: usize) -> (u64, u64) {
     let before = &input[..offset];
@@ -42,7 +54,7 @@ fn g1_table_import_cases_write_and_record() {
     );
     let corpus = parse_json(&std::fs::read_to_string(path).unwrap_or_default());
     let mut seen = 0;
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("g1 import cases", IMPORT_HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         let id = c["id"].as_str().unwrap_or("");
         let n: u32 = id
@@ -53,12 +65,13 @@ fn g1_table_import_cases_write_and_record() {
             continue;
         }
         seen += 1;
+        let mut failures = Vec::new();
         let html = c["html"].as_str().unwrap_or("");
         let expected = &c["expected"];
         let got = match api::import_document(html, &ImportOptions::default()) {
             Ok(g) => g,
             Err(e) => {
-                failures.push(format!("{id}: refused: {e}"));
+                gate.problems(id, &[format!("{id}: refused: {e}")]);
                 continue;
             }
         };
@@ -86,9 +99,10 @@ fn g1_table_import_cases_write_and_record() {
                     .collect::<Vec<_>>()
             ));
         }
+        gate.problems(id, &failures);
     }
     assert_eq!(seen, CASES.len(), "clause cases missing from the corpus");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 /// CC-2237 to CC-2240, CC-2246 and CC-2248 with the final line feed their
@@ -102,6 +116,7 @@ fn g1_table_render_cases() {
     let corpus = parse_json(&std::fs::read_to_string(path).unwrap_or_default());
     let ids = [2237, 2238, 2239, 2240, 2246, 2248].map(|n| format!("CC-{n}"));
     let mut seen = 0;
+    let mut gate = Gate::new("g1 render cases", RENDER_HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         let id = c["id"].as_str().unwrap_or("");
         if !ids.iter().any(|i| i == id) {
@@ -114,14 +129,21 @@ fn g1_table_render_cases() {
             c["input"].as_str().unwrap_or(""),
             &carve::options::Options::default(),
         );
-        assert_eq!(out.html, want, "{id}");
+        gate.check(id, out.html == want, || {
+            format!("--- expected\n{want}\n--- got\n{}", out.html)
+        });
     }
     assert_eq!(seen, ids.len(), "clause cases missing from the corpus");
+    gate.finish();
 }
 
 /// CC-2251: `carve import` refuses the file whose unscoped `<th>` takes `scope` `col`.
 #[test]
 fn cc_2251_import_refuses_a_derived_scope() {
+    expect_held("CC-2251", CC_2251_HELD, cc_2251);
+}
+
+fn cc_2251() {
     let dir = std::env::temp_dir().join(format!("carve-rs-g1-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let html =

@@ -1,12 +1,23 @@
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
+
 use common::parse_json;
+use holds::{Gate, Holds};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// `(case id, cause)`.
+const HELD: Holds = &[(
+    "CC-1354",
+    "carve#6833: CC-1354 still expects the braced strike reported, which #6499 turned off",
+)];
+
 #[test]
 fn candidate18_cli_clause_cases() {
     let corpus: Value = parse_json(include_str!("../spec-conformance/clause-cases.json"));
+    let mut gate = Gate::new("candidate 18 CLI cases", HELD);
     for case in corpus["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap_or("");
         let number = id
@@ -47,38 +58,34 @@ fn candidate18_cli_clause_cases() {
         let out = child.wait_with_output().unwrap();
         let want = &case["expected"];
         let status = want["status"].as_i64();
-        // carve#6833: CC-1354 still expects the braced strike reported, which #6499 turned off.
-        if ["CC-1354"].contains(&id) {
-            assert_ne!(
-                out.status.code(),
-                status.map(|n| i32::try_from(n).unwrap()),
-                "{id}: held but passes; drop the hold"
-            );
-            continue;
+        let mut problems = Vec::new();
+        let code = status.map(|n| i32::try_from(n).unwrap());
+        if out.status.code() != code {
+            problems.push(format!("status {:?}, expected {code:?}", out.status.code()));
         }
-        assert_eq!(
-            out.status.code(),
-            status.map(|n| i32::try_from(n).unwrap()),
-            "{id}: status"
-        );
         let stdout = String::from_utf8(out.stdout).unwrap();
         let stderr = String::from_utf8(out.stderr).unwrap();
-        if let Some(text) = want["stdout"].as_str() {
-            assert_eq!(stdout, text, "{id}: stdout");
+        if let Some(text) = want["stdout"].as_str()
+            && stdout != text
+        {
+            problems.push(format!("stdout\n--- expected\n{text}--- got\n{stdout}"));
         }
-        if let Some(category) = want["stderrCategory"].as_str() {
-            assert!(
-                stderr.starts_with(&format!("carve[{category}]:")),
-                "{id}: stderr {stderr}"
-            );
+        if let Some(category) = want["stderrCategory"].as_str()
+            && !stderr.starts_with(&format!("carve[{category}]:"))
+        {
+            problems.push(format!("stderr {stderr}"));
         }
         if let Some(files) = want["filesAfter"].as_object() {
             for (name, file) in files {
                 let actual = std::fs::read_to_string(dir.join(name)).ok();
-                assert_eq!(actual.as_deref(), file["text"].as_str(), "{id}: {name}");
+                if actual.as_deref() != file["text"].as_str() {
+                    problems.push(format!("{name}: {actual:?}"));
+                }
             }
         }
+        gate.problems(id, &problems);
     }
+    gate.finish();
 }
 
 #[test]

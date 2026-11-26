@@ -1,7 +1,11 @@
 //! `allowLosses` and `maxLosses` of the importer (CC-1260, CC-1261) and the
 //! `path` of an error on the JSON boundary (CC-507, C2-A-167).
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, ImportOptions, LossOptions, json::call};
+use holds::{Gate, Holds};
 use serde_json::{Value, json};
 
 fn reply(request: &Value) -> Value {
@@ -72,8 +76,12 @@ fn cc_507_an_option_error_names_its_path() {
 }
 
 /// C2-A-167: an error that names the node at `path` or a field below it agrees.
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_a_167_refusal_paths_of_the_clause_cases() {
+    let mut gate = Gate::new("refusal paths", HELD);
     let calls = [
         ("parse", "parseWithDiagnostics"),
         ("render", "renderWithDiagnostics"),
@@ -100,25 +108,29 @@ fn c2_a_167_refusal_paths_of_the_clause_cases() {
         if c.get("files").is_some() || c.get("host").is_some() || c.get("json").is_some() {
             continue;
         }
-        let mut request = json!({"call": name, "options": c["options"]});
-        if let Some(annotations) = c.get("annotations") {
-            request["annotations"] = annotations.clone();
-        }
-        match c.get("tree") {
-            Some(tree) => request["tree"] = tree.clone(),
-            None => request["source"] = c["input"].clone(),
-        }
-        let error = reply(&request)["error"].clone();
-        assert_eq!(error["name"], want["error"], "{}: {error}", c["id"]);
-        if let Some(path) = want["path"].as_str() {
-            let got = error["path"].as_str().unwrap_or("<none>");
-            assert!(
-                got == path || got.starts_with(&format!("{path}/")),
-                "{}: want {path}, got {got}",
-                c["id"]
-            );
-        }
         checked += 1;
+        let id = c["id"].as_str().unwrap_or("");
+        gate.case(id, || {
+            let mut request = json!({"call": name, "options": c["options"]});
+            if let Some(annotations) = c.get("annotations") {
+                request["annotations"] = annotations.clone();
+            }
+            match c.get("tree") {
+                Some(tree) => request["tree"] = tree.clone(),
+                None => request["source"] = c["input"].clone(),
+            }
+            let error = reply(&request)["error"].clone();
+            assert_eq!(error["name"], want["error"], "{}: {error}", c["id"]);
+            if let Some(path) = want["path"].as_str() {
+                let got = error["path"].as_str().unwrap_or("<none>");
+                assert!(
+                    got == path || got.starts_with(&format!("{path}/")),
+                    "{}: want {path}, got {got}",
+                    c["id"]
+                );
+            }
+        });
     }
+    gate.finish();
     assert!(checked >= 20, "{checked}");
 }

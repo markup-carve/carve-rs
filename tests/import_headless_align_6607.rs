@@ -3,8 +3,12 @@
 //! and CC-2078, with the written source and record `import_cases.rs` skips.
 mod common;
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, ImportOptions};
 use common::parse_json;
+use holds::{Gate, Holds};
 
 fn import(html: &str) -> (String, Vec<String>) {
     let got = api::import_document(html, &ImportOptions::default()).unwrap();
@@ -12,8 +16,12 @@ fn import(html: &str) -> (String, Vec<String>) {
     (got.source, codes)
 }
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn headless_align_clause_cases_write_and_record() {
+    let mut gate = Gate::new("headless align cases", HELD);
     let path = format!(
         "{}/spec-conformance/clause-cases.json",
         env!("CARGO_MANIFEST_DIR")
@@ -27,21 +35,24 @@ fn headless_align_clause_cases_write_and_record() {
             continue;
         }
         seen += 1;
-        let (source, codes) = import(c["html"].as_str().unwrap_or(""));
-        assert_eq!(
-            Some(source.as_str()),
-            c["expected"]["carve"].as_str(),
-            "{id}"
-        );
-        let want: Vec<&str> = c["expected"]["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|d| d.as_str().or_else(|| d["code"].as_str()))
-            .collect();
-        assert_eq!(codes, want, "{id}");
+        gate.case(id, || {
+            let (source, codes) = import(c["html"].as_str().unwrap_or(""));
+            assert_eq!(
+                Some(source.as_str()),
+                c["expected"]["carve"].as_str(),
+                "{id}"
+            );
+            let want: Vec<&str> = c["expected"]["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|d| d.as_str().or_else(|| d["code"].as_str()))
+                .collect();
+            assert_eq!(codes, want, "{id}");
+        });
     }
     assert_eq!(seen, ids.len(), "clause cases missing from the corpus");
+    gate.finish();
 }
 
 #[test]

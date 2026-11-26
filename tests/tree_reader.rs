@@ -1,4 +1,8 @@
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::reader::{TreeError, read_tree_json, read_tree_value, write_tree_json};
+use holds::{Gate, Holds};
 use serde::Deserialize as _;
 use serde_json::Value;
 use std::fmt::Write as _;
@@ -21,8 +25,12 @@ fn c2_a_044_reader_replaces_nul_in_ingested_strings() {
     assert_eq!(written["children"][0]["children"][0]["value"], "a\u{fffd}b");
 }
 
+/// `(file/tree id, cause)` of the positive trees.
+const POSITIVE_HELD: Holds = &[];
+
 #[test]
 fn c2_a_165_positive_trees_round_trip() {
+    let mut gate = Gate::new("positive trees", POSITIVE_HELD);
     for name in [
         "nodes.json",
         "examples-syntax-blocks.json",
@@ -33,18 +41,27 @@ fn c2_a_165_positive_trees_round_trip() {
     ] {
         let file = load(name);
         for entry in file["trees"].as_array().expect("trees") {
+            let key = format!("{name}/{}", entry["id"].as_str().unwrap_or(""));
             let original = &entry["tree"];
-            let tree = read_tree_value(original.clone()).unwrap_or_else(|e| {
-                panic!("{name} {}: {e}", entry["id"]);
-            });
-            let encoded = write_tree_json(&tree);
-            let mut parser = serde_json::Deserializer::from_str(&encoded);
-            parser.disable_recursion_limit();
-            let written = Value::deserialize(&mut parser).expect("written JSON");
-            assert_eq!(&written, original, "{name} {}", entry["id"]);
+            match read_tree_value(original.clone()) {
+                Err(e) => gate.check(&key, false, || format!("refused: {e}")),
+                Ok(tree) => {
+                    let encoded = write_tree_json(&tree);
+                    let mut parser = serde_json::Deserializer::from_str(&encoded);
+                    parser.disable_recursion_limit();
+                    let written = Value::deserialize(&mut parser).expect("written JSON");
+                    gate.check(&key, &written == original, || {
+                        format!("--- expected\n{original}\n--- got\n{written}")
+                    });
+                }
+            }
         }
     }
+    gate.finish();
 }
+
+/// `(example id, cause)` of the imported corpus trees.
+const IMPORTED_HELD: Holds = &[];
 
 #[test]
 fn c2_a_170_imported_corpus_trees_pass_the_reader() {
@@ -57,6 +74,7 @@ fn c2_a_170_imported_corpus_trees_pass_the_reader() {
     parser.disable_recursion_limit();
     let corpus = Value::deserialize(&mut parser).expect("corpus JSON");
     let mut checked = 0;
+    let mut gate = Gate::new("imported corpus trees", IMPORTED_HELD);
     for entry in corpus["examples"].as_array().expect("examples") {
         if entry["kind"] != "import" {
             continue;
@@ -65,33 +83,34 @@ fn c2_a_170_imported_corpus_trees_pass_the_reader() {
             continue;
         };
         let tree = serde_json::json!({"type":"document","astVersion":"2.0","children":children});
-        read_tree_value(tree).unwrap_or_else(|error| panic!("{}: {error}", entry["id"]));
+        let result = read_tree_value(tree);
+        gate.check(entry["id"].as_str().unwrap_or(""), result.is_ok(), || {
+            format!("{:?}", result.err())
+        });
         checked += 1;
     }
     assert_eq!(checked, 65);
+    gate.finish();
 }
+
+/// `(tree id, cause)` of the refused trees.
+const REFUSED_HELD: Holds = &[("snippet-use-mode-mismatch", "carve#6395: named snippets")];
 
 #[test]
 fn c2_a_188_every_refused_tree_is_refused_by_its_gate() {
-    // carve#6395: named snippets; a held tree that its gate refuses fails the run.
-    const HELD: &[&str] = &["snippet-use-mode-mismatch"];
     let file = load("refused.json");
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("refused trees", REFUSED_HELD);
     for entry in file["trees"].as_array().expect("trees") {
         let result = read_tree_value(entry["tree"].clone());
         let id = entry["id"].as_str().unwrap_or("");
-        let gate = entry["refusedBy"].as_str().unwrap_or("");
+        let gate_name = entry["refusedBy"].as_str().unwrap_or("");
         let refused = matches!(
-            (gate, &result),
+            (gate_name, &result),
             ("schema", Err(TreeError::Schema { .. })) | ("reader", Err(TreeError::Reader { .. }))
         );
-        match (refused, HELD.contains(&id)) {
-            (false, false) => failures.push(format!("{id} ({gate}): {result:?}")),
-            (true, true) => failures.push(format!("{id}: held but refused; drop the hold")),
-            _ => {}
-        }
+        gate.check(id, refused, || format!("({gate_name}): {result:?}"));
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 fn refused(id: &str, gate: &str) {

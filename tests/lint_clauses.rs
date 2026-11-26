@@ -1,9 +1,12 @@
 //! C2-T-005: exercise every lint clause case with the pinned catalog.
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::diagnostic::Diagnostic;
 use carve::include::{Cause, Includes, Request};
 use carve::lint::{LintOptions, lint};
 use carve::options::HeadingIds;
+use holds::{Gate, Holds};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -104,6 +107,19 @@ fn included_by_agrees(chain: &[Value], actual: &Diagnostic) -> bool {
         })
 }
 
+/// `(case id, cause)`: rulings this engine has not ported yet.
+#[rustfmt::skip]
+const HELD: Holds = &[
+    ("CC-2241", "carve#6838: the lint-model row exempts a pipe table from the header-rows clamp"),
+    ("CC-2359", "carve#6395: named snippets"),
+    ("CC-2361", "carve#6395: named snippets"),
+    ("CC-2362", "carve#6395: named snippets"),
+    ("CC-2364", "carve#6395: named snippets"),
+    ("CC-2385", "carve#6395: named snippets"),
+    ("CC-2386", "carve#6395: named snippets"),
+    ("CC-2387", "carve#6395: named snippets"),
+];
+
 #[test]
 fn pinned_lint_clause_cases() {
     let path = concat!(
@@ -115,7 +131,7 @@ fn pinned_lint_clause_cases() {
     parser.disable_recursion_limit();
     let corpus: Value = serde::Deserialize::deserialize(&mut parser).unwrap();
     let mut checked = 0;
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("lint clause cases", HELD);
     for case in corpus["cases"].as_array().into_iter().flatten() {
         if case["kind"] != "lint" || case["expected"].get("refusal").is_some() {
             continue;
@@ -123,15 +139,16 @@ fn pinned_lint_clause_cases() {
         let input = case["input"].as_str().unwrap_or("");
         let actual = lint(input, &options(case));
         let id = case["id"].as_str().unwrap_or("");
+        gate.check(id, true, String::new);
         for expected in case["expected"]["diagnostics"]
             .as_array()
             .into_iter()
             .flatten()
         {
             checked += 1;
-            if !actual.iter().any(|d| agrees(expected, d)) {
-                failures.push(format!("{id}: expected {expected}; actual {actual:?}"));
-            }
+            gate.check(id, actual.iter().any(|d| agrees(expected, d)), || {
+                format!("expected {expected}; actual {actual:?}")
+            });
         }
         for code in case["expected"]["notReported"]
             .as_array()
@@ -140,55 +157,20 @@ fn pinned_lint_clause_cases() {
             .filter_map(Value::as_str)
         {
             checked += 1;
-            if actual.iter().any(|d| d.code == code) {
-                failures.push(format!("{id}: unexpected {code}; actual {actual:?}"));
-            }
+            gate.check(id, !actual.iter().any(|d| d.code == code), || {
+                format!("unexpected {code}; actual {actual:?}")
+            });
         }
         if case["expected"]["diagnosticsComplete"] == true {
             checked += 1;
-            if actual.len()
-                != case["expected"]["diagnostics"]
-                    .as_array()
-                    .map_or(0, Vec::len)
-            {
-                failures.push(format!("{id}: incomplete list; actual {actual:?}"));
-            }
+            let wanted = case["expected"]["diagnostics"]
+                .as_array()
+                .map_or(0, Vec::len);
+            gate.check(id, actual.len() == wanted, || {
+                format!("incomplete list; actual {actual:?}")
+            });
         }
     }
     println!("checked {checked} lint clause expectations");
-    // The pinned catalog has two older ranges that conflict with later cases
-    // for the same diagnostics. Keep checking every other expectation while
-    // the spec resolves CC-813 against CC-1174 and CC-891 against CC-1163.
-    let unresolved = ["CC-813:", "CC-891:"];
-    // Rulings this engine has not ported yet; a held case must keep failing.
-    let held = [
-        // carve#6838: the lint-model row exempts a pipe table from the header-rows clamp.
-        "CC-2241:", // carve#6395: named snippets.
-        "CC-2359:", "CC-2361:", "CC-2362:", "CC-2364:", "CC-2385:", "CC-2386:", "CC-2387:",
-    ];
-    for h in held {
-        assert!(
-            failures.iter().any(|f| f.starts_with(h)),
-            "{h} held but passes; drop the hold"
-        );
-    }
-    failures.retain(|f| !held.iter().any(|h| f.starts_with(h)));
-    let regressions: Vec<_> = failures
-        .iter()
-        .filter(|failure| !unresolved.iter().any(|id| failure.starts_with(id)))
-        .collect();
-    assert!(
-        regressions.is_empty(),
-        "{}",
-        regressions
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    assert!(
-        failures.len() <= unresolved.len(),
-        "{}",
-        failures.join("\n")
-    );
+    gate.finish();
 }

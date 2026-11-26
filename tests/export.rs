@@ -1,8 +1,12 @@
 //! The Markdown, plain-text and ANSI exports (`carve::export`), with the
 //! cases of carve-js `test/export.test.ts`.
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, Carve, Error, Options, UrlPolicy, WriteOptions, Writer, Written};
 use carve::export::{self, ExportOptions, ExportWriter, Target};
+use holds::{Gate, Holds};
 use std::sync::Arc;
 
 const ESC: &str = "\x1b";
@@ -342,22 +346,30 @@ fn an_expanded_include_is_exported_with_its_own_definitions() {
     );
 }
 
+/// `(example id, cause)`.
+const EXAMPLES_HELD: Holds = &[];
+
 #[test]
 fn every_specification_example_tree_has_an_output_in_each_export() {
+    let mut gate = Gate::new("export examples", EXAMPLES_HELD);
     let examples = examples();
     let mut written = 0;
     for example in examples["examples"].as_array().unwrap() {
         let Some(json) = example.pointer("/expected/tree") else {
             continue;
         };
-        let t = api::decode_tree(&json.to_string()).unwrap();
-        for target in export::EXPORT_TARGETS {
-            let first = export::export_to(target, &t, &ExportOptions::default()).unwrap();
-            let again = export::export_to(target, &t, &ExportOptions::default()).unwrap();
-            assert_eq!(first, again, "{}", example["id"]);
-        }
         written += 1;
+        let id = example["id"].as_str().unwrap_or("");
+        gate.case(id, || {
+            let t = api::decode_tree(&json.to_string()).unwrap();
+            for target in export::EXPORT_TARGETS {
+                let first = export::export_to(target, &t, &ExportOptions::default()).unwrap();
+                let again = export::export_to(target, &t, &ExportOptions::default()).unwrap();
+                assert_eq!(first, again, "{}", example["id"]);
+            }
+        });
     }
+    gate.finish();
     assert!(written > 500, "{written}");
 }
 

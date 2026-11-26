@@ -1,14 +1,25 @@
 //! C2-T-049: `fix` keeps the lint default of every rule (carve#6523).
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
+
 use common::parse_json;
+use holds::{Gate, Holds};
 use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
+
+/// `(case id, cause)`.
+const HELD: Holds = &[(
+    "CC-1354",
+    "carve#6833: CC-1354 still expects the braced strike reported, which #6499 turned off",
+)];
 
 #[test]
 fn fix_clause_cases() {
     let corpus: Value = parse_json(include_str!("../spec-conformance/clause-cases.json"));
     let mut ran = 0;
+    let mut gate = Gate::new("fix clause cases", HELD);
     for case in corpus["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap_or("");
         let number = id
@@ -50,23 +61,19 @@ fn fix_clause_cases() {
         let out = child.wait_with_output().unwrap();
         let want = &case["expected"];
         let status = want["status"].as_i64();
-        // carve#6833: CC-1354 still expects the braced strike reported, which #6499 turned off.
-        if ["CC-1354"].contains(&id) {
-            assert_ne!(
-                out.status.code(),
-                status.map(|n| i32::try_from(n).unwrap()),
-                "{id}: held but passes; drop the hold"
-            );
-            continue;
+        let mut problems = Vec::new();
+        let code = status.map(|n| i32::try_from(n).unwrap());
+        if out.status.code() != code {
+            problems.push(format!("status {:?}, expected {code:?}", out.status.code()));
         }
-        assert_eq!(
-            out.status.code(),
-            status.map(|n| i32::try_from(n).unwrap()),
-            "{id}: status"
-        );
-        if let Some(text) = want["stdout"].as_str() {
-            assert_eq!(String::from_utf8(out.stdout).unwrap(), text, "{id}: stdout");
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        if let Some(text) = want["stdout"].as_str()
+            && stdout != text
+        {
+            problems.push(format!("stdout\n--- expected\n{text}--- got\n{stdout}"));
         }
+        gate.problems(id, &problems);
     }
     assert_eq!(ran, 30);
+    gate.finish();
 }
