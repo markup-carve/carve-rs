@@ -49,7 +49,9 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
     while let Some((node, path, parent_file, chain)) = pending.pop() {
         let mut child_chain = chain;
         if node["type"] == "include" {
-            if let Some(site) = include_site(node, parent_file) {
+            // C2-T-020: a site in the top-level document names no file.
+            let site_file = parent_file.filter(|_| !child_chain.is_empty());
+            if let Some(site) = include_site(node, site_file) {
                 child_chain.push(site);
             }
             lint_include(node, &path, &child_chain, &context, &mut seen, output);
@@ -74,6 +76,8 @@ fn include_site(node: &Value, file: Option<&str>) -> Option<IncludeSite> {
         file: file.map(str::to_string),
         line: u32::try_from(pos["startLine"].as_u64()?).ok()?,
         column: u32::try_from(pos["startColumn"].as_u64()?).ok()?,
+        start_offset: usize::try_from(pos["startOffset"].as_u64()?).ok()?,
+        end_offset: usize::try_from(pos["endOffset"].as_u64()?).ok()?,
     })
 }
 

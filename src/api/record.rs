@@ -33,6 +33,18 @@ pub struct Entry {
     /// The HTML node name of an importer entry (C2-M-081).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub foreign_type: Option<String>,
+    /// The include chain of an entry with `file`, outermost first (C2-N-087).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub included_by: Vec<IncludedBy>,
+}
+
+/// One include directive of `includedBy` (C2-T-020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IncludedBy {
+    /// The including file; absent for the top-level document.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    pub range: Range,
 }
 
 impl From<&Diagnostic> for Entry {
@@ -49,6 +61,17 @@ impl From<&Diagnostic> for Entry {
             }),
             file: d.file.clone(),
             foreign_type: None,
+            included_by: d
+                .included_by
+                .iter()
+                .map(|site| IncludedBy {
+                    file: site.file.clone(),
+                    range: Range {
+                        start_offset: site.start_offset,
+                        end_offset: site.end_offset,
+                    },
+                })
+                .collect(),
         }
     }
 }

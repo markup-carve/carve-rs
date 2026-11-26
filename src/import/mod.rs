@@ -135,6 +135,7 @@ impl Cx {
             }),
             file: None,
             foreign_type: Some(foreign),
+            included_by: Vec::new(),
         });
     }
 

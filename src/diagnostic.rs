@@ -26,6 +26,9 @@ pub struct IncludeSite {
     pub file: Option<String>,
     pub line: u32,
     pub column: u32,
+    /// The byte range of the directive in `file` (C2-T-020).
+    pub start_offset: usize,
+    pub end_offset: usize,
 }
 
 impl Diagnostic {

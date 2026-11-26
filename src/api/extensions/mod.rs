@@ -1099,6 +1099,7 @@ fn entry(code: &str, message: &str) -> Entry {
         range: None,
         file: None,
         foreign_type: None,
+        included_by: Vec::new(),
     }
 }
 

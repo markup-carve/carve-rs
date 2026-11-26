@@ -80,6 +80,7 @@ fn loss(state: &mut State<'_>, path: &str, message: &str) {
         range: None,
         file: None,
         foreign_type: None,
+        included_by: Vec::new(),
     });
 }
 

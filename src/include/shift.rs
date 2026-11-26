@@ -1,7 +1,7 @@
 //! Heading shifts of an expanded tree (C2-N-048 to C2-N-051).
 
 use crate::ast::Node;
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, IncludeSite};
 use serde_json::Value;
 
 const MIN_LEVEL: i64 = 1;
@@ -11,6 +11,9 @@ const MAX_LEVEL: i64 = 6;
 struct Walk<'d> {
     levels: Vec<i64>,
     diags: &'d mut Vec<Diagnostic>,
+    /// The include sites around the walk and the file each one read (C2-N-087).
+    chain: Vec<IncludeSite>,
+    files: Vec<String>,
 }
 
 /// C2-N-050: include by include in tree order, an include before the includes inside it.
@@ -18,6 +21,8 @@ pub(super) fn apply(nodes: &mut [Node<'_>], diags: &mut Vec<Diagnostic>) {
     let mut w = Walk {
         levels: vec![0],
         diags,
+        chain: Vec::new(),
+        files: Vec::new(),
     };
     list(&mut w, nodes);
 }
@@ -38,12 +43,26 @@ fn node(w: &mut Walk<'_>, n: &mut Node<'_>) {
         // C2-N-049: an expanded include is no container.
         Node::Include(i) => {
             let file = i.file;
-            let by = i.options.and_then(|o| o.get("shift")).cloned();
-            if let (Some(children), Some(by)) = (i.children.as_deref_mut(), by) {
-                shift_include(w, children, &by, file);
+            let Some(children) = i.children.as_deref_mut() else {
+                return;
+            };
+            let site = i.pos.map(|pos| IncludeSite {
+                file: w.files.last().cloned(),
+                line: pos.start_line,
+                column: pos.start_column,
+                start_offset: pos.start(),
+                end_offset: pos.end(),
+            });
+            let pushed = site.is_some();
+            w.chain.extend(site);
+            w.files.push(file.unwrap_or_default().to_string());
+            if let Some(by) = i.options.and_then(|o| o.get("shift")) {
+                shift_include(w, children, by, file);
             }
-            if let Some(children) = i.children.as_deref_mut() {
-                list(w, children);
+            list(w, children);
+            w.files.pop();
+            if pushed {
+                w.chain.pop();
             }
         }
         Node::List(_) | Node::DefinitionList(_) => n.for_each_child_mut(&mut |c| node(w, c)),
@@ -104,12 +123,14 @@ fn shift_include(w: &mut Walk<'_>, children: &mut [Node<'_>], by: &Value, file: 
         if h.level != level {
             let text = crate::resolve::plain::text_of(h.children);
             let shown = h.level.to_string();
-            w.diags.push(Diagnostic::new(
+            let mut diag = Diagnostic::new(
                 "include-heading-clamp",
                 &[("text", text.as_str()), ("level", shown.as_str())],
                 file,
                 h.pos,
-            ));
+            );
+            diag.included_by.clone_from(&w.chain);
+            w.diags.push(diag);
         }
     }
 }

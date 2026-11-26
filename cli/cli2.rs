@@ -642,7 +642,14 @@ fn included_sources(
         return sources;
     };
     let options = json!({});
-    for name in entries.iter().filter_map(|e| e.file.as_deref()) {
+    let sites = entries
+        .iter()
+        .flat_map(|e| e.included_by.iter().filter_map(|site| site.file.as_deref()));
+    for name in entries
+        .iter()
+        .filter_map(|e| e.file.as_deref())
+        .chain(sites)
+    {
         if sources.contains_key(name) || includes.file.as_deref() == Some(name) {
             continue;
         }
@@ -673,10 +680,10 @@ impl<'b> Places<'b> {
         }
     }
     fn place(&self, entry: &Entry, offset: usize) -> (usize, usize) {
-        entry
-            .file
-            .as_deref()
-            .and_then(|name| self.files.get(name))
+        self.place_in(entry.file.as_deref(), offset)
+    }
+    fn place_in(&self, file: Option<&str>, offset: usize) -> (usize, usize) {
+        file.and_then(|name| self.files.get(name))
             .unwrap_or(&self.own)
             .place(offset)
     }
@@ -699,6 +706,13 @@ fn located(
                 let (line, column) = positions.place(entry, range.start_offset);
                 v["line"] = json!(line);
                 v["column"] = json!(column);
+            }
+            // C2-T-020: each include site gets its line and column too.
+            for (index, site) in entry.included_by.iter().enumerate() {
+                let (line, column) =
+                    positions.place_in(site.file.as_deref(), site.range.start_offset);
+                v["includedBy"][index]["line"] = json!(line);
+                v["includedBy"][index]["column"] = json!(column);
             }
             v
         })
