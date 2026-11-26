@@ -942,7 +942,9 @@ impl Cx {
     }
 
     /// C2-H-034: a loose list writes the first paragraph of an item as `<p>`.
-    fn has_loose_item(&self, id: Id) -> bool {
+    /// Under `data-carve-tight` (`carrier`), a `<p>` C2-H-018 keeps for its run
+    /// is no loose sign (C2-H-186).
+    fn has_loose_item(&self, id: Id, carrier: bool) -> bool {
         self.dom.elements(id).into_iter().any(|item| {
             self.dom.is(item, "li")
                 && self.dom.elements(item).into_iter().any(|child| {
@@ -955,15 +957,32 @@ impl Cx {
                         .unwrap_or(&[])
                         .iter()
                         .all(|&e| self.dom.is_blank(e) || self.dom.is(e, "input"))
+                        && !(carrier && self.kept_for_run(child, kids.get(at + 1..).unwrap_or(&[])))
                 })
         })
     }
 
+    /// C2-H-018: a tight item keeps its first `<p>` when its content is only
+    /// `<img>` elements, whitespace and comments (C2-M-013), or a bare `<img>`
+    /// follows it (C2-M-012).
+    fn kept_for_run(&self, p: Id, after: &[Id]) -> bool {
+        let next = after
+            .iter()
+            .find(|&&e| !self.dom.is_blank(e) && !self.dom.is_comment(e));
+        if next.is_some_and(|&e| self.dom.is(e, "img")) {
+            return true;
+        }
+        let kids = self.dom.children(p);
+        kids.iter().any(|&k| self.dom.is(k, "img"))
+            && kids
+                .iter()
+                .all(|&k| self.dom.is(k, "img") || self.dom.is_blank(k) || self.dom.is_comment(k))
+    }
+
     /// C2-H-138, C2-M-033: tight or loose.
     fn list_spacing(&mut self, id: Id, items: &[Value]) -> &'static str {
-        let loose = self.has_loose_item(id);
         if self.dom.has(id, "data-carve-tight") {
-            if !loose {
+            if !self.has_loose_item(id, true) {
                 return "tight";
             }
             self.ignored_carrier(
@@ -976,7 +995,7 @@ impl Cx {
         if items.len() <= 1 {
             return "tight";
         }
-        if loose {
+        if self.has_loose_item(id, false) {
             return "loose";
         }
         let many = items.iter().any(|item| {
