@@ -33,8 +33,8 @@ caseless = "0.2.2"
 # vendored jotdown in src/jotdown.
 comrak = { version = "=0.55.0", default-features = false }
 # The two move together: markup5ever_rcdom is cut against this exact html5ever.
-html5ever = "0.39"
-markup5ever_rcdom = "0.39"
+html5ever = "0.40"
+markup5ever_rcdom = "0.40"
 serde = { version = "1", features = ["derive"] }
 # Already in the tree through serde_json; the shortest closest digits RFC 8785 writes (C2-A-219).
 zmij = "1"
