@@ -309,7 +309,7 @@ pub(crate) fn resolved_owned_expanded(
     diags: &mut Vec<diagnostic::Diagnostic>,
 ) -> (
     ast::owned::Document,
-    std::collections::HashSet<(u32, u32, u32)>,
+    std::collections::HashSet<String>,
     snippet::expand::Kept,
 ) {
     let arena = Arena::new();

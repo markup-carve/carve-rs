@@ -796,24 +796,46 @@ struct Carried {
 /// document transform returns: its nodes have new addresses there (C2-H-215, C2-N-092).
 #[derive(Debug, Default)]
 pub(crate) struct Kept {
-    nodes: Vec<(Value, Carried)>,
+    /// Each carrying node: its place, its JSON and what it carries.
+    nodes: Vec<(Vec<usize>, Value, Carried)>,
     budget: Option<Budget>,
 }
 
-/// Visits every node in document order with the place of each include among the includes.
-fn each_node<'a>(nodes: &[Node<'a>], f: &mut dyn FnMut(&Node<'a>)) {
-    for n in nodes {
-        f(n);
-        if let Node::Include(i) = n {
-            if let Some(children) = i.children.as_deref() {
-                each_node(children, f);
+/// Visits every node in document order with its place: the index of each node
+/// on the way down among the nodes its parent's slots hold.
+fn each_node<'a>(nodes: &[Node<'a>], f: &mut dyn FnMut(&Node<'a>, &[usize])) {
+    fn walk<'a>(nodes: &[Node<'a>], at: &mut Vec<usize>, f: &mut dyn FnMut(&Node<'a>, &[usize])) {
+        for (i, n) in nodes.iter().enumerate() {
+            at.push(i);
+            f(n, at);
+            if let Node::Include(inc) = n {
+                walk(inc.children.as_deref().unwrap_or(&[]), at, f);
+            } else {
+                let kids: Vec<&Node<'a>> = crate::resolve::order::slots(n).collect();
+                for (k, c) in kids.into_iter().enumerate() {
+                    at.push(k);
+                    f(c, at);
+                    walk_below(c, at, f);
+                    at.pop();
+                }
             }
-            continue;
-        }
-        for c in crate::resolve::order::slots(n) {
-            each_node(std::slice::from_ref(c), f);
+            at.pop();
         }
     }
+    fn walk_below<'a>(n: &Node<'a>, at: &mut Vec<usize>, f: &mut dyn FnMut(&Node<'a>, &[usize])) {
+        if let Node::Include(inc) = n {
+            walk(inc.children.as_deref().unwrap_or(&[]), at, f);
+            return;
+        }
+        let kids: Vec<&Node<'a>> = crate::resolve::order::slots(n).collect();
+        for (k, c) in kids.into_iter().enumerate() {
+            at.push(k);
+            f(c, at);
+            walk_below(c, at, f);
+            at.pop();
+        }
+    }
+    walk(nodes, &mut Vec::new(), f);
 }
 
 /// The side tables of the running render, keyed by the JSON of each node.
@@ -823,7 +845,7 @@ pub(crate) fn keep(nodes: &[Node<'_>]) -> Kept {
             return Kept::default();
         };
         let mut includes = std::collections::HashMap::new();
-        each_node(nodes, &mut |n| {
+        each_node(nodes, &mut |n, _| {
             if matches!(n, Node::Include(_)) {
                 let at = includes.len() + 1;
                 includes.insert(n.payload_addr(), at);
@@ -833,7 +855,7 @@ pub(crate) fn keep(nodes: &[Node<'_>]) -> Kept {
             nodes: Vec::new(),
             budget: side.budget,
         };
-        each_node(nodes, &mut |n| {
+        each_node(nodes, &mut |n, place| {
             let at = n.payload_addr();
             let carried = Carried {
                 carrier: side.carriers.get(&at).cloned(),
@@ -848,7 +870,7 @@ pub(crate) fn keep(nodes: &[Node<'_>]) -> Kept {
             };
             if carried.carrier.is_some() || carried.mark.is_some() || carried.scope.is_some() {
                 if let Ok(v) = serde_json::to_value(n) {
-                    kept.nodes.push((v, carried));
+                    kept.nodes.push((place.to_vec(), v, carried));
                 }
             }
         });
@@ -862,28 +884,39 @@ pub(crate) fn restore(nodes: &[Node<'_>], kept: Kept) -> Option<Guard> {
     let mut side = included_side(nodes).unwrap_or_default();
     side.budget = kept.budget;
     let mut includes = Vec::new();
-    each_node(nodes, &mut |n| {
+    each_node(nodes, &mut |n, _| {
         if matches!(n, Node::Include(_)) {
             includes.push(n.payload_addr());
         }
     });
-    let mut pending = kept.nodes.into_iter().peekable();
-    each_node(nodes, &mut |n| {
-        let Some((value, _)) = pending.peek() else {
-            return;
-        };
-        if serde_json::to_value(n).ok().as_ref() != Some(value) {
-            return;
+    // A kept node is found at its place where a node of its type stands there (a transform
+    // may change its content); else as the first equal node after the last match.
+    let mut found: Vec<(usize, Vec<usize>, Value)> = Vec::new();
+    each_node(nodes, &mut |n, place| {
+        if let Ok(v) = serde_json::to_value(n) {
+            found.push((n.payload_addr(), place.to_vec(), v));
         }
-        let Some((_, carried)) = pending.next() else {
-            return;
+    });
+    let mut from = 0;
+    for (place, value, carried) in kept.nodes {
+        let same_place = found
+            .iter()
+            .skip(from)
+            .position(|(_, p, v)| *p == place && v.get("type") == value.get("type"));
+        let Some(at) =
+            same_place.or_else(|| found.iter().skip(from).position(|(_, _, v)| *v == value))
+        else {
+            continue;
         };
-        let at = n.payload_addr();
+        let Some(&(addr, _, _)) = found.get(from + at) else {
+            continue;
+        };
+        from += at + 1;
         if let Some(c) = carried.carrier {
-            side.carriers.insert(at, c);
+            side.carriers.insert(addr, c);
         }
         if let Some(m) = carried.mark {
-            side.marks.insert(at, m);
+            side.marks.insert(addr, m);
         }
         if let Some(i) = carried.scope {
             let include = if i == 0 {
@@ -891,20 +924,26 @@ pub(crate) fn restore(nodes: &[Node<'_>], kept: Kept) -> Option<Guard> {
             } else {
                 includes.get(i - 1).copied().unwrap_or(0)
             };
-            side.scope.insert(at, include);
+            side.scope.insert(addr, include);
         }
-    });
+    }
     install(Some(side))
 }
 
-/// The positions of the definitions a document transform receives, which tell
-/// a definition it kept from one it added (C2-N-095).
-pub(crate) fn definition_marks(nodes: &[Node<'_>]) -> std::collections::HashSet<(u32, u32, u32)> {
+/// What tells a definition a document transform kept from one it added: its
+/// position, or for a definition without one its JSON (C2-N-095).
+fn definition_key(d: &ast::SnippetDefinition<'_>) -> String {
+    match d.pos {
+        Some(p) => format!("{}:{}:{}", p.start_line, p.start_offset, p.end_offset),
+        None => serde_json::to_string(d).unwrap_or_default(),
+    }
+}
+
+/// The keys of the definitions a document transform receives.
+pub(crate) fn definition_marks(nodes: &[Node<'_>]) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     registry_walk(nodes, 0, None, &mut |d, _, _| {
-        if let Some(p) = d.pos {
-            out.insert((p.start_line, p.start_offset, p.end_offset));
-        }
+        out.insert(definition_key(d));
     });
     out
 }
@@ -915,7 +954,7 @@ pub(crate) fn definition_marks(nodes: &[Node<'_>]) -> std::collections::HashSet<
 pub(crate) fn refuse_transformed<'a>(
     doc: &mut ast::Document<'a>,
     arena: &'a Arena,
-    authored: &std::collections::HashSet<(u32, u32, u32)>,
+    authored: &std::collections::HashSet<String>,
 ) -> Vec<Finding> {
     let mut found = Vec::new();
     refuse_list(doc.children, arena, authored, true, &mut found);
@@ -925,7 +964,7 @@ pub(crate) fn refuse_transformed<'a>(
 fn refuse_list<'a>(
     list: &mut [Node<'a>],
     arena: &'a Arena,
-    authored: &std::collections::HashSet<(u32, u32, u32)>,
+    authored: &std::collections::HashSet<String>,
     top: bool,
     found: &mut Vec<Finding>,
 ) {
@@ -937,7 +976,7 @@ fn refuse_list<'a>(
 fn refuse_node<'a>(
     n: &mut Node<'a>,
     arena: &'a Arena,
-    authored: &std::collections::HashSet<(u32, u32, u32)>,
+    authored: &std::collections::HashSet<String>,
     top: bool,
     found: &mut Vec<Finding>,
 ) {
@@ -956,9 +995,7 @@ fn refuse_node<'a>(
             *n = out;
         }
         Node::SnippetDefinition(d) => {
-            let kept = d
-                .pos
-                .is_some_and(|p| authored.contains(&(p.start_line, p.start_offset, p.end_offset)));
+            let kept = authored.contains(&definition_key(d));
             if !top || !kept {
                 found.push(finding(n.payload_addr()));
             }

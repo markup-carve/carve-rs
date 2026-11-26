@@ -156,3 +156,48 @@ fn a_file_included_twice_reports_its_second_definitions() {
         "{found:?}"
     );
 }
+
+/// C2-H-215: a transform that changes one copy keeps the carriers of that copy
+/// and of every later one.
+#[test]
+fn a_changed_copy_keeps_its_carriers() {
+    let request = json!({
+        "call": "renderWithDiagnostics",
+        "source": "{$v}: X\n\nA {{ $v }} {{ $v }}\n",
+        "options": {"roundtrip": true},
+        "host": {"documentTransforms": [{
+            "name": "sample.b",
+            "after": "/children/1/children/1/children/0",
+            "setValue": "Z",
+        }]},
+    });
+    let out = parse_json(&api::json::call(&request.to_string()))["ok"].clone();
+    assert_eq!(
+        out["html"],
+        "<template data-carve-snippets>{$v}: X</template>\n\
+         <p>A <span data-carve-snippet=\"1:inline:$v\">Z</span> \
+         <span data-carve-snippet=\"2:inline:$v\">X</span></p>"
+    );
+}
+
+/// C2-N-095: a definition of a supplied tree without positions that a transform
+/// keeps is no node the transform inserted.
+#[test]
+fn a_kept_definition_without_a_position_is_no_finding() {
+    let request = json!({
+        "call": "renderWithDiagnostics",
+        "tree": {"type": "document", "astVersion": "2.0", "children": [
+            {"type": "snippet_definition", "name": "v", "children": [{"type": "text", "value": "X"}]},
+            {"type": "paragraph", "children": [{"type": "snippet_use", "name": "v", "mode": "inline"}]},
+        ]},
+        "options": {},
+        "host": {"documentTransforms": [{
+            "name": "sample.a",
+            "after": "/children/1",
+            "insert": {"type": "paragraph", "children": [{"type": "text", "value": "b"}]},
+        }]},
+    });
+    let out = parse_json(&api::json::call(&request.to_string()))["ok"].clone();
+    assert_eq!(out["html"], "<p>X</p>\n<p>b</p>");
+    assert_eq!(codes(&out), Vec::<(String, Option<String>)>::new());
+}

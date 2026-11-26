@@ -676,32 +676,66 @@ fn check_snippet_modes(root: &Value) -> Result<(), TreeError> {
             if matches!(key.as_str(), "data" | "props" | "pos" | "attrs") {
                 continue;
             }
-            let Some(items) = child.as_array() else {
-                if child.is_object() {
+            // The slots of an inline extension hold inline nodes; those of a block extension
+            // hold what its declaration says, which this check does not read.
+            let lists: Vec<(String, &Value, Option<bool>)> = match child {
+                Value::Object(slots) if key == "slots" => slots
+                    .iter()
+                    .map(|(name, list)| {
+                        (
+                            format!("{path}/slots/{name}"),
+                            list,
+                            (ty == "inline_extension").then_some(true),
+                        )
+                    })
+                    .collect(),
+                Value::Array(items) => {
+                    let uses = items.iter().any(|item| item["type"] == "snippet_use");
+                    vec![(
+                        format!("{path}/{key}"),
+                        child,
+                        Some(uses && inline_slot(ty, key)),
+                    )]
+                }
+                Value::Object(_) => {
                     pending.push((child, format!("{path}/{key}")));
+                    continue;
                 }
-                continue;
+                _ => continue,
             };
-            let uses = items.iter().any(|item| item["type"] == "snippet_use");
-            let inline = uses && inline_slot(ty, key);
-            for (i, item) in items.iter().enumerate() {
-                let at = format!("{path}/{key}/{i}");
-                if item["type"] == "snippet_use" {
-                    let want = if inline { "inline" } else { "block" };
-                    if item["mode"] != want {
-                        let slot = if inline { "inline nodes" } else { "blocks" };
-                        return Err(reader(
-                            &format!("{at}/mode"),
-                            &format!(
-                                "a snippet use in a list of {slot} has the mode {}",
-                                item["mode"]
-                            ),
-                        ));
-                    }
-                }
-                pending.push((item, at));
+            for (at, list, inline) in lists {
+                check_use_modes(list, &at, inline, &mut pending)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// C2-A-221: each use of `list` has the mode of the slot; its nodes are walked on.
+fn check_use_modes<'v>(
+    list: &'v Value,
+    path: &str,
+    inline: Option<bool>,
+    pending: &mut Vec<(&'v Value, String)>,
+) -> Result<(), TreeError> {
+    for (i, item) in list.as_array().into_iter().flatten().enumerate() {
+        let at = format!("{path}/{i}");
+        let Some(inline) = inline else {
+            pending.push((item, at));
+            continue;
+        };
+        let want = if inline { "inline" } else { "block" };
+        if item["type"] == "snippet_use" && item["mode"] != want {
+            let slot = if inline { "inline nodes" } else { "blocks" };
+            return Err(reader(
+                &format!("{at}/mode"),
+                &format!(
+                    "a snippet use in a list of {slot} has the mode {}",
+                    item["mode"]
+                ),
+            ));
+        }
+        pending.push((item, at));
     }
     Ok(())
 }
@@ -839,6 +873,15 @@ fn check_object(
     check_position(value, path)?;
     check_resources(value, path, resources)?;
     check_header_refs(value, path, header_ids)?;
+    check_type(value, path, declarations)
+}
+
+/// The checks one node type adds beyond its schema row.
+fn check_type(
+    value: &Value,
+    path: &str,
+    declarations: &HashMap<String, Value>,
+) -> Result<(), TreeError> {
     match value["type"].as_str() {
         Some("table") => check_groups(value, path),
         Some("table_cell") => check_cell(value, path),
