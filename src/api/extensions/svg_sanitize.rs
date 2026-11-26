@@ -1061,11 +1061,17 @@ fn escape_attr(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+const NAMESPACE_WS: [char; 5] = [' ', '\t', '\n', '\r', '\u{A0}'];
+
 /// A prefixed name off [`PREFIXED_NAMES`], or an `xmlns:xlink` whose value,
 /// references read, is empty (Namespaces in XML forbids undeclaring a prefix,
 /// carve#6779) or holds XML whitespace or U+00A0, which is no URI reference
-/// (carve#6783, carve#6811).
+/// (carve#6783, carve#6811). The same holds for a child's default `xmlns`,
+/// except that an empty one is a legal undeclaration (carve#6843).
 fn namespace_unwritable(name: &str, value: &str) -> bool {
+    if name == "xmlns" {
+        return !value.is_empty() && decode_entities(value).contains(NAMESPACE_WS);
+    }
     if !name.contains(':') {
         return false;
     }
@@ -1074,6 +1080,6 @@ fn namespace_unwritable(name: &str, value: &str) -> bool {
     }
     name == "xmlns:xlink" && {
         let decoded = decode_entities(value);
-        decoded.is_empty() || decoded.contains([' ', '\t', '\n', '\r', '\u{A0}'])
+        decoded.is_empty() || decoded.contains(NAMESPACE_WS)
     }
 }
