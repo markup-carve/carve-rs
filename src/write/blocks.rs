@@ -300,6 +300,10 @@ fn text_leaf<'t>(
         std::borrow::Cow::Owned(format!("{}{indent}", " ".repeat(behind)))
     };
     w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + mark);
+    if let Some(authored) = w.authored_leaves.get(&id(node)).cloned() {
+        emit_lines(w, prefix, &indent, &authored);
+        return;
+    }
     let mut content = write_content(w, &refs(children(node)), flags);
     // C2-W-154: no escape keeps an em dash node, so a first line that reads as a
     // typed metadata opener is indented by one space, which C2-B-232 leaves as text.

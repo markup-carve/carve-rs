@@ -77,14 +77,18 @@ impl Writer for CarveWriter {
     fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<Written, Error> {
         check_extensions(&opts.extensions)?;
         let doc = tree.value()?;
-        let settings = crate::write::Settings {
+        let mut settings = crate::write::Settings {
             align_tables: opts.align_tables,
             extensions: opts.extensions.clone(),
             layout: None,
             source: None,
             link_keys: None,
         }
-        .with_layout(opts.layout.as_ref().filter(|_| !opts.normalize));
+        .with_layout(opts.layout.as_ref());
+        // C2-W-127: `normalize` drops the sidecar's spellings; the authored-block fallback of C2-W-088 still reads its source.
+        if opts.normalize {
+            settings.layout = None;
+        }
         let (output, diagnostics) = crate::write::write_value(&doc, &settings);
         Ok(Written {
             output,

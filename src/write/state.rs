@@ -209,6 +209,10 @@ pub struct Writer<'t> {
     /// C2-I-118: the escapes the comparison placed at once behind capped openers, in the order the rounds would
     /// place them.
     pub capped_runs: Vec<(N<'t>, usize)>,
+    /// C2-W-088: the source the tree was read from, for the authored-block fallback; `None` without one.
+    pub authored: Option<String>,
+    /// C2-W-088: the leaf blocks written with their authored content while that fallback tries them.
+    pub authored_leaves: HashMap<usize, String>,
 }
 
 impl<'t> Writer<'t> {
@@ -279,6 +283,8 @@ impl<'t> Writer<'t> {
             strict_pairs: false,
             kid_lists: Vec::new(),
             capped_runs: Vec::new(),
+            authored: None,
+            authored_leaves: HashMap::new(),
         }
     }
 
