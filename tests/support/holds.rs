@@ -175,15 +175,17 @@ pub fn expect_held(id: &str, holds: &[(&str, &str)], body: impl FnOnce()) {
         body();
         return;
     };
-    if catch_unwind(AssertUnwindSafe(body)).is_ok() {
-        panic!("{id}: held{} but passes; drop the hold", why(cause));
-    }
+    assert!(
+        catch_unwind(AssertUnwindSafe(body)).is_err(),
+        "{id}: held{} but passes; drop the hold",
+        why(cause)
+    );
 }
 
 fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
         .unwrap_or_else(|| "panicked".into())
 }
