@@ -37,7 +37,10 @@ fn call_serving(request: &Value, files: &Value) -> Value {
                 .ok_or(carve::include::Cause::NotFound)
         });
     let includes = carve::include::Includes::new(resolver);
-    parse_json(&api::json::call_with_includes(&request.to_string(), includes))
+    parse_json(&api::json::call_with_includes(
+        &request.to_string(),
+        includes,
+    ))
 }
 
 fn without_pos(v: &mut Value) {

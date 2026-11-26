@@ -84,7 +84,11 @@ pub(crate) fn collect(cx: &mut Cx, nodes: &[Id]) {
         if !cx.dom.is_element(n) {
             continue;
         }
-        let carrier = cx.dom.is(n, "template").then(|| carrier_of(cx, n)).flatten();
+        let carrier = cx
+            .dom
+            .is(n, "template")
+            .then(|| carrier_of(cx, n))
+            .flatten();
         if let Some(carrier) = carrier {
             let found = read(cx, n, carrier).unwrap_or_default();
             for definition in found.iter().filter(|d| d["type"] == "abbreviation_def") {

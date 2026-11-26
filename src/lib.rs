@@ -300,18 +300,9 @@ pub fn render_tree_with_diagnostics(
     })
 }
 
-/// The resolved view as an owned tree, for extension transforms that already
-/// consume typed nodes. Avoids a JSON round trip between resolution and them.
-pub(crate) fn resolved_owned(tree: &ast::owned::Document, opts: &Options) -> ast::owned::Document {
-    let arena = Arena::new();
-    let mut doc = tree.in_arena(&arena);
-    let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
-    doc.owned()
-}
-
-/// [`resolved_owned`] of the view a document transform receives: its snippet
-/// uses expanded (C2-N-091), with the findings of the expansion and the
-/// positions of its definitions.
+/// The resolved view as an owned tree, for the document transforms: its
+/// snippet uses expanded (C2-N-091), with the findings of the expansion and
+/// the positions of its definitions.
 pub(crate) fn resolved_owned_expanded(
     tree: &ast::owned::Document,
     opts: &Options,
@@ -800,16 +791,18 @@ pub(crate) fn prepare_expanding<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let expanded = opts.includes.is_some();
+    // Includes and snippet uses both open with `{{`.
+    let braces = input.contains("{{");
     let mut included_sources = std::collections::HashMap::new();
     if let Some(cfg) = &opts.includes {
-        if input.contains("{{") {
+        if braces {
             included_sources = include::expand(&mut doc, &scope, cfg, opts, arena, diags);
         }
-    } else if input.contains("{{") {
+    } else if braces {
         include::no_resolver(doc.children, diags);
     }
     if let Some((found, guard)) = snippets {
-        if input.contains("{{") {
+        if braces {
             let settings = snippet::expand::Settings {
                 roundtrip: opts.roundtrip,
                 source_len: input.len(),
@@ -817,8 +810,7 @@ pub(crate) fn prepare_expanding<'a>(
             *guard = snippet::expand::expand(&mut doc, arena, settings, found);
         }
     }
-    let files = (expanded && input.contains("{{"))
-        .then(|| resolve::files::Files::build(&doc, included_sources));
+    let files = (expanded && braces).then(|| resolve::files::Files::build(&doc, included_sources));
     before_resolve(&mut doc);
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);

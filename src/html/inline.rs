@@ -295,7 +295,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 Node::Code(c) => {
                     out.push_str("<code");
                     let snippet = self.snippet_tail(n);
-                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() || snippet.is_some() {
+                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() || snippet.is_some()
+                    {
                         let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
                         el.snippet = snippet;
                         el.write_into(self.filter(), out);
@@ -641,7 +642,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 .push(("data-carve-footnote-label", Some(r.key.into())));
         }
         if self.in_link > 0 {
-            if let Some(mark) = self.snippet_mark(n).filter(|m| Some(*m) != self.link_snippet) {
+            if let Some(mark) = self
+                .snippet_mark(n)
+                .filter(|m| Some(*m) != self.link_snippet)
+            {
                 el.carriers
                     .push(("data-carve-snippet-mark", Some(mark.to_string().into())));
             }

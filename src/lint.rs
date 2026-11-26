@@ -15,8 +15,8 @@ mod data_rules;
 mod includes;
 mod lines;
 mod nodes;
-mod snippets;
 mod pairs;
+mod snippets;
 use crate::view::V;
 mod walk;
 

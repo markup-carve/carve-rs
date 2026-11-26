@@ -688,7 +688,10 @@ fn check_snippet_modes(root: &Value) -> Result<(), TreeError> {
                         let slot = if inline { "inline nodes" } else { "blocks" };
                         return Err(reader(
                             &format!("{at}/mode"),
-                            &format!("a snippet use in a list of {slot} has the mode {}", item["mode"]),
+                            &format!(
+                                "a snippet use in a list of {slot} has the mode {}",
+                                item["mode"]
+                            ),
                         ));
                     }
                 }

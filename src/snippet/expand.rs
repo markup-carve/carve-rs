@@ -123,6 +123,8 @@ struct Entry {
     attrs: Option<owned::Attrs>,
     include: usize,
     file: Option<String>,
+    /// The copy, its node count and its bytes, made at the first use: every copy of a definition is alike.
+    copy: Option<(Vec<owned::Node>, usize, usize)>,
 }
 
 /// C2-N-090: the definitions of the expanded tree in document order; a later
@@ -240,7 +242,12 @@ impl Copy {
                     return None;
                 }
                 self.bytes += a.get("classes").map_or(0, |c| opaque_bytes(c, false));
-                for pair in a.get("keyValues").and_then(Value::as_array).into_iter().flatten() {
+                for pair in a
+                    .get("keyValues")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
                     self.bytes += opaque_bytes(pair, false);
                 }
                 Some(Value::Object(a))
@@ -392,7 +399,14 @@ fn spelled<'a>(arena: &'a Arena, name: &str, block: bool, pos: Option<Pos>) -> N
 
 impl<'a> Pass<'a, '_> {
     /// Writes a use as its source text and reports `code` at `pos`, the authored use.
-    fn refuse(&mut self, name: &str, block: bool, pos: Option<Pos>, code: &'static str, limit: Option<usize>) -> Node<'a> {
+    fn refuse(
+        &mut self,
+        name: &str,
+        block: bool,
+        pos: Option<Pos>,
+        code: &'static str,
+        limit: Option<usize>,
+    ) -> Node<'a> {
         // A copied use has no position of its own; its finding names the use the copy came from.
         let own = if self.stack.is_empty() { pos } else { None };
         let out = spelled(self.arena, name, block, own);
@@ -420,31 +434,43 @@ impl<'a> Pass<'a, '_> {
         if self.stack.len() + 1 > self.depth {
             return vec![self.refuse_at(u, pos, "snippet-depth", Some(self.depth))];
         }
-        let entry = &self.entries[index];
-        let mut copy = Copy::default();
-        let values: Vec<Value> = entry.children.iter().map(|v| copy.node(v)).collect();
+        let entry = &mut self.entries[index];
+        let (owned, copied, copied_bytes) = entry.copy.get_or_insert_with(|| {
+            let mut copy = Copy::default();
+            let values: Vec<Value> = entry.children.iter().map(|v| copy.node(v)).collect();
+            let nodes = values
+                .into_iter()
+                .filter_map(|v| serde_json::from_value(v).ok())
+                .collect();
+            (nodes, copy.count, copy.bytes)
+        });
+        let (count, bytes) = (*copied, *copied_bytes);
+        let mut nodes: Vec<Node<'a>> = owned.iter().map(|n| n.in_arena(self.arena)).collect();
         let attrs = entry.attrs.clone();
         let include = entry.include;
         let file = entry.file.clone();
-        let nodes: Vec<owned::Node> = values
-            .into_iter()
-            .filter_map(|v| serde_json::from_value(v).ok())
-            .collect();
-        let mut nodes: Vec<Node<'a>> = nodes.iter().map(|n| n.in_arena(self.arena)).collect();
         let single = !block
             && attrs.is_none()
             && self.settings.roundtrip
             && nodes.len() == 1
             && renders_as_one(&nodes[0]);
         let wraps = block || attrs.is_some() || (self.settings.roundtrip && !single);
-        let mut count = copy.count;
-        let mut bytes = copy.bytes;
+        let mut count = count;
+        let mut bytes = bytes;
         if wraps {
             count += 1;
-            bytes += if block { "paragraph".len() } else { "span".len() };
+            bytes += if block {
+                "paragraph".len()
+            } else {
+                "span".len()
+            };
             if let Some(a) = &attrs {
                 bytes += a.classes.iter().map(String::len).sum::<usize>();
-                bytes += a.key_values.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>();
+                bytes += a
+                    .key_values
+                    .iter()
+                    .map(|(k, v)| k.len() + v.len())
+                    .sum::<usize>();
             }
         }
         if self.total + count > self.limit {
@@ -483,7 +509,9 @@ impl<'a> Pass<'a, '_> {
         self.file = outer_file;
         let placed: Vec<Node<'a>> = if wraps {
             let children = slice;
-            let at = attrs.as_ref().map(|a| &*self.arena.alloc(a.in_arena(self.arena)));
+            let at = attrs
+                .as_ref()
+                .map(|a| &*self.arena.alloc(a.in_arena(self.arena)));
             let wrapper = if block {
                 Node::Paragraph(self.arena.alloc(ast::Paragraph {
                     children,
@@ -516,8 +544,20 @@ impl<'a> Pass<'a, '_> {
         placed
     }
 
-    fn refuse_at(&mut self, u: &ast::SnippetUse<'a>, pos: Option<Pos>, code: &'static str, limit: Option<usize>) -> Node<'a> {
-        self.refuse(u.name, u.mode == ast::SnippetUseMode::Block, pos, code, limit)
+    fn refuse_at(
+        &mut self,
+        u: &ast::SnippetUse<'a>,
+        pos: Option<Pos>,
+        code: &'static str,
+        limit: Option<usize>,
+    ) -> Node<'a> {
+        self.refuse(
+            u.name,
+            u.mode == ast::SnippetUseMode::Block,
+            pos,
+            code,
+            limit,
+        )
     }
 
     fn mark_notes(&mut self, n: &Node<'a>) {
@@ -611,6 +651,7 @@ pub(crate) fn expand<'a>(
             attrs: d.attrs.map(ast::Attrs::owned),
             include,
             file: file.map(str::to_string),
+            copy: None,
         });
     });
     let budget = budget_of(settings.source_len);

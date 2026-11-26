@@ -1056,7 +1056,11 @@ fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
             write_caption(w, caption(node), prefix, flags);
         }
         "snippet_definition" => snippet_definition(w, node, prefix, flags),
-        "snippet_use" => emit(w, prefix, &crate::snippet::spelling(s(node, "name").unwrap_or(""))),
+        "snippet_use" => emit(
+            w,
+            prefix,
+            &crate::snippet::spelling(s(node, "name").unwrap_or("")),
+        ),
         "heading" => heading(w, node, prefix, flags),
         "thematic_break" => {
             attribute_line(w, node, prefix, &BlockParts::default());

@@ -36,8 +36,12 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
 }
 
 pub(super) fn scan(source: &str, tree: V<'_>, opts: &LintOptions, out: &mut Vec<Diagnostic>) {
+    // Both rules read a definition marker, which starts with `{$`.
+    if !source.contains("{$") {
+        return;
+    }
     let unused = active("unused-snippet", opts);
-    let ids = active("snippet-definition-id", opts) && source.contains("{$");
+    let ids = active("snippet-definition-id", opts);
     if !unused && !ids {
         return;
     }
@@ -64,7 +68,8 @@ pub(super) fn scan(source: &str, tree: V<'_>, opts: &LintOptions, out: &mut Vec<
                     continue;
                 }
                 let pos = positions.pos(start + 1, start + 2 + name.len());
-                let mut d = Diagnostic::nth("unused-snippet", 0, &[("name", name)], None, Some(pos));
+                let mut d =
+                    Diagnostic::nth("unused-snippet", 0, &[("name", name)], None, Some(pos));
                 d.path = Some(format!("/children/{index}"));
                 out.push(d);
             }

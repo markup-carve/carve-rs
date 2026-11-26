@@ -870,7 +870,12 @@ impl Parser<'_> {
             end: e,
             join: Join::Line,
         };
-        self.push_leaf_event(LeafKind::SnippetDef { name, value }, s, start + r.len(), attrs);
+        self.push_leaf_event(
+            LeafKind::SnippetDef { name, value },
+            s,
+            start + r.len(),
+            attrs,
+        );
         self.closed = None;
         true
     }

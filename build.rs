@@ -886,7 +886,10 @@ fn walk_bodies(
         let req = required.contains(slot);
         match field_kind(slot, p) {
             FieldKind::Nodes if req => {
-                let _ = writeln!(lists, "                f(crate::ast::SlotMut::List(&mut n.{field}));");
+                let _ = writeln!(
+                    lists,
+                    "                f(crate::ast::SlotMut::List(&mut n.{field}));"
+                );
                 let _ = writeln!(body, "                for c in {r}n.{field} {{ f(c); }}");
                 let _ = writeln!(
                     body_mut,
@@ -894,7 +897,10 @@ fn walk_bodies(
                 );
             }
             FieldKind::Nodes => {
-                let _ = writeln!(lists, "                if let Some(cs) = &mut n.{field} {{ f(crate::ast::SlotMut::List(cs)); }}");
+                let _ = writeln!(
+                    lists,
+                    "                if let Some(cs) = &mut n.{field} {{ f(crate::ast::SlotMut::List(cs)); }}"
+                );
                 let _ = writeln!(
                     body,
                     "                if let Some(cs) = &n.{field} {{ for c in {cs} {{ f(c); }} }}"
@@ -905,7 +911,10 @@ fn walk_bodies(
                 );
             }
             FieldKind::NodeBox => {
-                let _ = writeln!(lists, "                if let Some(c) = &mut n.{field} {{ f(crate::ast::SlotMut::One(c)); }}");
+                let _ = writeln!(
+                    lists,
+                    "                if let Some(c) = &mut n.{field} {{ f(crate::ast::SlotMut::One(c)); }}"
+                );
                 let _ = writeln!(
                     body,
                     "                if let Some(c) = &n.{field} {{ f(c); }}"
@@ -1090,37 +1099,42 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     );
     emit_has_json(out, a);
     if fam == Fam::Arena {
-        let _ = write!(
-            out,
-            "
-    /// Sets the primary `children` slot; false when the type has none.
-    pub fn set_children(&mut self, kids: &'a mut [Node<'a>]) -> bool {{
-        match self {{
-{}            _ => return false,
-        }}
-        true
-    }}
-
-    /// The address of the node's own struct, which stays put when a list is rebuilt around it.
-    #[must_use]
-    pub fn payload_addr(&self) -> usize {{
-        match self {{
-{}        }}
-    }}
-
-    /// Visits every node-bearing slot, a list or a single node, mutable.
-    // generated from the schema
-    #[allow(clippy::cognitive_complexity)]
-    pub fn for_each_slot_mut(&mut self, f: &mut dyn FnMut(crate::ast::SlotMut<'_, 'a>)) {{
-        match self {{
-{}            _ => {{}}
-        }}
-    }}
-",
-            a.children_slot, a.addr, a.lists
-        );
+        emit_arena_slots(out, a);
     }
     out.push_str("}\n");
+}
+
+/// The accessors only the arena family has: setting and rebuilding slots in place.
+fn emit_arena_slots(out: &mut String, a: &Arms) {
+    let _ = write!(
+        out,
+        "
+/// Sets the primary `children` slot; false when the type has none.
+pub fn set_children(&mut self, kids: &'a mut [Node<'a>]) -> bool {{
+    match self {{
+{}            _ => return false,
+    }}
+    true
+}}
+
+/// The address of the node's own struct, which stays put when a list is rebuilt around it.
+#[must_use]
+pub fn payload_addr(&self) -> usize {{
+    match self {{
+{}        }}
+}}
+
+/// Visits every node-bearing slot, a list or a single node, mutable.
+// generated from the schema
+#[allow(clippy::cognitive_complexity)]
+pub fn for_each_slot_mut(&mut self, f: &mut dyn FnMut(crate::ast::SlotMut<'_, 'a>)) {{
+    match self {{
+{}            _ => {{}}
+    }}
+}}
+",
+        a.children_slot, a.addr, a.lists
+    );
 }
 
 /// The arm of `has_json`: the free JSON fields of the type, a required one always present.
@@ -1247,7 +1261,10 @@ fn write_slots(out: &mut String, defs: &Map<String, Value>, slots: &Value, fam: 
             "            Self::{ty}(n) => std::ptr::from_ref(&**n).addr(),"
         );
         if !lists.is_empty() {
-            let _ = writeln!(a.lists, "            Self::{ty}(n) => {{\n{lists}            }}");
+            let _ = writeln!(
+                a.lists,
+                "            Self::{ty}(n) => {{\n{lists}            }}"
+            );
         }
         if !body.is_empty() {
             let _ = writeln!(

@@ -117,16 +117,19 @@ impl Renderer<'_, '_> {
             .take_while(|n| matches!(n, Node::SnippetDefinition(_)))
             .collect();
         let included = crate::snippet::expand::with_side(|side| {
-            side.is_some_and(|s| run.iter().any(|n| s.included_defs.contains(&n.payload_addr())))
+            side.is_some_and(|s| {
+                run.iter()
+                    .any(|n| s.included_defs.contains(&n.payload_addr()))
+            })
         });
         let mut children: Vec<serde_json::Value> = run
             .iter()
             .filter_map(|n| serde_json::to_value(n).ok())
             .collect();
         plain_abbreviations(&mut children);
-        let doc = serde_json::json!({"type": "document", "astVersion": "2.0", "children": children});
-        let (source, entries) =
-            crate::write::write_value(&doc, &crate::write::Settings::default());
+        let doc =
+            serde_json::json!({"type": "document", "astVersion": "2.0", "children": children});
+        let (source, entries) = crate::write::write_value(&doc, &crate::write::Settings::default());
         for entry in &entries {
             if let Some(&(code, ..)) = crate::tables::MESSAGES
                 .iter()

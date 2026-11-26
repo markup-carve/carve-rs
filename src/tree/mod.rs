@@ -497,7 +497,10 @@ impl<'a> Builder<'_, 'a> {
                 }))
             }
             LeafKind::SnippetDef { name, value } => {
-                let children = self.inline(ContentKind::Paragraph, &crate::block::table::Pieces::One(Some(value)));
+                let children = self.inline(
+                    ContentKind::Paragraph,
+                    &crate::block::table::Pieces::One(Some(value)),
+                );
                 Node::SnippetDefinition(self.arena.alloc(ast::SnippetDefinition {
                     name: self.s(&name),
                     children,

@@ -36,7 +36,11 @@ impl Cx {
             return;
         };
         if scope != "include" {
-            return self.ignored_carrier(id, "data-carve-snippet-scope", "the value is not include");
+            return self.ignored_carrier(
+                id,
+                "data-carve-snippet-scope",
+                "the value is not include",
+            );
         }
         self.report(
             id,
@@ -64,7 +68,11 @@ impl Cx {
         if let Some(fault) = fault {
             self.ignored_carrier(id, "data-carve-snippet", &fault);
             if self.dom.has(id, "data-carve-snippet-scope") {
-                self.ignored_carrier(id, "data-carve-snippet-scope", "no snippet carrier is read here");
+                self.ignored_carrier(
+                    id,
+                    "data-carve-snippet-scope",
+                    "no snippet carrier is read here",
+                );
             }
             return None;
         }
@@ -79,7 +87,9 @@ impl Cx {
             return None;
         }
         let c = self.accepted(id, false)?;
-        Some(vec![json!({"type": "snippet_use", "name": c.name, "mode": "inline"})])
+        Some(vec![
+            json!({"type": "snippet_use", "name": c.name, "mode": "inline"}),
+        ])
     }
 
     pub(crate) fn block_snippet(&mut self, id: Id) -> Option<Vec<Value>> {
@@ -87,11 +97,17 @@ impl Cx {
             return None;
         }
         if !self.dom.is(id, "p") {
-            self.ignored_carrier(id, "data-carve-snippet", "a block use is read only from a paragraph");
+            self.ignored_carrier(
+                id,
+                "data-carve-snippet",
+                "a block use is read only from a paragraph",
+            );
             return None;
         }
         let c = self.accepted(id, true)?;
-        Some(vec![json!({"type": "snippet_use", "name": c.name, "mode": "block"})])
+        Some(vec![
+            json!({"type": "snippet_use", "name": c.name, "mode": "block"}),
+        ])
     }
 
     /// C2-H-217: a note reference whose `data-carve-snippet-mark` names an accepted use is dropped.
@@ -102,7 +118,11 @@ impl Cx {
         if self.snippet_ordinals.contains(mark) {
             return true;
         }
-        self.ignored_carrier(id, "data-carve-snippet-mark", "the value is no ordinal of a snippet use");
+        self.ignored_carrier(
+            id,
+            "data-carve-snippet-mark",
+            "the value is no ordinal of a snippet use",
+        );
         false
     }
 }

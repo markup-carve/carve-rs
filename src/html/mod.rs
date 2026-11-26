@@ -296,6 +296,8 @@ pub(crate) struct Renderer<'r, 'a> {
     in_link: usize,
     /// C2-H-215: the innermost snippet use whose copy holds the open link.
     link_snippet: Option<usize>,
+    /// The render holds snippet carriers: `roundtrip` and an expanded use.
+    snippets: bool,
     in_abbr: usize,
     /// The smart punctuation node being written is an apostrophe that locale quotes leave.
     apostrophe: bool,
@@ -411,6 +413,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             pending: String::new(),
             in_link: 0,
             link_snippet: None,
+            snippets: false,
             in_abbr: 0,
             apostrophe: false,
             verse: None,
@@ -439,6 +442,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if let Some(b) = crate::snippet::expand::with_side(|side| side.and_then(|s| s.budget)) {
             r.derived_remaining = b.left;
             r.derived_exhausted = b.reported;
+            r.snippets = opts.roundtrip;
         } else if let Some(lowered) = crate::snippet::expand::test_derived_bytes() {
             r.derived_remaining = lowered;
         }
@@ -520,27 +524,32 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// C2-H-215: the carriers of the expanded snippet use `n` stands for, under `roundtrip`.
+    #[inline]
     fn snippet_tail(&self, n: &Node<'_>) -> Option<String> {
+        if !self.snippets {
+            return None;
+        }
         self.snippet_tail_at(n.payload_addr())
     }
 
     /// [`Self::snippet_tail`] of a node's own struct.
+    #[inline]
     fn snippet_tail_of<T>(&self, payload: &T) -> Option<String> {
+        if !self.snippets {
+            return None;
+        }
         self.snippet_tail_at(std::ptr::from_ref(payload).addr())
     }
 
     /// C2-H-215: the `N` of the innermost expanded use around a copied note reference or link.
     fn snippet_mark(&self, n: &Node<'_>) -> Option<usize> {
-        if !self.opts.roundtrip {
+        if !self.snippets {
             return None;
         }
         crate::snippet::expand::with_side(|side| side?.marks.get(&n.payload_addr()).copied())
     }
 
     fn snippet_tail_at(&self, addr: usize) -> Option<String> {
-        if !self.opts.roundtrip {
-            return None;
-        }
         crate::snippet::expand::with_side(|side| {
             let c = side?.carriers.get(&addr)?;
             let mode = if c.block { "block" } else { "inline" };

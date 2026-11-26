@@ -415,7 +415,10 @@ fn host(req: &Value) -> Result<Carve, Error> {
             };
             let node = item.get("insert").filter(|n| n.is_object()).cloned();
             let set_level = item.get("setLevel").and_then(Value::as_i64);
-            let set_value = item.get("setValue").and_then(Value::as_str).map(str::to_string);
+            let set_value = item
+                .get("setValue")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             if usize::from(node.is_some())
                 + usize::from(set_level.is_some())
                 + usize::from(set_value.is_some())
