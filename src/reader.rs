@@ -691,11 +691,9 @@ fn check_snippet_modes(root: &Value) -> Result<(), TreeError> {
                     .collect(),
                 Value::Array(items) => {
                     let uses = items.iter().any(|item| item["type"] == "snippet_use");
-                    vec![(
-                        format!("{path}/{key}"),
-                        child,
-                        Some(uses && inline_slot(ty, key)),
-                    )]
+                    // A list of a value without a node type (metadata) has no schema slot to read.
+                    let inline = (!ty.is_empty()).then(|| uses && inline_slot(ty, key));
+                    vec![(format!("{path}/{key}"), child, inline)]
                 }
                 Value::Object(_) => {
                     pending.push((child, format!("{path}/{key}")));

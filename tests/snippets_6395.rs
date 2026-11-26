@@ -286,3 +286,17 @@ fn one_element_copies_carry_their_carriers() {
         "{html}"
     );
 }
+
+/// C2-A-221: a use in a metadata title, an inline list without a node type of its own, is read.
+#[test]
+fn a_use_in_a_metadata_title_is_read() {
+    let tree = json!({"type": "document", "astVersion": "2.0", "children": [
+        {"type": "paragraph", "metadata": {"title": [
+            {"type": "snippet_use", "name": "v", "mode": "inline"},
+        ]}, "children": [{"type": "text", "value": "a"}]},
+    ]});
+    let out = parse_json(&api::json::call(
+        &json!({"call": "validateTree", "tree": tree}).to_string(),
+    ));
+    assert!(out.get("ok").is_some(), "{out}");
+}
