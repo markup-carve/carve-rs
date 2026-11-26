@@ -1147,40 +1147,13 @@ impl Walk {
         let place = self.own.len();
         let class = first_class(&cx.dom, id);
         if class.as_deref() == Some("comment-start") {
-            let gives = !cx.dom.plain(id).is_empty();
-            let kind = if gives {
-                Ranged::Start { lost: false }
-            } else {
-                Ranged::Empty
-            };
-            self.out.insert(id, kind);
-            self.open.push((
-                id,
-                cx.dom.attr(id, "data-comment-id").map(str::to_string),
-                place,
-            ));
-            self.place(gives);
-            if !gives {
-                skip(cx, id);
-            }
-            return;
+            return self.start(cx, id, place);
         }
         if class.as_deref() == Some("comment-end") && self.end(cx, id, place) {
             return;
         }
-        // A snippet carrier is tried on entry, as the reader tries it before its
-        // content; an accepted one takes its ordinal and its content is never read.
-        if cx.dom.has(id, "data-carve-snippet") {
-            let block = attrs::is_block_element(&cx.dom, id);
-            let used = if block {
-                cx.block_snippet(id)
-            } else {
-                cx.inline_snippet(id)
-            };
-            if used.is_some() {
-                self.place(!block);
-                return;
-            }
+        if self.carrier(cx, id) {
+            return;
         }
         let dom = &cx.dom;
         let descend = dom.is_element(id) && !opaque(dom, id);
@@ -1204,6 +1177,43 @@ impl Walk {
         if descend {
             stack.extend(cx.dom.children(id).iter().rev().map(|&c| Step::Enter(c)));
         }
+    }
+
+    fn start(&mut self, cx: &mut Cx, id: Id, place: usize) {
+        let gives = !cx.dom.plain(id).is_empty();
+        let kind = if gives {
+            Ranged::Start { lost: false }
+        } else {
+            Ranged::Empty
+        };
+        self.out.insert(id, kind);
+        self.open.push((
+            id,
+            cx.dom.attr(id, "data-comment-id").map(str::to_string),
+            place,
+        ));
+        self.place(gives);
+        if !gives {
+            skip(cx, id);
+        }
+    }
+
+    /// A snippet carrier is tried on entry, as the reader tries it before its
+    /// content; an accepted one takes its ordinal and its content is never read.
+    fn carrier(&mut self, cx: &mut Cx, id: Id) -> bool {
+        if !cx.dom.has(id, "data-carve-snippet") {
+            return false;
+        }
+        let block = attrs::is_block_element(&cx.dom, id);
+        let used = if block {
+            cx.block_snippet(id)
+        } else {
+            cx.inline_snippet(id)
+        };
+        if used.is_some() {
+            self.place(!block);
+        }
+        used.is_some()
     }
 
     /// Ends the open comment of the end span's id; a marker without an id ends none.
