@@ -858,15 +858,15 @@ fn label_char(
 }
 
 fn image_node(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
+    if !has(node, "alt") && node.get("decorative").and_then(V::as_bool) != Some(true) {
+        w.unknown_alts.insert(id(node));
+    }
     if let Some(raw) = raw_reference(w, node, flags) {
         w.raw_refs.push(raw.clone());
         return format!("!{raw}");
     }
     let pipes = flags & IN_CELL != 0;
     lose_broken_title(w, node);
-    if !has(node, "alt") && node.get("decorative").and_then(V::as_bool) != Some(true) {
-        w.unknown_alts.insert(id(node));
-    }
     let alt = image_alt(w, node);
     let alt = collapsed_alt(w, node, alt);
     let alt = if pipes { escape_pipes(&alt) } else { alt };
