@@ -1298,13 +1298,18 @@ thread_local! {
     static CHECKING_FIXED_POINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// C2-W-003: a form the fallback rounds give is kept only where `fmt` of it gives the same bytes. A write inside
-/// that check, and one with extensions the plain parse does not read, are not checked again.
+/// C2-W-003: a form the fallback rounds give is kept only where `fmt` of it gives the same bytes, read with the link
+/// keys of the write. A write inside that check, and one with extensions the plain parse does not read, are not
+/// checked again.
 fn formats_to_itself(source: &str, settings: &Settings) -> bool {
     if !settings.extensions.is_empty() || CHECKING_FIXED_POINT.with(std::cell::Cell::get) {
         return true;
     }
-    let Some(doc) = parse_plain(source) else {
+    let parsed = match &settings.link_keys {
+        Some(keys) if !keys.is_empty() => crate::tree_value_in_context(source, keys),
+        _ => parse_plain(source),
+    };
+    let Some(doc) = parsed else {
         return false;
     };
     let check = Settings {

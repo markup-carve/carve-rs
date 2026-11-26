@@ -160,9 +160,8 @@ pub struct Check<'t> {
     pub notes_done: HashSet<(usize, usize)>,
     /// C2-W-088: the escapes of the openers of constructs the parse holds and the tree does not.
     pub constructs: Vec<(N<'t>, usize)>,
-    /// A list comparison stopped at a difference it could not resync.
-    pub stopped: bool,
-    /// The tree node at the first such stop: the constructs behind it are reported (C2-W-088).
+    /// The tree node where a list comparison first stopped at a difference it could not resync: the constructs
+    /// behind it are reported (C2-W-088).
     pub stop_node: Option<N<'t>>,
     /// The openers `report_unheld` reported, by node and offset.
     pub unheld: Vec<(N<'t>, usize)>,
@@ -3546,7 +3545,6 @@ fn compare_inlines<'t>(
             && !step_over_lost_text(es, as_, &mut at)
             && !resync_next_line(c, es, as_, &mut at)
         {
-            c.stopped = true;
             if c.stop_node.is_none() {
                 c.stop_node = Some(e);
             }
@@ -3703,14 +3701,12 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
     // A content that ended early in another block keeps nothing of this one from being compared.
     c.cut = false;
     if is_inline_parent(e) {
-        let outer = std::mem::take(&mut c.stopped);
         let outer_node = c.stop_node.take();
         compare_inlines(w, c, &refs(children(e)), children(a), e);
         // The rounds of the reported escapes only (C2-W-088) keep to the comparison's own reports.
-        if c.stopped && w.report_behind && w.kind_escapes && ty(e) == "paragraph" {
+        if c.stop_node.is_some() && w.report_behind && w.kind_escapes && ty(e) == "paragraph" {
             report_unheld(w, c, e, a);
         }
-        c.stopped |= outer;
         c.stop_node = outer_node.or(c.stop_node);
     } else if ty(e) != "include" {
         compare_blocks(w, c, children(e), children(a), e);
