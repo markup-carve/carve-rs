@@ -13,7 +13,7 @@ fn elements(html: &str) -> Vec<Value> {
                     .borrow()
                     .iter()
                     .filter(|attr| {
-                        !(attr.name.local.as_ref() == "role" && attr.value.as_ref() == "math")
+                        !(&*attr.name.local == "role" && attr.value.as_ref() == "math")
                     })
                     .map(|attr| (attr.name.local.to_string(), attr.value.to_string()))
                     .collect::<Vec<_>>();

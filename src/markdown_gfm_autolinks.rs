@@ -832,7 +832,7 @@ mod tests {
                     let mut attributes = serde_json::Map::new();
                     for attr in attrs.borrow().iter() {
                         if tag == "th"
-                            && attr.name.local.as_ref() == "scope"
+                            && &*attr.name.local == "scope"
                             && attr.value.as_ref() == "col"
                         {
                             continue;
@@ -910,8 +910,7 @@ mod tests {
         let dom = parse_document(RcDom::default(), Default::default()).one(html);
         let mut pending = vec![dom.document.clone()];
         while let Some(node) = pending.pop() {
-            if matches!(&node.data, NodeData::Element { name, .. } if name.local.as_ref() == "body")
-            {
+            if matches!(&node.data, NodeData::Element { name, .. } if &*name.local == "body") {
                 return visit(&node, false).unwrap();
             }
             pending.extend(node.children.borrow().iter().cloned());

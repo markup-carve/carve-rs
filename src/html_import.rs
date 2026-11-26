@@ -1188,7 +1188,7 @@ impl<'a> Importer<'a> {
             NodeData::Element { attrs, .. } => attrs
                 .borrow()
                 .iter()
-                .find(|a| a.name.local.as_ref() == wanted)
+                .find(|a| &*a.name.local == wanted)
                 .map(|a| a.value.to_string()),
             _ => None,
         }
@@ -3673,7 +3673,7 @@ fn hidden_by_style(handle: &Handle) -> bool {
     let attrs = attrs.borrow();
     let Some(style) = attrs
         .iter()
-        .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("style"))
+        .find(|a| a.name.local.as_bytes().eq_ignore_ascii_case(b"style"))
     else {
         return false;
     };

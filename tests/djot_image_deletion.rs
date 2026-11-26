@@ -7,11 +7,11 @@ fn alt(html: &str) -> Option<String> {
     let mut pending = vec![dom.document.clone()];
     while let Some(node) = pending.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {
-            if name.local.as_ref() == "img" {
+            if &*name.local == "img" {
                 return attrs
                     .borrow()
                     .iter()
-                    .find(|attr| attr.name.local.as_ref() == "alt")
+                    .find(|attr| &*attr.name.local == "alt")
                     .map(|attr| attr.value.to_string());
             }
         }

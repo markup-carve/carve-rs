@@ -8,12 +8,12 @@ fn alternatives(html: &str) -> Vec<String> {
     let mut values = Vec::new();
     while let Some(node) = pending.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {
-            if name.local.as_ref() == "img" {
+            if &*name.local == "img" {
                 values.push(
                     attrs
                         .borrow()
                         .iter()
-                        .find(|a| a.name.local.as_ref() == "alt")
+                        .find(|a| &*a.name.local == "alt")
                         .map(|a| a.value.to_string())
                         .unwrap_or_default(),
                 );

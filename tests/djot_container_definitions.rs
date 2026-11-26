@@ -19,8 +19,8 @@ fn elements(html: &str) -> Vec<Value> {
                         !matches!(
                             attr.name.local.as_ref(),
                             "data-delim" | "data-task-state" | "aria-label"
-                        ) && !(attr.name.local.as_ref() == "scope" && attr.value.as_ref() == "col")
-                            && !(attr.name.local.as_ref() == "role"
+                        ) && !(&*attr.name.local == "scope" && attr.value.as_ref() == "col")
+                            && !(&*attr.name.local == "role"
                                 && attr.value.as_ref() == "math")
                     })
                     .map(|attr| {

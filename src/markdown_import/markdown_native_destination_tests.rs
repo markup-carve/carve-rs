@@ -48,7 +48,7 @@ fn node_shape(node: &Handle) -> Value {
     }).map(node_shape).collect::<Vec<_>>();
     if name == "p"
         && values.len() == 1
-        && matches!(&children[0].data, NodeData::Element { name, .. } if name.local.as_ref() == "img")
+        && matches!(&children[0].data, NodeData::Element { name, .. } if &*name.local == "img")
     {
         return values.into_iter().next().unwrap();
     }

@@ -237,10 +237,10 @@ impl<'a> Importer<'a> {
             for attr in raw_attrs {
                 if language_wrapper.is_some_and(|wrapper| Rc::ptr_eq(wrapper, &child)) {
                     if let Some(lang) = lang {
-                        let name = attr.name.local.as_ref();
+                        let name: &str = &attr.name.local;
                         let value = attr.value.as_ref();
                         let consumed = attr.name.prefix.is_none()
-                            && attr.name.ns.as_ref().is_empty()
+                            && attr.name.ns.is_empty()
                             && ((name == "data-lang"
                                 && value.trim_matches(|c| {
                                     matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')

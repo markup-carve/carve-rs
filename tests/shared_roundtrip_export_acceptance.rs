@@ -328,10 +328,9 @@ fn shared_export_inventory_restores_approved_ast_fields() {
                         let hosts: Vec<_> = elements
                             .into_iter()
                             .filter(|handle| match &handle.data {
-                                NodeData::Element { attrs, .. } => attrs
-                                    .borrow()
-                                    .iter()
-                                    .any(|attr| attr.name.local.as_ref() == name),
+                                NodeData::Element { attrs, .. } => {
+                                    attrs.borrow().iter().any(|attr| &*attr.name.local == name)
+                                }
                                 _ => false,
                             })
                             .collect();

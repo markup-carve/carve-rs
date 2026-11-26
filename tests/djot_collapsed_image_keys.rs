@@ -11,7 +11,7 @@ fn node_shape(node: &Handle, parent: &str, first: bool, last: bool, code: bool) 
             attrs
                 .borrow()
                 .iter()
-                .filter(|attr| attr.name.local.as_ref() != "data-delim")
+                .filter(|attr| &*attr.name.local != "data-delim")
                 .map(|attr| (attr.name.local.to_string(), attr.value.to_string()))
                 .collect::<Vec<_>>(),
         ),

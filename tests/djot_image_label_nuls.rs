@@ -8,7 +8,7 @@ fn images(html: &str) -> Vec<Value> {
     let mut values = Vec::new();
     while let Some(node) = nodes.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {
-            if name.local.as_ref() == "img" {
+            if &*name.local == "img" {
                 let mut attributes = attrs
                     .borrow()
                     .iter()

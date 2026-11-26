@@ -12,7 +12,7 @@ fn text(node: &Handle) -> String {
 fn code_records(node: &Handle, ancestors: &[String], records: &mut Vec<Value>) {
     let mut next = ancestors.to_vec();
     if let NodeData::Element { name, .. } = &node.data {
-        let tag = if name.local.as_ref() == "s" {
+        let tag = if &*name.local == "s" {
             "del".to_string()
         } else {
             name.local.to_string()
@@ -26,7 +26,7 @@ fn code_records(node: &Handle, ancestors: &[String], records: &mut Vec<Value>) {
                 .borrow()
                 .iter()
                 .filter_map(|child| match &child.data {
-                    NodeData::Element { name, .. } => Some(if name.local.as_ref() == "s" {
+                    NodeData::Element { name, .. } => Some(if &*name.local == "s" {
                         "del".to_string()
                     } else {
                         name.local.to_string()

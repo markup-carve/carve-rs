@@ -446,7 +446,7 @@ fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
                 }
             }
             NodeData::Element { name, attrs, .. } => {
-                let tag = if name.local.as_ref() == "del" {
+                let tag = if &*name.local == "del" {
                     "s".to_owned()
                 } else {
                     name.local.to_string()
