@@ -97511,7 +97511,7 @@
    "C2-W-136",
    "C2-B-230"
   ],
-  "why": "C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's. C2-W-136: Where `attrs` keeps a `body-rows`, the writer makes no `body-header-rows` or `body-header-cols`, since those lists take effect only beside a `body-rows` that does (C2-B-230).",
+  "why": "C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's. C2-W-136: Where `attrs` keeps any of `body-rows`, `body-header-rows` or `body-header-cols`, the writer makes none of the three: the lists take effect only beside a `body-rows` that does, and where a value breaks a rule none of the three has an effect (C2-B-230), so a made key would give the kept one an effect or lose its own.",
   "summary": "fmt keeps an empty body-rows from attrs above a body of a header row and makes header-rows=0 after it",
   "kind": "format",
   "input": "{header-rows=0 body-rows}\n|= a |\n",
@@ -97544,7 +97544,7 @@
    "C2-W-136",
    "C2-B-230"
   ],
-  "why": "C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's. C2-W-136: Where `attrs` keeps a `body-rows`, the writer makes no `body-header-rows` or `body-header-cols`, since those lists take effect only beside a `body-rows` that does (C2-B-230).",
+  "why": "C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's. C2-W-136: Where `attrs` keeps any of `body-rows`, `body-header-rows` or `body-header-cols`, the writer makes none of the three: the lists take effect only beside a `body-rows` that does, and where a value breaks a rule none of the three has an effect (C2-B-230), so a made key would give the kept one an effect or lose its own.",
   "summary": "fmt keeps an invalid body-rows from attrs, keeps the marks of the body's header row and makes header-rows",
   "kind": "format",
   "input": "{header-rows=1 body-rows=x}\n|= h |\n|= a |\n| 1 |\n",
@@ -97567,6 +97567,182 @@
   "options": {},
   "expected": {
    "carve": "{body-rows=1 body-header-rows=1}\n|= h |\n| a |\n| 1 |\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2472",
+  "clauses": [
+   "C2-W-136",
+   "C2-W-066",
+   "C2-B-230"
+  ],
+  "why": "C2-W-136: Where `attrs` keeps any of `body-rows`, `body-header-rows` or `body-header-cols`, the writer makes none of the three: the lists take effect only beside a `body-rows` that does, and where a value breaks a rule none of the three has an effect (C2-B-230), so a made key would give the kept one an effect or lose its own. C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's.",
+  "summary": "fmt keeps a body-header-rows from attrs without body-rows, makes no body-rows and keeps the marks of the body's header row",
+  "kind": "format",
+  "input": "{header-rows=0 body-header-rows=1}\n|= h |\n",
+  "options": {},
+  "expected": {
+   "carve": "{body-header-rows=1 header-rows=0}\n|= h |\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2473",
+  "clauses": [
+   "C2-W-136",
+   "C2-W-066",
+   "C2-B-230"
+  ],
+  "why": "C2-W-136: Where `attrs` keeps any of `body-rows`, `body-header-rows` or `body-header-cols`, the writer makes none of the three: the lists take effect only beside a `body-rows` that does, and where a value breaks a rule none of the three has an effect (C2-B-230), so a made key would give the kept one an effect or lose its own. C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's.",
+  "summary": "fmt keeps a body-header-cols from attrs without body-rows and makes no body-rows or body-header-rows",
+  "kind": "format",
+  "input": "{header-rows=0 body-header-cols=1}\n|= h |\n",
+  "options": {},
+  "expected": {
+   "carve": "{body-header-cols=1 header-rows=0}\n|= h |\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2474",
+  "clauses": [
+   "C2-W-136",
+   "C2-W-066",
+   "C2-B-230"
+  ],
+  "why": "C2-W-136: Where `attrs` keeps any of `body-rows`, `body-header-rows` or `body-header-cols`, the writer makes none of the three: the lists take effect only beside a `body-rows` that does, and where a value breaks a rule none of the three has an effect (C2-B-230), so a made key would give the kept one an effect or lose its own. C2-W-066: A pipe table takes the attribute, the number of rows of its head, 0 included, wherever the rows and keys the writer writes would give, without it, a head other than the tree's.",
+  "summary": "fmt keeps a body-header-rows from attrs above a head and a foot and makes no empty body-rows",
+  "kind": "format",
+  "input": "{header-rows=1 footer-rows=1 body-header-rows=1}\n|= h | d |\n|= h | < |\n",
+  "options": {},
+  "expected": {
+   "carve": "{body-header-rows=1 header-rows=1 footer-rows=1}\n|= h | d |\n|= h | < |\n"
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2475",
+  "clauses": [
+   "C2-H-163",
+   "C2-H-129",
+   "C2-H-165"
+  ],
+  "why": "C2-H-163: Otherwise, when the axis has an allow list, a type is inside exactly when the list names it. C2-H-129: A construct outside the profile renders in its degraded form and is reported. C2-H-165: A node that leaves no text is dropped. A degraded node is reported once (C2-H-129)",
+  "summary": "under comment a link definition, a footnote reference and its definition are each reported",
+  "kind": "render",
+  "input": "[r]: /u\n\nSee [x][r] and[^n].\n\n[^n]: note\n",
+  "options": {
+   "profile": "comment"
+  },
+  "expected": {
+   "html": "<p>See <a href=\"/u\" rel=\"nofollow ugc\">x</a> and[^n].</p>",
+   "diagnostics": [
+    {
+     "code": "profile-construct-degraded",
+     "line": 1,
+     "column": 1,
+     "channel": "render-loss",
+     "severity": "warning"
+    },
+    {
+     "code": "profile-construct-degraded",
+     "line": 3,
+     "column": 15,
+     "channel": "render-loss",
+     "severity": "warning"
+    },
+    {
+     "code": "profile-construct-degraded",
+     "line": 5,
+     "column": 1,
+     "channel": "render-loss",
+     "severity": "warning"
+    }
+   ],
+   "diagnosticsComplete": true,
+   "diagnosticsOrdered": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2476",
+  "clauses": [
+   "C2-H-178",
+   "C2-H-163",
+   "C2-H-129"
+  ],
+  "why": "C2-H-178: A profile does not degrade an `abbreviation_def`, also one outside the profile (C2-H-165): the template is data and no presentation, so it is written under every profile, and the definition is not reported as degraded. C2-H-163: Otherwise, when the axis has an allow list, a type is inside exactly when the list names it. C2-H-129: A construct outside the profile renders in its degraded form and is reported.",
+  "summary": "under minimal a link definition is reported and an abbreviation definition is not",
+  "kind": "render",
+  "input": "*[B]: bee\n\n[r]: /u\n\nA B.\n",
+  "options": {
+   "profile": "minimal"
+  },
+  "expected": {
+   "html": "<p>A B.</p>",
+   "diagnostics": [
+    {
+     "code": "profile-construct-degraded",
+     "line": 3,
+     "column": 1,
+     "channel": "render-loss",
+     "severity": "warning"
+    },
+    {
+     "code": "profile-construct-degraded",
+     "line": 5,
+     "column": 3,
+     "channel": "render-loss",
+     "severity": "warning"
+    }
+   ],
+   "diagnosticsComplete": true,
+   "diagnosticsOrdered": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2477",
+  "clauses": [
+   "C2-H-163",
+   "C2-H-165",
+   "C2-A-151"
+  ],
+  "why": "C2-H-163: Otherwise, when the axis has an allow list, a type is inside exactly when the list names it. C2-H-165: a `comment` and a `critic_comment` give no text ... A node that leaves no text is dropped. A degraded node is reported once (C2-H-129) C2-A-151: to a line comment at the end of the line, which starts at the first space or tab before its `%%` and ends at the line ending",
+  "summary": "under comment a line, a block and a braced comment are each reported and write nothing",
+  "kind": "render",
+  "input": "x %% c\n\n%%%\nblock\n%%%\n\nb {% c %} d\n",
+  "options": {
+   "profile": "comment"
+  },
+  "expected": {
+   "html": "<p>x</p>\n<p>b  d</p>",
+   "diagnostics": [
+    {
+     "code": "profile-construct-degraded",
+     "line": 1,
+     "column": 2,
+     "channel": "render-loss",
+     "severity": "warning"
+    },
+    {
+     "code": "profile-construct-degraded",
+     "line": 3,
+     "column": 1,
+     "channel": "render-loss",
+     "severity": "warning"
+    },
+    {
+     "code": "profile-construct-degraded",
+     "line": 7,
+     "column": 3,
+     "channel": "render-loss",
+     "severity": "warning"
+    }
+   ],
+   "diagnosticsComplete": true,
+   "diagnosticsOrdered": true
   },
   "from": []
  }
