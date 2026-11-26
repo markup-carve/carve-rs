@@ -14,8 +14,6 @@ use serde_json::Value;
 
 /// `(entry id, reason)` of the `write` and `format` clause cases.
 const HELD: &[(&str, &str)] = &[
-    // carve#6772 (carve-rs line): the escape rounds read references from the tree.
-    ("CC-2166", "carve#6772"),
     (
         "CC-2426",
         "carve#6846: the C2-W-088 fallback keeps earlier authored blocks (cumulative)",

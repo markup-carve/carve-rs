@@ -1264,7 +1264,7 @@ fn write_tree<'t>(
         settings,
         budget,
         facts,
-        (false, false),
+        (true, false),
         usize::MAX,
     );
     if !has_loss(&entries) {
@@ -1272,11 +1272,11 @@ fn write_tree<'t>(
     }
     // The fallback writes share a repair budget of twice the work the first one spent.
     let mut left = budget.min(first_spent.saturating_mul(FALLBACK_WORK_SHARE));
-    // C2-W-088, C2-W-075 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a
-    // stop and write every reference from the tree, taking the verbatim texts after them, may give a form without one.
-    let mut modes = vec![(verbatim, true)];
+    // C2-W-088 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a stop may
+    // give a form without one, and so may rounds that read the verbatim references, where `fmt` keeps that form.
+    let mut modes = vec![(true, true)];
     if verbatim {
-        modes.push((true, false));
+        modes.push((false, false));
     }
     for mode in modes {
         if left == 0 {
@@ -1389,39 +1389,43 @@ const MAX_VERBATIM_TRIALS: usize = 32;
 /// tree, the group's references take their verbatim text together where the group reads back with them, and
 /// otherwise one by one in document order; the others keep their spelling from the tree.
 fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
-    if !w.tree_refs || w.lines.is_empty() || w.sp.losses.len() != reported {
+    if !w.tree_refs || w.lines.is_empty() {
         return;
     }
-    let mut references = Vec::new();
-    let mut pending: Vec<N<'t>> = group.iter().collect();
-    while let Some(n) = pending.pop() {
-        if has(n, "key") && w.fact(n).is_some_and(|f| f.raw_ref.is_some()) {
-            references.push(n);
-        }
-        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
-    }
+    let references = verbatim_references(w, group);
     if references.is_empty() {
         return;
     }
-    references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
     let tree = w.lines.clone();
-    let reads = |w: &mut Writer<'t>| {
+    // With `known`, the lines of the rounds read back, so the same lines need no parse.
+    let reads = |w: &mut Writer<'t>, known: bool| {
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
+        if known && w.lines == tree {
+            return true;
+        }
         let chunk = written_chunk(w, group, first);
         let parsed = children(chunk.parse(w));
         parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
     };
     w.tree_refs = false;
     w.tree_ref_ids.clear();
-    if !reads(w) {
+    if w.sp.losses.len() != reported {
+        // C2-W-075 (carve-js `settleLosses`): a loss of the rounds is provisional where the group written with
+        // every verbatim text reads back.
+        if reads(w, false) {
+            w.sp.losses.truncate(reported);
+        } else {
+            w.lines = tree;
+        }
+    } else if !reads(w, true) {
         w.tree_ref_ids.extend(references.iter().map(|&n| id(n)));
         for &n in references.iter().take(MAX_VERBATIM_TRIALS) {
             if exhausted(w) {
                 break;
             }
             w.tree_ref_ids.remove(&id(n));
-            if !reads(w) {
+            if !reads(w, true) {
                 w.tree_ref_ids.insert(id(n));
             }
         }
@@ -1434,6 +1438,20 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     }
     w.tree_ref_ids.clear();
     w.tree_refs = true;
+}
+
+/// The references of `group` whose sidecar records their verbatim text, in document order.
+fn verbatim_references<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<N<'t>> {
+    let mut references = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(n) = pending.pop() {
+        if has(n, "key") && w.fact(n).is_some_and(|f| f.raw_ref.is_some()) {
+            references.push(n);
+        }
+        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+    }
+    references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
+    references
 }
 
 /// C2-B-085: the first definition of a term wins.
