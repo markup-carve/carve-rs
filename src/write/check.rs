@@ -1114,8 +1114,7 @@ fn scan_text_note_closers<'t>(
 
 /// C2-W-075: a reference written as it was authored keeps its caret as spelled, so only a bare one takes case eight.
 fn bare_authored_caret(w: &Writer<'_>, link: V<'_>) -> bool {
-    w.recorded_raw(link)
-        .is_none_or(|raw| raw.starts_with("[^"))
+    w.recorded_raw(link).is_none_or(|raw| raw.starts_with("[^"))
 }
 
 /// Walks one text node of `scan_text_note_closers`: `depth` counts the brackets of an open `^[`, and each `]` at

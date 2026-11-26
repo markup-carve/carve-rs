@@ -38,8 +38,8 @@ fn references_past_the_cap_are_written() {
         include_str!("fixtures/writer_reference_rounds_6802.crv")
     );
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[99], r"[a \*\[a][x]\*\[x\]: /u");
-    assert_eq!(lines[100], r"\[a \*\[a][x]*\[x\]: /u");
+    assert_eq!(lines[99], r"[a *\[a][x]*\[x\]: /u");
+    assert_eq!(lines[100], r"\[a *\[a][x]*\[x\]: /u");
     assert_eq!(semantic(&out), semantic(&source));
     assert_eq!(format(&out), out);
 }
