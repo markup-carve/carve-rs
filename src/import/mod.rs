@@ -54,6 +54,8 @@ pub(crate) struct Cx {
     snippet_ordinals: HashSet<String>,
     /// C2-M-113: the spans of the ranged comments.
     ranged: HashMap<Id, inline::Ranged>,
+    /// C2-H-186: the `<li>` elements a bare run gave a paragraph.
+    bare_items: HashSet<Id>,
 }
 
 /// The codes of C2-M-083.
@@ -101,6 +103,7 @@ impl Cx {
             templates: HashMap::new(),
             snippet_ordinals: HashSet::new(),
             ranged: HashMap::new(),
+            bare_items: HashSet::new(),
         }
     }
 

@@ -73,6 +73,8 @@ fn the_carrier_over_a_bare_run_is_ignored() {
     let accepted = [
         "<ul data-carve-loose>\n  <li><img src=\"i.png\" alt=\"\"><!-- c --></li>\n  <li><img src=\"j.png\" alt=\"\"></li>\n</ul>",
         "<ul data-carve-loose>\n  <li><!-- c --></li>\n  <li><blockquote><p>b</p></blockquote></li>\n</ul>",
+        // The empty span makes no paragraph.
+        "<ul data-carve-loose>\n  <li><span></span><blockquote><p>a</p></blockquote></li>\n  <li><blockquote><p>b</p></blockquote></li>\n</ul>",
     ];
     for html in accepted {
         let out = import(html);

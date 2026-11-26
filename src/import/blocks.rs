@@ -143,6 +143,9 @@ impl Cx {
         let children = self.normalize_breaks(coalesce(all), host);
         let children = self.trim_inline_edges(children, host);
         if !children.is_empty() {
+            if self.dom.is(host, "li") {
+                self.bare_items.insert(host);
+            }
             out.push(run_paragraph(children));
         }
     }
@@ -982,44 +985,13 @@ impl Cx {
                 .all(|&k| self.dom.is(k, "img") || self.dom.is_blank(k) || self.dom.is_comment(k))
     }
 
-    /// C2-M-012, C2-M-013: an item holds a run of text and inline elements
-    /// that reads as a paragraph without `<p>`.
+    /// C2-M-012, C2-M-013: an item holds a run that was read as a paragraph
+    /// without `<p>`.
     fn has_bare_run(&self, id: Id) -> bool {
-        self.dom.elements(id).into_iter().any(|item| {
-            if !self.dom.is(item, "li") {
-                return false;
-            }
-            let mut run: Vec<Id> = Vec::new();
-            for &n in self.dom.children(item) {
-                if self.dom.is(n, "input") && self.dom.attr(n, "type") == Some("checkbox") {
-                    continue;
-                }
-                if self.is_phrasing(n) || self.dom.is(n, "img") || self.dom.is_comment(n) {
-                    run.push(n);
-                } else if self.is_paragraph_run(&run) {
-                    return true;
-                } else {
-                    run.clear();
-                }
-            }
-            self.is_paragraph_run(&run)
-        })
-    }
-
-    /// The run `flush` writes as one paragraph.
-    fn is_paragraph_run(&self, run: &[Id]) -> bool {
-        let solid: Vec<Id> = run
-            .iter()
-            .copied()
-            .filter(|&n| !self.dom.is_blank(n))
-            .collect();
-        if solid.is_empty() || solid.iter().all(|&n| self.is_raw(n)) {
-            return false;
-        }
-        !(solid.iter().any(|&n| self.dom.is(n, "img"))
-            && solid
-                .iter()
-                .all(|&n| self.dom.is(n, "img") || self.dom.is_comment(n)))
+        self.dom
+            .elements(id)
+            .into_iter()
+            .any(|item| self.bare_items.contains(&item))
     }
 
     /// C2-H-138, C2-H-185, C2-H-186, C2-M-033: tight or loose.
