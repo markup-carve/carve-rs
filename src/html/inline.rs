@@ -28,6 +28,11 @@ fn wrapper_tag(n: &Node) -> Option<&'static str> {
     })
 }
 
+/// C2-H-210: the revision keys on `<ins>` and `<del>`, and on a comment span.
+const REVISION_KEYS: &[(&str, &str)] = &[("author", "data-author")];
+const COMMENT_REVISION_KEYS: &[(&str, &str)] =
+    &[("author", "data-author"), ("datetime", "data-datetime")];
+
 fn span_value(s: &ast::Span<'_>, key: &str, exact: bool) -> Option<String> {
     s.attrs
         .as_ref()
@@ -253,11 +258,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 }
             }
             Node::Comment(_) => {}
-            Node::CriticComment(c) => {
-                out.push_str("<span class=\"critic-comment\">");
-                esc::text(c.value, out);
-                out.push_str("</span>");
-            }
+            Node::CriticComment(c) => self.critic_comment(c, out),
             Node::CitationGroup(c) => esc::text(c.raw, out),
             Node::CaptionNumber(c) => match c.n {
                 Some(v) if self.opts.roundtrip => {
@@ -269,6 +270,22 @@ impl<'r, 'a> Renderer<'r, 'a> {
             _ => return false,
         }
         true
+    }
+
+    /// C2-H-210: the span of an editorial comment.
+    fn critic_comment(&self, c: &ast::CriticComment<'_>, out: &mut String) {
+        if c.attrs.is_none() && c.lang.is_none() && c.dir.is_none() {
+            out.push_str("<span class=\"critic-comment\">");
+        } else {
+            out.push_str("<span");
+            let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
+            el.base.push("critic-comment".into());
+            el.rename = COMMENT_REVISION_KEYS;
+            el.write_into(self.filter(), out);
+            out.push('>');
+        }
+        esc::text(c.value, out);
+        out.push_str("</span>");
     }
 
     /// Elements that wrap their children (C2-H-072).
@@ -325,6 +342,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(attrs, lang).with_dir(dir);
         if small {
             el.base.push("smallcaps".into());
+        }
+        if matches!(n, Node::Insert(_) | Node::Delete(_)) {
+            el.rename = REVISION_KEYS;
         }
         el.write_into(self.filter(), out);
     }

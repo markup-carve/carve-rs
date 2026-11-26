@@ -10,6 +10,23 @@ use serde_json::{Value, json};
 
 /// `(entry id, checked field)` held, each with the clause or cause.
 const HELD: &[(&str, &str)] = &[
+    // carve#6771, #6794, #6795 (carve-rs lines): the listTable import option.
+    ("CC-2156", "children"),
+    ("CC-2159", "children"),
+    ("CC-2160", "children"),
+    ("CC-2161", "children"),
+    ("CC-2162", "children"),
+    ("CC-2163", "children"),
+    ("CC-2177", "children"),
+    ("CC-2178", "children"),
+    ("CC-2179", "children"),
+    ("CC-2180", "children"),
+    ("CC-2181", "children"),
+    ("CC-2182", "children"),
+    ("CC-2183", "children"),
+    ("CC-2184", "children"),
+    ("CC-2161", "diagnostic:import-structure-repaired"),
+    ("CC-2163", "diagnostic:import-attribute-dropped"),
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
@@ -26,7 +43,10 @@ const WITH_CARVE_CLAUSE: &[&str] = &[
     "CC-2060", "CC-2061", "CC-2062", "CC-2063", "CC-2064", "CC-2073", "CC-2074", "CC-2075",
     "CC-2076", "CC-2077", "CC-2078", "CC-2100", "CC-2101", "CC-2102", "CC-2103", "CC-2104",
     "CC-2107", "CC-2108", "CC-2109", "CC-2110", "CC-2149", "CC-2150", "CC-2151", "CC-2152",
-    "CC-2153",
+    "CC-2153", "CC-2156", "CC-2159", "CC-2160", "CC-2161", "CC-2162", "CC-2163", "CC-2167",
+    "CC-2168", "CC-2169", "CC-2170", "CC-2171", "CC-2177", "CC-2178", "CC-2179", "CC-2180",
+    "CC-2181", "CC-2182", "CC-2183", "CC-2184", "CC-2197", "CC-2198", "CC-2199", "CC-2200",
+    "CC-2201", "CC-2202", "CC-2203", "CC-2204",
 ];
 
 fn load(name: &str) -> Value {

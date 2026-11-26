@@ -31,8 +31,15 @@ def load(name):
     return json.loads((root / "spec-conformance" / name).read_text(encoding="utf-8"))
 
 
+# Clause cases held in the test suites because carve-rs has not implemented
+# their ruling yet (CC-2166 is held in tests/writer_cases.rs; CC-2165 passes
+# its first fmt pass there, but its second pass differs).
+HELD = {"CC-2165": "carve#6772", "CC-2166": "carve#6772"}
+
 carve, html = [], []
 for e in load("examples.json")["examples"] + load("clause-cases.json")["cases"]:
+    if e.get("id") in HELD:
+        continue
     if isinstance(e.get("input"), str):
         carve.append(e["input"])
     if isinstance(e.get("html"), str):

@@ -7,7 +7,10 @@ use common::{parse_json, sorted};
 use serde_json::{Value, json};
 
 /// Cases held, each with its cause; a held case must keep failing.
-const HELD: &[&str] = &[];
+const HELD: &[&str] = &[
+    // carve#6795 (carve-rs line): no `<` join beside a cell covered from above.
+    "CC-2187",
+];
 
 fn call(request: &Value) -> Value {
     parse_json(&api::json::call(&request.to_string()))

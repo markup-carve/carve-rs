@@ -62,7 +62,7 @@ fn options(case: &Value) -> LintOptions {
 }
 
 fn agrees(expected: &Value, actual: &Diagnostic) -> bool {
-    expected["code"].as_str() == Some(actual.code)
+    expected.as_str().or_else(|| expected["code"].as_str()) == Some(actual.code)
         && expected["channel"]
             .as_str()
             .is_none_or(|v| v == actual.channel)
