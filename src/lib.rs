@@ -801,6 +801,9 @@ pub(crate) fn prepare_expanding<'a>(
     } else if braces {
         include::no_resolver(doc.children, diags);
     }
+    if expanded && braces {
+        cross_file_snippet_duplicates(&doc, &src, &included_sources, diags);
+    }
     if let Some((found, guard)) = snippets
         && braces
     {
@@ -980,6 +983,44 @@ pub(crate) fn duplicate_definitions(
         });
         diags.push(diagnostic::Diagnostic::new(code, &[], file, pos));
     }
+}
+
+/// C2-N-090: a definition that loses to one of another file of the expansion;
+/// a later one of the same file is reported by [`duplicate_definitions`].
+fn cross_file_snippet_duplicates(
+    doc: &ast::Document<'_>,
+    src: &source::Source<'_>,
+    sources: &std::collections::HashMap<&str, &str>,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) {
+    let mut first: std::collections::HashMap<&str, Option<&str>> = std::collections::HashMap::new();
+    snippet::expand::registry_walk(
+        doc.children,
+        0,
+        None,
+        &mut |d, _, file| match first.get(d.name) {
+            None => {
+                first.insert(d.name, file);
+            }
+            Some(winner) if *winner != file => {
+                let text = file.and_then(|f| sources.get(f).copied());
+                let own = text.map(source::Source::new);
+                let at = own.as_ref().unwrap_or(src);
+                let pos = d.pos.and_then(|p| {
+                    let marker = format!("{{${}", d.name);
+                    let start = p.start() + at.text().get(p.start()..)?.find(&marker)?;
+                    Some(at.pos(start + 1, start + 2 + d.name.len()))
+                });
+                diags.push(diagnostic::Diagnostic::new(
+                    "duplicate-snippet",
+                    &[("name", d.name)],
+                    file,
+                    pos,
+                ));
+            }
+            Some(_) => {}
+        },
+    );
 }
 
 /// C2-A-218: a metadata key is authored by its attribute line, so its range
