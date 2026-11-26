@@ -1556,7 +1556,30 @@ impl Cx {
         let split = all.iter().take_while(|&&r| self.heads_columns(r)).count();
         let (lead_rows, rest) = all.split_at(split);
         *head_rows = self.rows_of(lead_rows, true);
-        self.rows_of(rest, false)
+        let mut rows = self.rows_of(rest, false);
+        // C2-M-037: an unscoped `<th>` of a leading all-`<th>` row that stays in the body heads
+        // its column.
+        for (&tr, row) in rest.iter().zip(&mut rows) {
+            let cells = self.cell_elements(tr);
+            if cells.is_empty() || !cells.iter().all(|&c| self.dom.is(c, "th")) {
+                break;
+            }
+            let values = row["children"].as_array_mut().into_iter().flatten();
+            for (&c, cell) in cells.iter().zip(values) {
+                if !self.dom.has(c, "scope") {
+                    cell["scope"] = "col".into();
+                }
+            }
+        }
+        rows
+    }
+
+    fn cell_elements(&self, tr: Id) -> Vec<Id> {
+        self.dom
+            .elements(tr)
+            .into_iter()
+            .filter(|&c| self.dom.is(c, "th") || self.dom.is(c, "td"))
+            .collect()
     }
 
     /// C2-H-152: the widths of a column group, a fraction each.

@@ -52,9 +52,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2234", "children"),
     ("CC-2235", "diagnostic:import-element-dropped"),
     ("CC-2236", "children"),
-    // carve#6623 (carve#6812 G1): th rows next to a scope row th row.
-    ("CC-2063", "diagnostic:field-unspellable"),
-    ("CC-2250", "diagnostic:field-unspellable"),
 ];
 
 /// The import entries that carry an expected `carve` source (not compared).
