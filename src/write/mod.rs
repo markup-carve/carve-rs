@@ -1257,8 +1257,87 @@ fn write_tree<'t>(
     budget: usize,
     facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
+    let (source, entries, (verbatim, first_spent)) = write_tree_once(
+        doc,
+        pool,
+        settings,
+        budget,
+        facts,
+        (false, false),
+        usize::MAX,
+    );
+    if !has_loss(&entries) {
+        return (source, entries);
+    }
+    // The fallback writes share a repair budget of twice the work the first one spent.
+    let mut left = budget.min(first_spent.saturating_mul(FALLBACK_WORK_SHARE));
+    // C2-W-088, C2-W-075 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a
+    // stop and write every reference from the tree, taking the verbatim texts after them, may give a form without one.
+    let mut modes = vec![(verbatim, true)];
+    if verbatim {
+        modes.push((true, false));
+    }
+    for mode in modes {
+        if left == 0 {
+            break;
+        }
+        let (again, again_entries, (_, spent)) =
+            write_tree_once(doc, pool, settings, budget, facts, mode, left);
+        left = left.saturating_sub(spent);
+        if !has_loss(&again_entries) && formats_to_itself(&again, settings) {
+            return (again, again_entries);
+        }
+    }
+    (source, entries)
+}
+
+/// The fallback writes of [`write_tree`] spend at most this multiple of the first write's repair work.
+const FALLBACK_WORK_SHARE: usize = 2;
+
+thread_local! {
+    static CHECKING_FIXED_POINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// C2-W-003: a form the fallback rounds give is kept only where `fmt` of it gives the same bytes, read with the link
+/// keys of the write. A write inside that check, and one with extensions the plain parse does not read, are not
+/// checked again.
+fn formats_to_itself(source: &str, settings: &Settings) -> bool {
+    if !settings.extensions.is_empty() || CHECKING_FIXED_POINT.with(std::cell::Cell::get) {
+        return true;
+    }
+    let parsed = match &settings.link_keys {
+        Some(keys) if !keys.is_empty() => crate::tree_value_in_context(source, keys),
+        _ => parse_plain(source),
+    };
+    let Some(doc) = parsed else {
+        return false;
+    };
+    let check = Settings {
+        layout: None,
+        source: Some(source.to_string()),
+        ..settings.clone()
+    };
+    CHECKING_FIXED_POINT.with(|c| c.set(true));
+    let (again, losses) = format_tree(&doc, Some(source), &check);
+    CHECKING_FIXED_POINT.with(|c| c.set(false));
+    !has_loss(&losses) && again == source
+}
+
+/// One write of `doc`. With `tree_refs` the rounds write each reference from the tree and each group takes the
+/// verbatim texts after them; with `report` they report the constructs behind a stop. Also returned: whether the
+/// sidecar recorded any verbatim text, and the repair work spent.
+fn write_tree_once<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    settings: &Settings,
+    budget: usize,
+    facts: Option<&JsonFacts>,
+    (tree_refs, report): (bool, bool),
+    cap: usize,
+) -> (String, Vec<Entry>, (bool, usize)) {
     let mut w = Writer::new(pool, settings.align_tables);
     w.work_limit = budget;
+    w.work_cap = cap;
     w.no_mark_text = match facts {
         Some(f) => !f.mark_text,
         None => matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value)),
@@ -1291,9 +1370,69 @@ fn write_tree<'t>(
         facts::read(&mut w, doc, entries);
     }
     read_abbreviations(&mut w, doc);
+    let verbatim = w
+        .facts
+        .as_ref()
+        .is_some_and(|f| f.values().any(|x| x.raw_ref.is_some()));
+    w.tree_refs = tree_refs && verbatim;
+    w.report_behind = report;
     let written = write_document(&mut w, doc);
     let source = controls::keep_above(&w, written, settings.source.as_deref());
-    (source, located(doc, &w))
+    (source, located(doc, &w), (verbatim, w.work_chars))
+}
+
+/// Past this many references a group whose verbatim texts do not read back together keeps the rest from the tree.
+const MAX_VERBATIM_TRIALS: usize = 32;
+
+/// C2-W-075, C2-W-088 (carve-js `takeVerbatimReferences`): after the rounds, which wrote every reference from the
+/// tree, the group's references take their verbatim text together where the group reads back with them, and
+/// otherwise one by one in document order; the others keep their spelling from the tree.
+fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
+    if !w.tree_refs || w.lines.is_empty() || w.sp.losses.len() != reported {
+        return;
+    }
+    let mut references = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(n) = pending.pop() {
+        if has(n, "key") && w.fact(n).is_some_and(|f| f.raw_ref.is_some()) {
+            references.push(n);
+        }
+        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+    }
+    if references.is_empty() {
+        return;
+    }
+    references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
+    let tree = w.lines.clone();
+    let reads = |w: &mut Writer<'t>| {
+        reset_lines(w);
+        blocks::write_blocks(w, group, "", 0, false);
+        let chunk = written_chunk(w, group, first);
+        let parsed = children(chunk.parse(w));
+        parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
+    };
+    w.tree_refs = false;
+    w.tree_ref_ids.clear();
+    if !reads(w) {
+        w.tree_ref_ids.extend(references.iter().map(|&n| id(n)));
+        for &n in references.iter().take(MAX_VERBATIM_TRIALS) {
+            if exhausted(w) {
+                break;
+            }
+            w.tree_ref_ids.remove(&id(n));
+            if !reads(w) {
+                w.tree_ref_ids.insert(id(n));
+            }
+        }
+        if w.tree_ref_ids.len() == references.len() {
+            w.lines = tree;
+        } else {
+            reset_lines(w);
+            blocks::write_blocks(w, group, "", 0, false);
+        }
+    }
+    w.tree_ref_ids.clear();
+    w.tree_refs = true;
 }
 
 /// C2-B-085: the first definition of a term wins.
@@ -1482,6 +1621,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
     let mut at = 0;
     while at < nodes.len() {
         let from = at;
+        let reported = w.sp.losses.len();
         at = repair_group(w, doc, from, out.is_empty());
         // C2-W-146: test the written text with the five pair rules and `unattached-caption`, and reparse each escape round.
         for _ in 0..16 {
@@ -1512,6 +1652,12 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
             }
             at = next;
         }
+        take_verbatim_references(
+            w,
+            nodes.slice(from, at).unwrap_or_else(Arr::empty),
+            out.is_empty(),
+            reported,
+        );
         if w.lines.is_empty() {
             continue;
         }
@@ -2507,7 +2653,10 @@ fn compare_with_link_fallback<'t>(
     }
     reset_lines(w);
     blocks::write_blocks(w, group, "", 0, false);
-    compare_group(w, doc, group, first, round)
+    let mut again = compare_group(w, doc, group, first, round);
+    // C2-W-088: the bare parse of the round reports its constructs behind a stop too (carve#6802).
+    check::report_again(w, &mut again, &c.unheld);
+    again
 }
 
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.
@@ -2774,6 +2923,10 @@ fn drop_asked_trials<'t>(
             continue;
         }
         c.drop_escape(id(n), at);
+        // A later step of the round may still ask for it, a reported kind's (C2-W-088).
+        if let Some(m) = c.marks.get_mut(&id(n)) {
+            m.remove(&at);
+        }
         dropped = true;
     }
     dropped

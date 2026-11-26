@@ -17,7 +17,7 @@ use super::state::{Attempt, PLACE_COLUMNS, ProbeResult, Spelling, Writer};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
@@ -110,7 +110,7 @@ impl Chunk {
 
 /// C2-W-133: whether the repairs of the document have parsed more than its budget.
 pub fn exhausted(w: &Writer<'_>) -> bool {
-    w.work_chars > w.work_limit
+    w.work_chars > w.work_limit || w.work_chars > w.work_cap
 }
 
 /// What a construct of the parse was, as far as the chains of one round read it.
@@ -160,6 +160,11 @@ pub struct Check<'t> {
     pub notes_done: HashSet<(usize, usize)>,
     /// C2-W-088: the escapes of the openers of constructs the parse holds and the tree does not.
     pub constructs: Vec<(N<'t>, usize)>,
+    /// The tree node where a list comparison first stopped at a difference it could not resync: the constructs
+    /// behind it are reported (C2-W-088).
+    pub stop_node: Option<N<'t>>,
+    /// The openers `report_unheld` reported, by node and offset.
+    pub unheld: Vec<(N<'t>, usize)>,
 }
 
 impl<'t> Check<'t> {
@@ -3540,6 +3545,9 @@ fn compare_inlines<'t>(
             && !step_over_lost_text(es, as_, &mut at)
             && !resync_next_line(c, es, as_, &mut at)
         {
+            if c.stop_node.is_none() {
+                c.stop_node = Some(e);
+            }
             done = true;
             break;
         }
@@ -3693,7 +3701,13 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
     // A content that ended early in another block keeps nothing of this one from being compared.
     c.cut = false;
     if is_inline_parent(e) {
+        let outer_node = c.stop_node.take();
         compare_inlines(w, c, &refs(children(e)), children(a), e);
+        // The rounds of the reported escapes only (C2-W-088) keep to the comparison's own reports.
+        if c.stop_node.is_some() && w.report_behind && w.kind_escapes && ty(e) == "paragraph" {
+            report_unheld(w, c, e, a);
+        }
+        c.stop_node = outer_node.or(c.stop_node);
     } else if ty(e) != "include" {
         compare_blocks(w, c, children(e), children(a), e);
     }
@@ -3701,6 +3715,205 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
     c.span_marks = marks;
     c.flags = flags;
     true
+}
+
+/// A text of the tree as written in a paragraph: its node, the node holding it, and the byte range of its spelling
+/// in the paragraph's content.
+struct WrittenText<'t> {
+    node: N<'t>,
+    owner: N<'t>,
+    start: usize,
+    end: usize,
+}
+
+/// Where the tree's inline nodes stand in the written content of a paragraph.
+#[derive(Default)]
+struct WrittenMap<'t> {
+    texts: Vec<WrittenText<'t>>,
+    /// The type and content offset of each other inline node.
+    held: HashSet<(&'t str, usize)>,
+    /// The content span of each mapped node, by id.
+    spans: HashMap<usize, (usize, usize)>,
+}
+
+/// Nesting past this depth is not mapped: each level writes its subtree again.
+const MAP_DEPTH: usize = 64;
+
+fn map_written<'t>(
+    w: &mut Writer<'t>,
+    owner: N<'t>,
+    nodes: &[N<'t>],
+    content: &str,
+    (from, to): (usize, usize),
+    (flags, depth): (u32, usize),
+    out: &mut WrittenMap<'t>,
+) {
+    let mut at = from;
+    for &n in nodes {
+        let spelled = super::inline::write_inline(w, n, flags);
+        if spelled.is_empty() {
+            continue;
+        }
+        let Some(start) = content
+            .get(at..to)
+            .and_then(|rest| rest.find(spelled.as_str()))
+            .map(|p| p + at)
+        else {
+            return;
+        };
+        let end = start + spelled.len();
+        at = end;
+        out.spans.insert(id(n), (start, end));
+        match ty(n) {
+            "text" => out.texts.push(WrittenText {
+                node: n,
+                owner,
+                start,
+                end,
+            }),
+            "soft_break" | "hard_break" => {}
+            t => {
+                out.held.insert((t, start));
+                if depth < MAP_DEPTH && is_inline_parent(n) {
+                    let kids = refs(children(n));
+                    map_written(w, n, &kids, content, (start, end), (flags, depth + 1), out);
+                }
+            }
+        }
+    }
+}
+
+/// The byte of the value of `t` that its spelling holds at content offset `at`, where it is one; a backslash the
+/// writer added is none.
+fn value_offset(content: &str, t: &WrittenText<'_>, at: usize) -> Option<usize> {
+    let value = text(t.node).as_bytes();
+    let spelled = content.as_bytes().get(t.start..t.end)?;
+    let (mut vi, mut si) = (0, 0);
+    while si < spelled.len() && vi < value.len() {
+        if spelled.get(si) == value.get(vi) {
+            if t.start + si == at {
+                return Some(vi);
+            }
+            vi += 1;
+        }
+        si += 1;
+    }
+    None
+}
+
+/// Reports the openers `unheld` of an earlier comparison of the same round in `c`.
+pub fn report_again<'t>(w: &Writer<'t>, c: &mut Check<'t>, unheld: &[(N<'t>, usize)]) {
+    for &(n, at) in unheld {
+        if escape_at(w, c, n, at) {
+            c.constructs.push((n, at));
+        }
+    }
+}
+
+/// C2-W-088: every construct the parse holds and the tree does not is reported, also behind a difference the
+/// comparison of the paragraph `e` could not resync (carve#6802). Each inline construct of the parse `a` whose opener
+/// lies on a text the round wrote, where the tree holds no node of its type, reports that opener.
+fn report_unheld<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) {
+    let (Some(source), Some((start, _)), Some(stop)) = (c.source.clone(), span(a), c.stop_node)
+    else {
+        return;
+    };
+    let content = super::inline::write_content(w, &refs(children(e)), c.flags);
+    let Some(lines) = content_lines(&source, start, &content) else {
+        return;
+    };
+    let mut map = WrittenMap::default();
+    let kids = refs(children(e));
+    map_written(
+        w,
+        e,
+        &kids,
+        &content,
+        (0, content.len()),
+        (c.flags, 0),
+        &mut map,
+    );
+    // The difference at the stop is repaired as any other; what stands behind its tree node is reported.
+    let Some(&(_, behind)) = map.spans.get(&id(stop)) else {
+        return;
+    };
+    let mut pending: Vec<V<'_>> = children(a).iter().collect();
+    pending.reverse();
+    while let Some(node) = pending.pop() {
+        match unheld_opener(&map, &lines, &content, node, behind) {
+            Some((x, offset)) => {
+                if !reads_into_closer(x.owner, x.node, offset) && escape_at(w, c, x.node, offset) {
+                    c.constructs.push((x.node, offset));
+                    c.unheld.push((x.node, offset));
+                }
+            }
+            None => pending.extend(children(node).iter().collect::<Vec<_>>().into_iter().rev()),
+        }
+    }
+}
+
+/// Each line of the written `content` of a paragraph behind the prefix its line of `source` holds, from the
+/// paragraph's `start`: (content offset, source offset). `None` where a line is not there.
+fn content_lines(source: &str, start: usize, content: &str) -> Option<Vec<(usize, usize)>> {
+    let mut lines = Vec::new();
+    let mut line_start = source
+        .get(..start)
+        .and_then(|b| b.rfind('\n'))
+        .map_or(0, |p| p + 1);
+    let mut content_at = 0;
+    for part in content.split('\n') {
+        let line_end = source
+            .get(line_start..)
+            .and_then(|r| r.find('\n'))
+            .map_or(source.len(), |p| p + line_start);
+        let line = source.get(line_start..line_end)?;
+        if !line.ends_with(part) {
+            return None;
+        }
+        lines.push((content_at, line_end - part.len()));
+        content_at += part.len() + 1;
+        line_start = line_end + 1;
+    }
+    Some(lines)
+}
+
+/// The content offset of source offset `at`, where a line of [`content_lines`] holds it.
+fn to_content(lines: &[(usize, usize)], content: &str, at: usize) -> Option<usize> {
+    let k = lines.partition_point(|&(_, s)| s <= at).checked_sub(1)?;
+    let &(c_at, s_at) = lines.get(k)?;
+    let next = lines
+        .get(k + 1)
+        .map_or(content.len(), |&(n, _)| n.saturating_sub(1));
+    let off = c_at + (at - s_at);
+    (off < next.max(c_at + 1)).then_some(off)
+}
+
+/// The tree text and value offset of the opener of the parse node `node`, where it opens at or behind `behind` on a
+/// text the round wrote and the tree holds no node of its type there.
+fn unheld_opener<'m, 't>(
+    map: &'m WrittenMap<'t>,
+    lines: &[(usize, usize)],
+    content: &str,
+    node: V<'_>,
+    behind: usize,
+) -> Option<(&'m WrittenText<'t>, usize)> {
+    let t = ty(node);
+    if matches!(t, "text" | "soft_break") {
+        return None;
+    }
+    let at = span(node)
+        .and_then(|(s, _)| to_content(lines, content, s))
+        .filter(|&at| at >= behind && !map.held.contains(&(t, at)))?;
+    let owner_of = |at: usize| {
+        let k = map
+            .texts
+            .partition_point(|x| x.start <= at)
+            .checked_sub(1)?;
+        let x = map.texts.get(k).filter(|x| at < x.end)?;
+        Some((x, value_offset(content, x, at)?))
+    };
+    let shift = opener_shift(node);
+    owner_of(at + shift).or_else(|| (shift > 0).then(|| owner_of(at)).flatten())
 }
 
 fn read_starts(
