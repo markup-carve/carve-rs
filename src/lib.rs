@@ -91,6 +91,7 @@ pub mod source;
 pub mod tables;
 #[doc(hidden)]
 pub mod tree;
+mod tree_number;
 // The read-only tree view the lint rules and the writer read.
 mod view;
 // The canonical Carve writer (`writer.md`), reached through `api`.
@@ -1423,7 +1424,7 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
     if files.is_none() && opts.includes.is_none() {
         return to_json(&doc);
     }
-    stamped_value(&doc).to_string()
+    tree_number::to_string(&stamped_value(&doc))
 }
 
 #[doc(hidden)]
@@ -1464,7 +1465,7 @@ pub(crate) fn tree_parts_with_sources(
         return Some((None, doc.owned_with(&owned_str::Texts::of(input)), sources));
     }
     let mut v = stamped_value(&doc);
-    let json = v.to_string();
+    let json = tree_number::to_string(&v);
     if let Some(m) = v.as_object_mut() {
         m.remove("type");
     }
@@ -1522,7 +1523,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
 /// The JSON of a tree (C2-A-165).
 #[must_use]
 pub fn to_json(doc: &ast::Document<'_>) -> String {
-    serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
+    tree_number::to_string(&Root::Document(doc))
 }
 
 /// [`to_json`] of the owned copy of a tree with members in canonical order
@@ -1537,7 +1538,7 @@ pub(crate) fn owned_json(doc: &ast::owned::Document) -> String {
     }
     let root = Root::Document(doc);
     canonical_json::to_string(&root)
-        .or_else(|_| serde_json::to_value(&root).map(|v| v.to_string()))
+        .or_else(|_| serde_json::to_value(&root).map(|v| tree_number::to_string(&v)))
         .unwrap_or_default()
 }
 

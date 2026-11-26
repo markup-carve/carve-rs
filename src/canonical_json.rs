@@ -256,10 +256,15 @@ impl<'e> ser::Serializer for &'e mut Encoder {
     }
     fn serialize_f32(self, v: f32) -> Result<Piece, Error> {
         // A `Value` holds every float as f64.
-        self.leaf(&f64::from(v))
+        self.serialize_f64(f64::from(v))
     }
     fn serialize_f64(self, v: f64) -> Result<Piece, Error> {
-        self.leaf(&v)
+        if !v.is_finite() {
+            return self.leaf(&());
+        }
+        let start = at(self.buf.len())?;
+        crate::tree_number::spell(v, &mut self.buf);
+        Ok(Piece::Leaf(start, at(self.buf.len())?))
     }
     fn serialize_char(self, v: char) -> Result<Piece, Error> {
         self.leaf(&v)
@@ -599,7 +604,7 @@ mod tests {
     use serde_json::json;
 
     fn same<T: Serialize>(v: &T) {
-        let expected = serde_json::to_value(v).unwrap().to_string();
+        let expected = crate::tree_number::to_string(&serde_json::to_value(v).unwrap());
         assert_eq!(super::to_string(v).unwrap(), expected);
     }
 

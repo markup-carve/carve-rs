@@ -43,12 +43,13 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
     de.disable_recursion_limit();
     let parsed =
         <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
-    let response = match parsed {
-        Ok(req) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
-        Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
+    let response = match (lost_tree_number(request, parsed.as_ref().ok()), parsed) {
+        (Some(lost), _) => Err(lost),
+        (None, Ok(req)) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
+        (None, Err(e)) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
-        Ok(Reply::Value(result)) => json!({ "ok": result }).to_string(),
+        Ok(Reply::Value(result)) => crate::tree_number::to_string(&json!({ "ok": result })),
         Ok(Reply::Tree(fields, tree)) => with_tree(fields, &tree),
         Err(e) => {
             let mut error = json!({
@@ -68,6 +69,28 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
             }
             json!({ "error": error }).to_string()
         }
+    }
+}
+
+/// C2-A-219: a number of a supplied tree that `serde_json` would round, read
+/// from the request text before it does.
+fn lost_tree_number(request: &str, req: Option<&Value>) -> Option<Error> {
+    const TREES: [&str; 3] = ["/tree", "/a", "/b"];
+    let member = |path: &str| {
+        TREES.into_iter().find(|t| {
+            path.strip_prefix(t)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+    };
+    if req.is_some_and(|r| TREES.iter().all(|t| r.pointer(t).is_none())) {
+        return None;
+    }
+    match crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some()) {
+        crate::tree_number::Scan::Lost(path) => {
+            let inner = member(&path).map_or("", |t| &path[t.len()..]);
+            Some(Error::Tree(crate::reader::lost_number(inner)))
+        }
+        _ => None,
     }
 }
 

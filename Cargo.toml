@@ -36,7 +36,9 @@ comrak = { version = "=0.55.0", default-features = false }
 html5ever = "0.39"
 markup5ever_rcdom = "0.39"
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["unbounded_depth"] }
+# Already in the tree through serde_json; the shortest closest digits RFC 8785 writes (C2-A-219).
+zmij = "1"
+serde_json = { version = "1", features = ["unbounded_depth", "float_roundtrip"] }
 regex = "1"
 # Already in the tree through regex; data lint reads pattern structure from it (C2-W-142).
 regex-syntax = "0.8"
@@ -50,7 +52,7 @@ serde_json = "1"
 
 [dev-dependencies]
 # The fixture trees nest past serde_json's default recursion limit of 128.
-serde_json = { version = "1", features = ["unbounded_depth"] }
+serde_json = { version = "1", features = ["unbounded_depth", "float_roundtrip"] }
 flate2 = "1"
 
 [lib]

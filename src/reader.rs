@@ -388,28 +388,18 @@ fn read_tree_json_inner(input: &str) -> Result<ReadTree, TreeError> {
 }
 
 fn check_json_depth(input: &str) -> Result<(), TreeError> {
-    let mut depth = 0usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    for byte in input.bytes() {
-        if escaped {
-            escaped = false;
-        } else if quoted && byte == b'\\' {
-            escaped = true;
-        } else if byte == b'"' {
-            quoted = !quoted;
-        } else if !quoted && matches!(byte, b'{' | b'[') {
-            depth += 1;
-            if depth > 32768 {
-                return Err(TreeError::Json(
-                    "JSON nesting exceeds the reader bound".into(),
-                ));
-            }
-        } else if !quoted && matches!(byte, b'}' | b']') {
-            depth = depth.saturating_sub(1);
-        }
+    match crate::tree_number::scan(input, 32768, |_| true) {
+        crate::tree_number::Scan::Clean => Ok(()),
+        crate::tree_number::Scan::Deep => Err(TreeError::Json(
+            "JSON nesting exceeds the reader bound".into(),
+        )),
+        crate::tree_number::Scan::Lost(path) => Err(lost_number(&path)),
     }
-    Ok(())
+}
+
+/// C2-A-219: a number whose binary64 value is not the number of its text.
+pub(crate) fn lost_number(path: &str) -> TreeError {
+    reader(path, "number does not keep its value as binary64")
 }
 
 /// Reads a JSON value after applying the tree gate. The value overload also
@@ -438,7 +428,10 @@ fn read_tree_value_inner(
     json_bytes: Option<usize>,
 ) -> Result<ReadTree, TreeError> {
     check_depth(&value)?;
-    replace_nul(&mut value);
+    if !replace_nul(&mut value) {
+        let path = crate::tree_number::lost_integer(&value).unwrap_or_default();
+        return Err(lost_number(&path));
+    }
     check_known_types(&value)?;
     schema::validate(&value, definitions()?)?;
     let wire = value.clone();
@@ -474,16 +467,21 @@ fn read_tree_value_inner(
     Ok(ReadTree { document, wire })
 }
 
-fn replace_nul(value: &mut Value) {
+/// Replaces NUL in strings; false when a number does not keep its value as
+/// binary64 (C2-A-219).
+fn replace_nul(value: &mut Value) -> bool {
+    let mut kept = true;
     let mut pending = vec![value];
     while let Some(item) = pending.pop() {
         match item {
             Value::String(s) if s.contains('\0') => *s = s.replace('\0', "\u{fffd}"),
+            Value::Number(n) => kept &= crate::tree_number::integer_keeps(n),
             Value::Array(items) => pending.extend(items.iter_mut()),
             Value::Object(items) => pending.extend(items.values_mut()),
             _ => {}
         }
     }
+    kept
 }
 
 fn envelope(value: &Value) -> Result<(), TreeError> {
@@ -519,7 +517,7 @@ fn envelope(value: &Value) -> Result<(), TreeError> {
 /// C2-A-165: writes the accepted wire tree without dropping fields absent from the owned AST.
 #[must_use]
 pub fn write_tree_json(tree: &ReadTree) -> String {
-    tree.wire.to_string()
+    crate::tree_number::to_string(&tree.wire)
 }
 
 fn check_depth(root: &Value) -> Result<(), TreeError> {
