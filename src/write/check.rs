@@ -3819,36 +3819,8 @@ fn report_unheld<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
         return;
     };
     let content = super::inline::write_content(w, &refs(children(e)), c.flags);
-    // Each line of the content behind the prefix its line of the source holds: (content offset, source offset).
-    let mut lines = Vec::new();
-    let mut line_start = source
-        .get(..start)
-        .and_then(|b| b.rfind('\n'))
-        .map_or(0, |p| p + 1);
-    let mut content_at = 0;
-    for part in content.split('\n') {
-        let line_end = source
-            .get(line_start..)
-            .and_then(|r| r.find('\n'))
-            .map_or(source.len(), |p| p + line_start);
-        let Some(line) = source.get(line_start..line_end) else {
-            return;
-        };
-        if !line.ends_with(part) {
-            return;
-        }
-        lines.push((content_at, line_end - part.len()));
-        content_at += part.len() + 1;
-        line_start = line_end + 1;
-    }
-    let to_content = |at: usize| {
-        let k = lines.partition_point(|&(_, s)| s <= at).checked_sub(1)?;
-        let &(c_at, s_at) = lines.get(k)?;
-        let next = lines
-            .get(k + 1)
-            .map_or(content.len(), |&(n, _)| n.saturating_sub(1));
-        let off = c_at + (at - s_at);
-        (off < next.max(c_at + 1)).then_some(off)
+    let Some(lines) = content_lines(&source, start, &content) else {
+        return;
     };
     let mut map = WrittenMap::default();
     let kids = refs(children(e));
@@ -3868,43 +3840,80 @@ fn report_unheld<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
     let mut pending: Vec<V<'_>> = children(a).iter().collect();
     pending.reverse();
     while let Some(node) = pending.pop() {
-        let t = ty(node);
-        let held = |at: usize| map.held.contains(&(t, at));
-        let place = if matches!(t, "text" | "soft_break") {
-            None
-        } else {
-            span(node)
-                .and_then(|(s, _)| to_content(s))
-                .filter(|&at| at >= behind)
-        };
-        let Some(at) = place.filter(|&at| !held(at)) else {
-            let kids: Vec<V<'_>> = children(node).iter().collect();
-            pending.extend(kids.into_iter().rev());
-            continue;
-        };
-        let owner_of = |at: usize| {
-            let k = map
-                .texts
-                .partition_point(|x| x.start <= at)
-                .checked_sub(1)?;
-            let x = map.texts.get(k).filter(|x| at < x.end)?;
-            Some((x, value_offset(&content, x, at)?))
-        };
-        let shift = opener_shift(node);
-        let found = owner_of(at + shift).or_else(|| (shift > 0).then(|| owner_of(at)).flatten());
-        let Some((x, offset)) = found else {
-            let kids: Vec<V<'_>> = children(node).iter().collect();
-            pending.extend(kids.into_iter().rev());
-            continue;
-        };
-        if !reads_into_closer(x.owner, x.node, offset) {
-            let n = x.node;
-            if escape_at(w, c, n, offset) {
-                c.constructs.push((n, offset));
-                c.unheld.push((n, offset));
+        match unheld_opener(&map, &lines, &content, node, behind) {
+            Some((x, offset)) => {
+                if !reads_into_closer(x.owner, x.node, offset) && escape_at(w, c, x.node, offset) {
+                    c.constructs.push((x.node, offset));
+                    c.unheld.push((x.node, offset));
+                }
             }
+            None => pending.extend(children(node).iter().collect::<Vec<_>>().into_iter().rev()),
         }
     }
+}
+
+/// Each line of the written `content` of a paragraph behind the prefix its line of `source` holds, from the
+/// paragraph's `start`: (content offset, source offset). `None` where a line is not there.
+fn content_lines(source: &str, start: usize, content: &str) -> Option<Vec<(usize, usize)>> {
+    let mut lines = Vec::new();
+    let mut line_start = source
+        .get(..start)
+        .and_then(|b| b.rfind('\n'))
+        .map_or(0, |p| p + 1);
+    let mut content_at = 0;
+    for part in content.split('\n') {
+        let line_end = source
+            .get(line_start..)
+            .and_then(|r| r.find('\n'))
+            .map_or(source.len(), |p| p + line_start);
+        let line = source.get(line_start..line_end)?;
+        if !line.ends_with(part) {
+            return None;
+        }
+        lines.push((content_at, line_end - part.len()));
+        content_at += part.len() + 1;
+        line_start = line_end + 1;
+    }
+    Some(lines)
+}
+
+/// The content offset of source offset `at`, where a line of [`content_lines`] holds it.
+fn to_content(lines: &[(usize, usize)], content: &str, at: usize) -> Option<usize> {
+    let k = lines.partition_point(|&(_, s)| s <= at).checked_sub(1)?;
+    let &(c_at, s_at) = lines.get(k)?;
+    let next = lines
+        .get(k + 1)
+        .map_or(content.len(), |&(n, _)| n.saturating_sub(1));
+    let off = c_at + (at - s_at);
+    (off < next.max(c_at + 1)).then_some(off)
+}
+
+/// The tree text and value offset of the opener of the parse node `node`, where it opens at or behind `behind` on a
+/// text the round wrote and the tree holds no node of its type there.
+fn unheld_opener<'m, 't>(
+    map: &'m WrittenMap<'t>,
+    lines: &[(usize, usize)],
+    content: &str,
+    node: V<'_>,
+    behind: usize,
+) -> Option<(&'m WrittenText<'t>, usize)> {
+    let t = ty(node);
+    if matches!(t, "text" | "soft_break") {
+        return None;
+    }
+    let at = span(node)
+        .and_then(|(s, _)| to_content(lines, content, s))
+        .filter(|&at| at >= behind && !map.held.contains(&(t, at)))?;
+    let owner_of = |at: usize| {
+        let k = map
+            .texts
+            .partition_point(|x| x.start <= at)
+            .checked_sub(1)?;
+        let x = map.texts.get(k).filter(|x| at < x.end)?;
+        Some((x, value_offset(content, x, at)?))
+    };
+    let shift = opener_shift(node);
+    owner_of(at + shift).or_else(|| (shift > 0).then(|| owner_of(at)).flatten())
 }
 
 fn read_starts(
