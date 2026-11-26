@@ -252,3 +252,37 @@ fn an_inserted_sibling_takes_no_carrier() {
          <p data-carve-snippet=\"1:block:$v\">X</p>"
     );
 }
+
+fn roundtrip_html(source: &str) -> String {
+    let request = json!({"call": "render", "source": source, "options": {"roundtrip": true}});
+    let out = parse_json(&api::json::call(&request.to_string()));
+    out["ok"]["html"].as_str().unwrap_or("").to_string()
+}
+
+/// C2-H-215: a copy that renders as one element carries the carriers on it: an
+/// autolink's `<a>`, and a link whose use inside expands to no note.
+#[test]
+fn one_element_copies_carry_their_carriers() {
+    let html = roundtrip_html("{$v}: <https://example.com>\n\nA {{ $v }}\n");
+    assert!(
+        html.ends_with(
+            "<p>A <a href=\"https://example.com\" data-carve-autolink \
+             data-carve-snippet=\"1:inline:$v\">https://example.com</a></p>"
+        ),
+        "{html}"
+    );
+    let html = roundtrip_html("{$b}: X\n\n{$a}: [{{ $b }}](/url)\n\nA {{ $a }}\n");
+    assert!(
+        html.ends_with(
+            "<p>A <a href=\"/url\" data-carve-snippet=\"1:inline:$a\">\
+             <span data-carve-snippet=\"2:inline:$b\">X</span></a></p>"
+        ),
+        "{html}"
+    );
+    // A note mark of the inner use moves out behind the link: the copy is no longer one element.
+    let html = roundtrip_html("{$n}: y[^q]\n\n{$a}: [{{ $n }}](/url)\n\nA {{ $a }}\n\n[^q]: Q\n");
+    assert!(
+        html.contains("<p>A <span data-carve-snippet=\"1:inline:$a\"><a href=\"/url\">"),
+        "{html}"
+    );
+}

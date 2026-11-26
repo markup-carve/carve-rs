@@ -530,6 +530,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     fn autolink(&mut self, n: &'r Node<'a>, a: &ast::Autolink, out: &mut String) {
+        // C2-H-215: an autolink that carries the carriers of its use but writes no `<a>` puts them on a span.
+        let Some(tail) = self.snippet_tail(n) else {
+            return self.autolink_html(n, a, out);
+        };
+        let mut html = String::new();
+        self.autolink_html(n, a, &mut html);
+        if html.starts_with("<a ") {
+            out.push_str(&html);
+        } else {
+            let _ = write!(out, "<span{tail}>{html}</span>");
+        }
+    }
+
+    fn autolink_html(&mut self, n: &'r Node<'a>, a: &ast::Autolink, out: &mut String) {
         let text = a.text.unwrap_or(a.href);
         if self.opts.profile == Profile::Comment && !url::allowed(a.href, &self.opts.url_policy) {
             self.losses.push("destination-denied");
@@ -549,6 +563,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
+        el.snippet = self.snippet_tail(n);
         let file = self.file_of(a.pos.as_ref());
         el.structural.push((
             "href",

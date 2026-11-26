@@ -357,36 +357,35 @@ struct Pass<'a, 'p> {
     file: Option<String>,
 }
 
-/// The nodes that render as exactly one element that takes the carriers.
-fn renders_as_one(n: &Node<'_>) -> bool {
-    match n {
-        Node::Emphasis(_)
-        | Node::Strong(_)
-        | Node::Underline(_)
-        | Node::Strike(_)
-        | Node::Highlight(_)
-        | Node::Superscript(_)
-        | Node::Subscript(_)
-        | Node::Insert(_)
-        | Node::Delete(_)
-        | Node::Span(_)
-        | Node::Code(_) => true,
-        // A use inside the link may expand to a note that moves out behind it.
-        Node::Link(_) => !holds_note(n),
+/// Whether tree JSON holds a note reference, or a use whose definition holds one.
+fn json_holds_note(
+    v: &Value,
+    names: &std::collections::HashMap<String, usize>,
+    entries: &[Entry],
+    seen: &mut Vec<usize>,
+) -> bool {
+    match v {
+        Value::Array(a) => a.iter().any(|x| json_holds_note(x, names, entries, seen)),
+        Value::Object(m) => match m.get("type").and_then(Value::as_str) {
+            Some("footnote_ref" | "inline_footnote") => true,
+            Some("snippet_use") => {
+                let name = m.get("name").and_then(Value::as_str).unwrap_or("");
+                names.get(name).is_some_and(|&i| {
+                    if seen.contains(&i) {
+                        return false;
+                    }
+                    seen.push(i);
+                    entries.get(i).is_some_and(|e| {
+                        e.children
+                            .iter()
+                            .any(|c| json_holds_note(c, names, entries, seen))
+                    })
+                })
+            }
+            _ => m.values().any(|x| json_holds_note(x, names, entries, seen)),
+        },
         _ => false,
     }
-}
-
-fn holds_note(n: &Node<'_>) -> bool {
-    if matches!(
-        n,
-        Node::FootnoteRef(_) | Node::InlineFootnote(_) | Node::SnippetUse(_)
-    ) {
-        return true;
-    }
-    let mut found = false;
-    n.for_each_child(&mut |c| found = found || holds_note(c));
-    found
 }
 
 /// The bytes of the wrapper a copy gets: its type and its attributes (C2-N-094).
@@ -533,9 +532,31 @@ impl<'a> Pass<'a, '_> {
         placed
     }
 
+    /// C2-H-215: whether `n` renders as exactly one element that takes the carriers. A link
+    /// does where no note mark moves out behind it, a use inside it read through its definition.
+    fn renders_as_one(&self, n: &Node<'_>) -> bool {
+        match n {
+            Node::Emphasis(_)
+            | Node::Strong(_)
+            | Node::Underline(_)
+            | Node::Strike(_)
+            | Node::Highlight(_)
+            | Node::Superscript(_)
+            | Node::Subscript(_)
+            | Node::Insert(_)
+            | Node::Delete(_)
+            | Node::Span(_)
+            | Node::Code(_)
+            | Node::Autolink(_) => true,
+            Node::Link(_) => serde_json::to_value(n)
+                .is_ok_and(|v| !json_holds_note(&v, &self.names, &self.entries, &mut Vec::new())),
+            _ => false,
+        }
+    }
+
     /// C2-H-215: whether a copy carries the carriers on its one element, and whether it gets a wrapper.
     fn shape(&self, block: bool, attrs: bool, nodes: &[Node<'_>]) -> (bool, bool) {
-        let one = matches!(nodes, [n] if renders_as_one(n));
+        let one = matches!(nodes, [n] if self.renders_as_one(n));
         let single = !block && !attrs && self.settings.roundtrip && one;
         (
             single,
