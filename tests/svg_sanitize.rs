@@ -440,3 +440,66 @@ fn a_namespace_declaration_with_whitespace_is_dropped() {
         format!("{OPEN}><g xmlns:xlink=\"urn:x\"/></svg>")
     );
 }
+
+#[test]
+fn a_child_default_namespace_with_whitespace_is_dropped() {
+    // carve#6843: the carve#6811 rule on a child's xmlns; an empty one is a legal undeclaration.
+    assert_eq!(
+        sanitize("<svg><g xmlns=\" \"><rect/></g><g xmlns=\"&#160;urn:x\"/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><g><rect/></g><g/></svg>"),
+            ok: true,
+        }
+    );
+    let values = [
+        " ",
+        "\t",
+        " \n ",
+        "\r",
+        "&#32;",
+        "&#x20;&#9;",
+        "&#xA;",
+        "&#13;",
+        "&#x0D;",
+        " urn:x",
+        "urn:x ",
+        "urn: x",
+        "urn:x\tb",
+        "\u{A0}",
+        "urn:\u{A0}x",
+        "&#160;",
+        "urn:&#xA0;x",
+        "&#32;urn:x",
+        "urn:&nbsp;x",
+        "&nbsp;",
+        " http://www.w3.org/2000/svg",
+    ];
+    let shapes = [
+        ("<g xmlns=\"%s\"/>", "<g/>"),
+        (
+            "<g><g><symbol xmlns='%s'><g/></symbol></g></g>",
+            "<g><g><symbol><g/></symbol></g></g>",
+        ),
+        (
+            "<g><text xmlns=\"%s\">t</text></g>",
+            "<g><text>t</text></g>",
+        ),
+    ];
+    for value in values {
+        for (shape, want) in shapes {
+            assert_eq!(
+                sanitize(&format!("<svg>{}</svg>", shape.replace("%s", value))),
+                SanitizeResult {
+                    svg: format!("{OPEN}>{want}</svg>"),
+                    ok: true,
+                },
+                "{value:?} in {shape}"
+            );
+        }
+    }
+    let kept = "<g xmlns=\"\"/><g xmlns=\"urn:x\"/><g xmlns=\"http://www.w3.org/2000/svg\"/>";
+    assert_eq!(
+        sanitize(&format!("<svg>{kept}</svg>")).svg,
+        format!("{OPEN}>{kept}</svg>")
+    );
+}
