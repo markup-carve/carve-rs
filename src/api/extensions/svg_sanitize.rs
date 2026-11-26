@@ -471,7 +471,7 @@ impl State<'_> {
         external_href: bool,
         out: &mut String,
     ) {
-        if lower.starts_with("on") {
+        if attribute_always_dropped(lower, value) {
             return;
         }
         if lower == "href" || lower == "xlink:href" {
@@ -1017,4 +1017,10 @@ fn escape_attr(text: &str) -> String {
     amp.replace('"', "&quot;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// An event handler, or an empty prefixed namespace declaration, which
+/// Namespaces in XML forbids as undeclaring the prefix (carve#6779).
+fn attribute_always_dropped(lower: &str, value: Option<&str>) -> bool {
+    lower.starts_with("on") || (value == Some("") && lower.starts_with("xmlns:"))
 }
