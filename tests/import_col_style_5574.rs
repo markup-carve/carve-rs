@@ -69,7 +69,7 @@ fn col_style_declaration_spellings() {
     assert_eq!(width("width: 40%;"), (true, false));
     assert_eq!(width("\twidth\t:\t40%\t"), (true, false));
     assert_eq!(width(";;Width:40%;;"), (true, false));
-    assert_eq!(width("width: 40%; width: 4px"), (true, true));
+    assert_eq!(width("width: 40%; width: 4px"), (false, true));
     assert_eq!(width("color: red; width: 40%"), (true, true));
     assert_eq!(width("width 40%"), (false, true));
     assert_eq!(width("width: 40 %"), (false, true));

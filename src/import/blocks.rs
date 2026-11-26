@@ -1576,13 +1576,13 @@ impl Cx {
             }
             let style = self.dom.attr(col, "style").map(str::to_string);
             let (width, only) = style.as_deref().map_or((None, true), col_style_width);
-            // C2-M-041: a col style is no key; one that gives no width or holds
-            // another declaration is reported.
+            // C2-M-041: a col style is no key; one that gives no width, holds
+            // another declaration or marks its width important is reported.
             if style.is_some() && (width.is_none() || !only) {
                 self.report(
                     col,
                     Code::AttributeDropped,
-                    "A col style that gives no width or holds another declaration dropped",
+                    "A col style that gives no width, holds another declaration or marks its width important dropped",
                 );
             }
             out.push(width);
@@ -1793,20 +1793,40 @@ fn col_style_width(style: &str) -> (Option<f64>, bool) {
     fn trim(s: &str) -> &str {
         s.trim_matches(|c: char| c.is_ascii_whitespace())
     }
-    let mut width = None;
+    // C2-M-041: the last width marked important applies, else the last width.
+    let mut last: Option<&str> = None;
+    let mut important: Option<&str> = None;
     let mut count = 0usize;
     for piece in style.split(';').map(trim).filter(|p| !p.is_empty()) {
         count += 1;
         let Some((name, value)) = piece.split_once(':') else {
             continue;
         };
-        if trim(name).eq_ignore_ascii_case("width")
-            && let Some(w) = percent_width(trim(value))
-        {
-            width = Some(w);
+        if !trim(name).eq_ignore_ascii_case("width") {
+            continue;
+        }
+        let value = trim(value);
+        match important_value(value) {
+            Some(v) => important = Some(v),
+            None => last = Some(value),
         }
     }
-    (width, count == 1)
+    let width = important.or(last).and_then(percent_width);
+    (width, count == 1 && important.is_none())
+}
+
+/// C2-M-041: the value without its `!important` mark, where it carries one.
+fn important_value(value: &str) -> Option<&str> {
+    let cut = value.len().checked_sub("important".len())?;
+    let (rest, mark) = (value.get(..cut)?, value.get(cut..)?);
+    if !mark.eq_ignore_ascii_case("important") {
+        return None;
+    }
+    let rest = rest.trim_end_matches(|c: char| c.is_ascii_whitespace());
+    Some(
+        rest.strip_suffix('!')?
+            .trim_end_matches(|c: char| c.is_ascii_whitespace()),
+    )
 }
 
 fn percent_width(value: &str) -> Option<f64> {
