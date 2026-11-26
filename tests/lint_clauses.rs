@@ -109,9 +109,7 @@ fn included_by_agrees(chain: &[Value], actual: &Diagnostic) -> bool {
 
 /// `(case id, cause)`: rulings this engine has not ported yet.
 #[rustfmt::skip]
-const HELD: Holds = &[
-    ("CC-2241", "carve#6838: the lint-model row exempts a pipe table from the header-rows clamp"),
-];
+const HELD: Holds = &[];
 
 #[test]
 fn pinned_lint_clause_cases() {

@@ -9,10 +9,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 /// `(case id, cause)`.
-const HELD: Holds = &[(
-    "CC-1354",
-    "carve#6833: CC-1354 still expects the braced strike reported, which #6499 turned off",
-)];
+const HELD: Holds = &[];
 
 #[test]
 fn candidate18_cli_clause_cases() {
