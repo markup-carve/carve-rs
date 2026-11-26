@@ -42,3 +42,13 @@ fn code_with_a_space_is_kept() {
     let (src, _) = import("<p><code> </code>y</p>");
     assert_eq!(src, "` `y\n");
 }
+
+#[test]
+fn empty_code_leaves_a_range_whole() {
+    let (src, codes) = import(concat!(
+        "<p><span class=\"comment-start\" data-comment-id=\"1\">n</span><code></code>",
+        "<span class=\"comment-end\" data-comment-id=\"1\"></span>y</p>",
+    ));
+    assert_eq!(src, "{#n#}y\n");
+    assert!(codes.is_empty(), "{codes:?}");
+}
