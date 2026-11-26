@@ -225,7 +225,7 @@ pub(crate) fn snippet_diagnostics(
         return Vec::new();
     }
     let targets = found.iter().map(|f| f.addr).collect();
-    let paths = node_paths_by(doc.children, &targets, |n| n.payload_addr());
+    let paths = node_paths_by(doc.children, &targets, ast::Node::payload_addr);
     found
         .iter()
         .map(|f| {
@@ -540,10 +540,10 @@ fn node_paths(
 }
 
 /// [`node_paths`] with the targets named by `key`.
-fn node_paths_by(
-    nodes: &[ast::Node<'_>],
+fn node_paths_by<'a>(
+    nodes: &[ast::Node<'a>],
     targets: &std::collections::HashSet<usize>,
-    key: fn(&ast::Node<'_>) -> usize,
+    key: impl Fn(&ast::Node<'a>) -> usize,
 ) -> std::collections::HashMap<usize, String> {
     use PathItem::{Array, One};
     let mut found = std::collections::HashMap::new();
@@ -801,14 +801,14 @@ pub(crate) fn prepare_expanding<'a>(
     } else if braces {
         include::no_resolver(doc.children, diags);
     }
-    if let Some((found, guard)) = snippets {
-        if braces {
-            let settings = snippet::expand::Settings {
-                roundtrip: opts.roundtrip,
-                source_len: input.len(),
-            };
-            *guard = snippet::expand::expand(&mut doc, arena, settings, found);
-        }
+    if let Some((found, guard)) = snippets
+        && braces
+    {
+        let settings = snippet::expand::Settings {
+            roundtrip: opts.roundtrip,
+            source_len: input.len(),
+        };
+        *guard = snippet::expand::expand(&mut doc, arena, settings, found);
     }
     let files = (expanded && braces).then(|| resolve::files::Files::build(&doc, included_sources));
     before_resolve(&mut doc);

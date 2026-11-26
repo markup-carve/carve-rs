@@ -163,26 +163,30 @@ fn plain_abbreviations(nodes: &mut Vec<serde_json::Value>) {
         }
         if let Some(map) = node.as_object_mut() {
             for value in map.values_mut() {
-                if let Value::Array(list) = value {
-                    if list.iter().all(|v| v.get("type").is_some()) {
-                        plain_abbreviations(list);
-                    }
+                if let Value::Array(list) = value
+                    && list.iter().all(|v| v.get("type").is_some())
+                {
+                    plain_abbreviations(list);
                 }
             }
         }
     }
-    let mut at = nodes.len();
-    while at > 1 {
-        at -= 1;
-        let plain = |v: &Value| v["type"] == "text" && v.as_object().is_some_and(|m| m.len() == 2);
-        if plain(&nodes[at - 1]) && plain(&nodes[at]) {
-            let tail = nodes.remove(at);
-            let joined = format!(
+    let plain = |v: &Value| v["type"] == "text" && v.as_object().is_some_and(|m| m.len() == 2);
+    let mut joined: Vec<Value> = Vec::with_capacity(nodes.len());
+    for node in nodes.drain(..) {
+        if let Some(last) = joined.last_mut()
+            && plain(last)
+            && plain(&node)
+        {
+            let text = format!(
                 "{}{}",
-                nodes[at - 1]["value"].as_str().unwrap_or(""),
-                tail["value"].as_str().unwrap_or("")
+                last["value"].as_str().unwrap_or(""),
+                node.get("value").and_then(Value::as_str).unwrap_or("")
             );
-            nodes[at - 1]["value"] = Value::String(joined);
+            last["value"] = Value::String(text);
+            continue;
         }
+        joined.push(node);
     }
+    *nodes = joined;
 }

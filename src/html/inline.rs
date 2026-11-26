@@ -516,10 +516,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         el.write_into(self.filter(), out);
         out.push('>');
         self.in_link += 1;
-        let mark = self.snippet_mark(n);
-        let outer = std::mem::replace(&mut self.link_snippet, mark);
+        let outer = self.snippets;
+        if outer.is_some() {
+            self.snippets = Some(self.snippet_mark(n));
+        }
         self.inlines(&*l.children, out);
-        self.link_snippet = outer;
+        self.snippets = outer;
         self.in_link -= 1;
         out.push_str("</a>");
         if self.in_link == 0 {
@@ -641,14 +643,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.carriers
                 .push(("data-carve-footnote-label", Some(r.key.into())));
         }
-        if self.in_link > 0 {
-            if let Some(mark) = self
+        if self.in_link > 0
+            && let Some(mark) = self
                 .snippet_mark(n)
-                .filter(|m| Some(*m) != self.link_snippet)
-            {
-                el.carriers
-                    .push(("data-carve-snippet-mark", Some(mark.to_string().into())));
-            }
+                .filter(|m| self.snippets != Some(Some(*m)))
+        {
+            el.carriers
+                .push(("data-carve-snippet-mark", Some(mark.to_string().into())));
         }
         let f = self.filter();
         let target = if self.in_link > 0 {

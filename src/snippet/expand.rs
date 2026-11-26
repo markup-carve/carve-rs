@@ -22,7 +22,7 @@ pub(crate) struct Carrier {
 /// The derived-text budget after the pass, which the renderer goes on from (C2-N-094).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Budget {
-    pub budget: usize,
+    pub bytes: usize,
     pub left: usize,
     pub reported: bool,
 }
@@ -235,38 +235,8 @@ impl Copy {
 
     fn field(&mut self, field: &str, value: &Value) -> Option<Value> {
         match field {
-            "attrs" => {
-                let mut a = value.as_object()?.clone();
-                a.remove("id");
-                if a.is_empty() {
-                    return None;
-                }
-                self.bytes += a.get("classes").map_or(0, |c| opaque_bytes(c, false));
-                for pair in a
-                    .get("keyValues")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                {
-                    self.bytes += opaque_bytes(pair, false);
-                }
-                Some(Value::Object(a))
-            }
-            "data" => {
-                let mut d = value.as_object()?.clone();
-                if let Some(Value::Object(note)) = d.get_mut("carve.annotation") {
-                    note.remove("ids");
-                    if note.is_empty() {
-                        d.remove("carve.annotation");
-                    }
-                }
-                if d.is_empty() {
-                    return None;
-                }
-                let d = Value::Object(d);
-                self.bytes += opaque_bytes(&d, true);
-                Some(d)
-            }
+            "attrs" => self.attrs(value),
+            "data" => self.data(value),
             "metadata" => Some(self.metadata(value)),
             "slots" if value.is_object() => Some(Value::Object(
                 value
@@ -279,16 +249,55 @@ impl Copy {
                 self.bytes += opaque_bytes(value, true);
                 Some(value.clone())
             }
-            _ => match value {
-                Value::Array(a) if a.iter().all(is_node) && !a.is_empty() => {
-                    Some(Value::Array(a.iter().map(|x| self.node(x)).collect()))
-                }
-                v if is_node(v) => Some(self.node(v)),
-                v => {
-                    self.bytes += opaque_bytes(v, false);
-                    Some(v.clone())
-                }
-            },
+            _ => Some(self.plain(value)),
+        }
+    }
+
+    /// The attributes without the authored id; their classes and pairs are counted.
+    fn attrs(&mut self, value: &Value) -> Option<Value> {
+        let mut a = value.as_object()?.clone();
+        a.remove("id");
+        if a.is_empty() {
+            return None;
+        }
+        self.bytes += a.get("classes").map_or(0, |c| opaque_bytes(c, false));
+        self.bytes += a
+            .get("keyValues")
+            .and_then(Value::as_array)
+            .map_or(0, |pairs| {
+                pairs.iter().map(|p| opaque_bytes(p, false)).sum()
+            });
+        Some(Value::Object(a))
+    }
+
+    /// The data without annotation ids; its keys and strings are counted.
+    fn data(&mut self, value: &Value) -> Option<Value> {
+        let mut d = value.as_object()?.clone();
+        if let Some(Value::Object(note)) = d.get_mut("carve.annotation") {
+            note.remove("ids");
+            if note.is_empty() {
+                d.remove("carve.annotation");
+            }
+        }
+        if d.is_empty() {
+            return None;
+        }
+        let d = Value::Object(d);
+        self.bytes += opaque_bytes(&d, true);
+        Some(d)
+    }
+
+    /// A field that is a node, a list of nodes, or a value whose strings are counted.
+    fn plain(&mut self, value: &Value) -> Value {
+        match value {
+            Value::Array(a) if !a.is_empty() && a.iter().all(is_node) => {
+                Value::Array(a.iter().map(|x| self.node(x)).collect())
+            }
+            v if is_node(v) => self.node(v),
+            v => {
+                self.bytes += opaque_bytes(v, false);
+                v.clone()
+            }
         }
     }
 
@@ -380,6 +389,19 @@ fn holds_note(n: &Node<'_>) -> bool {
     found
 }
 
+/// The bytes of the wrapper a copy gets: its type and its attributes (C2-N-094).
+fn wrapper_bytes(block: bool, attrs: Option<&owned::Attrs>) -> usize {
+    let ty = if block { "paragraph" } else { "span" };
+    ty.len()
+        + attrs.map_or(0, |a| {
+            a.classes.iter().map(String::len).sum::<usize>()
+                + a.key_values
+                    .iter()
+                    .map(|(k, v)| k.len() + v.len())
+                    .sum::<usize>()
+        })
+}
+
 /// C2-N-093: the use written as its source spelling.
 fn spelled<'a>(arena: &'a Arena, name: &str, block: bool, pos: Option<Pos>) -> Node<'a> {
     let text = Node::Text(arena.alloc(ast::Text {
@@ -421,21 +443,22 @@ impl<'a> Pass<'a, '_> {
         out
     }
 
-    /// Expands one use and returns the nodes that stand in its place, their uses expanded too.
-    fn expand_use(&mut self, u: &mut ast::SnippetUse<'a>) -> Vec<Node<'a>> {
-        let pos = u.pos.take();
-        let block = u.mode == ast::SnippetUseMode::Block;
-        let Some(&index) = self.names.get(u.name) else {
-            return vec![self.refuse_at(u, pos, "snippet-unresolved", None)];
-        };
+    /// C2-N-093: the code of a use that is not expanded and its limit, or the index of its definition.
+    fn refusal(&self, name: &str) -> Result<usize, (&'static str, Option<usize>)> {
+        let &index = self.names.get(name).ok_or(("snippet-unresolved", None))?;
         if self.stack.contains(&index) {
-            return vec![self.refuse_at(u, pos, "snippet-cycle", None)];
+            return Err(("snippet-cycle", None));
         }
         if self.stack.len() + 1 > self.depth {
-            return vec![self.refuse_at(u, pos, "snippet-depth", Some(self.depth))];
+            return Err(("snippet-depth", Some(self.depth)));
         }
-        let entry = &mut self.entries[index];
-        let (owned, copied, copied_bytes) = entry.copy.get_or_insert_with(|| {
+        Ok(index)
+    }
+
+    /// The copy of the definition at `index` in the arena, with its node count and bytes.
+    fn copy_of(&mut self, index: usize) -> Option<(Vec<Node<'a>>, usize, usize)> {
+        let entry = self.entries.get_mut(index)?;
+        let (owned, count, bytes) = entry.copy.get_or_insert_with(|| {
             let mut copy = Copy::default();
             let values: Vec<Value> = entry.children.iter().map(|v| copy.node(v)).collect();
             let nodes = values
@@ -444,61 +467,121 @@ impl<'a> Pass<'a, '_> {
                 .collect();
             (nodes, copy.count, copy.bytes)
         });
-        let (count, bytes) = (*copied, *copied_bytes);
-        let mut nodes: Vec<Node<'a>> = owned.iter().map(|n| n.in_arena(self.arena)).collect();
-        let attrs = entry.attrs.clone();
-        let include = entry.include;
-        let file = entry.file.clone();
-        let single = !block
-            && attrs.is_none()
-            && self.settings.roundtrip
-            && nodes.len() == 1
-            && renders_as_one(&nodes[0]);
-        let wraps = block || attrs.is_some() || (self.settings.roundtrip && !single);
-        let mut count = count;
-        let mut bytes = bytes;
-        if wraps {
-            count += 1;
-            bytes += if block {
-                "paragraph".len()
-            } else {
-                "span".len()
-            };
-            if let Some(a) = &attrs {
-                bytes += a.classes.iter().map(String::len).sum::<usize>();
-                bytes += a
-                    .key_values
-                    .iter()
-                    .map(|(k, v)| k.len() + v.len())
-                    .sum::<usize>();
-            }
-        }
+        let nodes = owned.iter().map(|n| n.in_arena(self.arena)).collect();
+        Some((nodes, *count, *bytes))
+    }
+
+    /// C2-N-094: whether the node and text budgets admit `count` nodes and `bytes`;
+    /// where not, the code to report and its limit, `None` for a budget already reported.
+    fn admits(&mut self, count: usize, bytes: usize) -> Result<(), Option<(&'static str, usize)>> {
         if self.total + count > self.limit {
-            return vec![self.refuse_at(u, pos, "snippet-node-budget", Some(self.limit))];
+            return Err(Some(("snippet-node-budget", self.limit)));
         }
         let cost = NODE_COST * count + bytes;
         if cost > self.budget.left {
             if self.budget.reported {
-                let own = if self.stack.is_empty() { pos } else { None };
-                return vec![spelled(self.arena, u.name, block, own)];
+                return Err(None);
             }
             self.budget.reported = true;
-            let budget = self.budget.budget;
-            return vec![self.refuse_at(u, pos, "derived-text-budget", Some(budget))];
+            return Err(Some(("derived-text-budget", self.budget.bytes)));
         }
         self.total += count;
         self.budget.left -= cost;
+        Ok(())
+    }
+
+    /// Expands one use and returns the nodes that stand in its place, their uses expanded too.
+    fn expand_use(&mut self, u: &mut ast::SnippetUse<'a>) -> Vec<Node<'a>> {
+        let pos = u.pos.take();
+        let block = u.mode == ast::SnippetUseMode::Block;
+        let index = match self.refusal(u.name) {
+            Ok(index) => index,
+            Err((code, limit)) => return vec![self.refuse_at(u, pos, code, limit)],
+        };
+        let Some((nodes, count, bytes)) = self.copy_of(index) else {
+            return vec![self.refuse_at(u, pos, "snippet-unresolved", None)];
+        };
+        let (attrs, include) = self
+            .entries
+            .get(index)
+            .map_or((None, 0), |e| (e.attrs.clone(), e.include));
+        let (single, wraps) = self.shape(block, attrs.is_some(), &nodes);
+        let (count, bytes) = if wraps {
+            (count + 1, bytes + wrapper_bytes(block, attrs.as_ref()))
+        } else {
+            (count, bytes)
+        };
+        if let Err(code) = self.admits(count, bytes) {
+            return vec![self.refuse_budget(u, pos, code)];
+        }
         self.admitted += 1;
-        let n = self.admitted;
         let carrier = Carrier {
-            n,
+            n: self.admitted,
             block,
             name: u.name.to_string(),
             include: include != 0,
         };
+        let slice = self.walk_copy(index, nodes);
+        let placed = if wraps {
+            vec![self.wrapper(slice, block, attrs.as_ref(), carrier)]
+        } else {
+            self.unwrapped(slice, single, carrier)
+        };
+        for node in &placed {
+            self.side.scope.insert(node.payload_addr(), include);
+        }
+        placed
+    }
+
+    /// C2-H-215: whether a copy carries the carriers on its one element, and whether it gets a wrapper.
+    fn shape(&self, block: bool, attrs: bool, nodes: &[Node<'_>]) -> (bool, bool) {
+        let one = matches!(nodes, [n] if renders_as_one(n));
+        let single = !block && !attrs && self.settings.roundtrip && one;
+        (
+            single,
+            block || attrs || (self.settings.roundtrip && !single),
+        )
+    }
+
+    /// A use the budgets do not admit, reported unless the text budget was reported already.
+    fn refuse_budget(
+        &mut self,
+        u: &ast::SnippetUse<'a>,
+        pos: Option<Pos>,
+        code: Option<(&'static str, usize)>,
+    ) -> Node<'a> {
+        if let Some((code, limit)) = code {
+            return self.refuse_at(u, pos, code, Some(limit));
+        }
+        let own = if self.stack.is_empty() { pos } else { None };
+        spelled(
+            self.arena,
+            u.name,
+            u.mode == ast::SnippetUseMode::Block,
+            own,
+        )
+    }
+
+    /// The nodes of a copy without a wrapper; one element that renders alone takes the carriers.
+    fn unwrapped(
+        &mut self,
+        slice: &mut [Node<'a>],
+        single: bool,
+        carrier: Carrier,
+    ) -> Vec<Node<'a>> {
+        let out: Vec<Node<'a>> = slice.iter_mut().map(|c| take(self.arena, c)).collect();
+        if single && let Some(first) = out.first() {
+            self.side.carriers.insert(first.payload_addr(), carrier);
+        }
+        out
+    }
+
+    /// The copy with its own uses expanded, inside the definition's file and the cycle stack.
+    fn walk_copy(&mut self, index: usize, mut nodes: Vec<Node<'a>>) -> &'a mut [Node<'a>] {
+        let file = self.entries.get(index).and_then(|e| e.file.clone());
         let outer_file = std::mem::replace(&mut self.file, file);
         self.stack.push(index);
-        let outer = std::mem::replace(&mut self.current, n);
+        let outer = std::mem::replace(&mut self.current, self.admitted);
         for node in &nodes {
             self.mark_notes(node);
         }
@@ -507,41 +590,35 @@ impl<'a> Pass<'a, '_> {
         self.current = outer;
         self.stack.pop();
         self.file = outer_file;
-        let placed: Vec<Node<'a>> = if wraps {
-            let children = slice;
-            let at = attrs
-                .as_ref()
-                .map(|a| &*self.arena.alloc(a.in_arena(self.arena)));
-            let wrapper = if block {
-                Node::Paragraph(self.arena.alloc(ast::Paragraph {
-                    children,
-                    attrs: at,
-                    ..Default::default()
-                }))
-            } else {
-                Node::Span(self.arena.alloc(ast::Span {
-                    children,
-                    attrs: at,
-                    ..Default::default()
-                }))
-            };
-            if self.settings.roundtrip {
-                self.side.carriers.insert(wrapper.payload_addr(), carrier);
-            }
-            vec![wrapper]
+        slice
+    }
+
+    /// The paragraph of a block use, or the span of an inline use with attributes or carriers.
+    fn wrapper(
+        &mut self,
+        children: &'a mut [Node<'a>],
+        block: bool,
+        attrs: Option<&owned::Attrs>,
+        carrier: Carrier,
+    ) -> Node<'a> {
+        let at = attrs.map(|a| &*self.arena.alloc(a.in_arena(self.arena)));
+        let wrapper = if block {
+            Node::Paragraph(self.arena.alloc(ast::Paragraph {
+                children,
+                attrs: at,
+                ..Default::default()
+            }))
         } else {
-            let out: Vec<Node<'a>> = slice.iter_mut().map(|c| take(self.arena, c)).collect();
-            if single {
-                if let Some(first) = out.first() {
-                    self.side.carriers.insert(first.payload_addr(), carrier);
-                }
-            }
-            out
+            Node::Span(self.arena.alloc(ast::Span {
+                children,
+                attrs: at,
+                ..Default::default()
+            }))
         };
-        for node in &placed {
-            self.side.scope.insert(node.payload_addr(), include);
+        if self.settings.roundtrip {
+            self.side.carriers.insert(wrapper.payload_addr(), carrier);
         }
-        placed
+        wrapper
     }
 
     fn refuse_at(
@@ -570,6 +647,7 @@ impl<'a> Pass<'a, '_> {
         n.for_each_child(&mut |c| self.mark_notes(c));
     }
 
+    #[allow(clippy::mut_mut)] // a list with a use is rebuilt into a new arena slice
     fn walk_list(&mut self, list: &mut &'a mut [Node<'a>]) {
         if !list.iter().any(|n| matches!(n, Node::SnippetUse(_))) {
             for n in list.iter_mut() {
@@ -665,7 +743,7 @@ pub(crate) fn expand<'a>(
         limit: limits.nodes.unwrap_or(crate::tables::SNIPPET_NODES),
         total: 0,
         budget: Budget {
-            budget,
+            bytes: budget,
             left: budget,
             reported: false,
         },

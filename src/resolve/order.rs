@@ -200,19 +200,10 @@ impl<'r, 'a> Order<'r, 'a> {
             in_marked_figure: ctx.in_marked_figure,
             note: ctx.note,
         });
+        if self.in_snippet_definition(n, defs, ctx, depth) {
+            return;
+        }
         match n {
-            Node::FootnoteRef(_) | Node::InlineFootnote(_) if self.in_snippet > 0 => {
-                self.visits.pop();
-                return;
-            }
-            Node::SnippetDefinition(d) => {
-                self.in_snippet += 1;
-                for c in d.children.iter() {
-                    self.walk(c, defs, ctx, depth + 1);
-                }
-                self.in_snippet -= 1;
-                return;
-            }
             Node::FootnoteRef(r) => {
                 if let Some(def) = defs.get(n, r.key) {
                     self.use_note(n, def, true);
@@ -255,6 +246,32 @@ impl<'r, 'a> Order<'r, 'a> {
             }
         }
         self.gather_columns(n, depth);
+    }
+
+    /// C2-N-090: a snippet definition renders nothing; its notes take no number.
+    /// True when `n` is such a definition or a note inside one.
+    fn in_snippet_definition(
+        &mut self,
+        n: &'r Node<'a>,
+        defs: &Defs<'r, 'a, '_>,
+        ctx: Ctx,
+        depth: usize,
+    ) -> bool {
+        match n {
+            Node::FootnoteRef(_) | Node::InlineFootnote(_) if self.in_snippet > 0 => {
+                self.visits.pop();
+                true
+            }
+            Node::SnippetDefinition(d) => {
+                self.in_snippet += 1;
+                for c in d.children.iter() {
+                    self.walk(c, defs, ctx, depth + 1);
+                }
+                self.in_snippet -= 1;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Adds `n` to the gathered nodes. A note leaves document order: the

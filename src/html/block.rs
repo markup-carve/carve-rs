@@ -301,7 +301,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return true;
         }
         let snippet = self.snippet_tail(n);
-        if snippet.is_none() && self.bare_el(p.attrs, p.lang, n) {
+        if self.bare_p(p, n, snippet.as_ref()) {
             if !bare {
                 out.push_str("<p>");
             }
@@ -312,7 +312,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return true;
         }
         let mut el = self.el(p.attrs, p.lang, n);
-        if bare && !has_attrs(p.attrs, p.lang) && snippet.is_none() {
+        if bare && Self::plain_leaf(p, snippet.as_ref()) {
             self.leaf_into(p.children, out);
             return true;
         }
@@ -324,6 +324,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.leaf_into(&*p.children, out);
         out.push_str("</p>");
         true
+    }
+
+    /// A `<p>` with no attribute, no source line and no snippet carriers.
+    fn bare_p(&self, p: &ast::Paragraph, n: &Node, snippet: Option<&String>) -> bool {
+        snippet.is_none() && self.bare_el(p.attrs, p.lang, n)
+    }
+
+    /// A paragraph whose content stands bare: no attributes and no snippet carriers.
+    fn plain_leaf(p: &ast::Paragraph, snippet: Option<&String>) -> bool {
+        !has_attrs(p.attrs, p.lang) && snippet.is_none()
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).

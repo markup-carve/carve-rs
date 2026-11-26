@@ -1039,28 +1039,7 @@ fn block_extension<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32
 
 fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
     match ty(node) {
-        "paragraph" => {
-            // C2-W-159: a paragraph whose only child is an inline use reads as a block use.
-            let kids = children(node);
-            if kids.len() == 1
-                && kids.first().is_some_and(|c| ty(c) == "snippet_use")
-                && super::node::attrs(node).is_none()
-                && caption(node).is_none()
-            {
-                lose(w, node, None);
-                let name = kids.first().and_then(|c| s(c, "name")).unwrap_or("");
-                emit(w, prefix, &crate::snippet::spelling(name));
-                return;
-            }
-            text_leaf(w, node, prefix, flags, "", "");
-            write_caption(w, caption(node), prefix, flags);
-        }
-        "snippet_definition" => snippet_definition(w, node, prefix, flags),
-        "snippet_use" => emit(
-            w,
-            prefix,
-            &crate::snippet::spelling(s(node, "name").unwrap_or("")),
-        ),
+        "paragraph" => paragraph(w, node, prefix, flags),
         "heading" => heading(w, node, prefix, flags),
         "thematic_break" => {
             attribute_line(w, node, prefix, &BlockParts::default());
@@ -1084,8 +1063,29 @@ fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
     }
 }
 
+/// C2-W-159: a paragraph whose only child is an inline use reads as a block use,
+/// so it is written as one and reported.
+fn paragraph<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
+    let kids = children(node);
+    let only_use = kids.len() == 1 && kids.first().is_some_and(|c| ty(c) == "snippet_use");
+    if only_use && super::node::attrs(node).is_none() && caption(node).is_none() {
+        lose(w, node, None);
+        let name = kids.first().and_then(|c| s(c, "name")).unwrap_or("");
+        emit(w, prefix, &crate::snippet::spelling(name));
+        return;
+    }
+    text_leaf(w, node, prefix, flags, "", "");
+    write_caption(w, caption(node), prefix, flags);
+}
+
 fn container_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
     match ty(node) {
+        "snippet_definition" => snippet_definition(w, node, prefix, flags),
+        "snippet_use" => emit(
+            w,
+            prefix,
+            &crate::snippet::spelling(s(node, "name").unwrap_or("")),
+        ),
         "footnote" => footnote(w, node, prefix, flags),
         "list" => write_list(w, node, prefix, flags),
         "definition_term" => text_leaf(w, node, prefix, flags, ":: ", "   "),

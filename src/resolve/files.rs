@@ -105,7 +105,13 @@ impl<'a> Files<'a> {
         }
     }
 
-    fn walk<'r>(&mut self, n: &'r Node<'a>, file: usize, depth: usize, later: &mut Vec<Later<'r, 'a>>) {
+    fn walk<'r>(
+        &mut self,
+        n: &'r Node<'a>,
+        file: usize,
+        depth: usize,
+        later: &mut Vec<Later<'r, 'a>>,
+    ) {
         if depth > super::WALK_CAP {
             return;
         }
@@ -123,7 +129,13 @@ impl<'a> Files<'a> {
         self.walk_in(n, file, depth, later);
     }
 
-    fn walk_in<'r>(&mut self, n: &'r Node<'a>, file: usize, depth: usize, later: &mut Vec<Later<'r, 'a>>) {
+    fn walk_in<'r>(
+        &mut self,
+        n: &'r Node<'a>,
+        file: usize,
+        depth: usize,
+        later: &mut Vec<Later<'r, 'a>>,
+    ) {
         let id = self.list.get(file).and_then(|f| f.id);
         if let Some((id, p)) = id.zip(n.pos()) {
             self.reaches.push((id, p.start(), p.end(), file));

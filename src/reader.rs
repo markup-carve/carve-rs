@@ -655,10 +655,14 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
 
 /// Whether the list `key` of a node of type `ty` holds inline nodes, by its schema row.
 fn inline_slot(ty: &str, key: &str) -> bool {
-    definitions().ok().is_some_and(|d| {
-        d["$defs"][ty]["properties"][key]["items"]["oneOf"]
-            .as_array()
-            .is_some_and(|refs| refs.iter().any(|r| r["$ref"] == "#/$defs/text"))
+    let at = format!("/$defs/{ty}/properties/{key}/items/oneOf");
+    definitions().is_ok_and(|d| {
+        d.pointer(&at)
+            .and_then(Value::as_array)
+            .is_some_and(|refs| {
+                refs.iter()
+                    .any(|r| r.get("$ref") == Some(&Value::from("#/$defs/text")))
+            })
     })
 }
 

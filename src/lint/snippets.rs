@@ -35,6 +35,54 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
     Some((start, pos.get("startColumn")?.as_u64()?))
 }
 
+/// C2-B-236: the end of the marker of a definition line that a marker with an id made text.
+fn id_marker(line: &str) -> Option<usize> {
+    let m = crate::snippet::marker(line)?;
+    let value = line.get(m.end..)?;
+    (m.has_id && value.starts_with(' ') && !value.trim().is_empty()).then_some(m.end)
+}
+
+struct Scan<'s, 'v> {
+    positions: Source<'s>,
+    used: HashSet<&'v str>,
+    seen: HashSet<&'v str>,
+    unused: bool,
+    ids: bool,
+}
+
+impl<'v> Scan<'_, 'v> {
+    fn child(&mut self, source: &str, child: V<'v>, index: usize, out: &mut Vec<Diagnostic>) {
+        let Some((start, column)) = start_of(child) else {
+            return;
+        };
+        match child.get("type").and_then(V::as_str) {
+            Some("snippet_definition") if self.unused => {
+                let name = child.get("name").and_then(V::as_str).unwrap_or("");
+                if !self.seen.insert(name) || self.used.contains(name) {
+                    return;
+                }
+                let pos = self.positions.pos(start + 1, start + 2 + name.len());
+                let mut d =
+                    Diagnostic::nth("unused-snippet", 0, &[("name", name)], None, Some(pos));
+                d.path = Some(format!("/children/{index}"));
+                out.push(d);
+            }
+            Some("paragraph") if self.ids && column == 1 => {
+                let line = source.get(start..).unwrap_or("");
+                let line = line.split('\n').next().unwrap_or("");
+                let Some(end) = line.starts_with("{$").then(|| id_marker(line)).flatten() else {
+                    return;
+                };
+                let pos = self.positions.pos(start, start + end);
+                let mut d = Diagnostic::nth("snippet-definition-id", 0, &[], None, Some(pos));
+                d.path = Some(format!("/children/{index}"));
+                out.push(d);
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn scan(source: &str, tree: V<'_>, opts: &LintOptions, out: &mut Vec<Diagnostic>) {
     // Both rules read a definition marker, which starts with `{$`.
     if !source.contains("{$") {
@@ -42,56 +90,22 @@ pub(super) fn scan(source: &str, tree: V<'_>, opts: &LintOptions, out: &mut Vec<
     }
     let unused = active("unused-snippet", opts);
     let ids = active("snippet-definition-id", opts);
-    if !unused && !ids {
-        return;
-    }
     let Some(children) = tree.get("children").and_then(V::as_array) else {
         return;
     };
-    let positions = Source::new(source);
-    let mut used = HashSet::new();
+    let mut scan = Scan {
+        positions: Source::new(source),
+        used: HashSet::new(),
+        seen: HashSet::new(),
+        unused,
+        ids,
+    };
     if unused {
-        used_names(tree, &mut used);
+        used_names(tree, &mut scan.used);
     }
-    let mut seen = HashSet::new();
     for index in 0..children.len() {
-        let Some(child) = children.get(index) else {
-            continue;
-        };
-        let Some((start, column)) = start_of(child) else {
-            continue;
-        };
-        match child.get("type").and_then(V::as_str) {
-            Some("snippet_definition") if unused => {
-                let name = child.get("name").and_then(V::as_str).unwrap_or("");
-                if !seen.insert(name) || used.contains(name) {
-                    continue;
-                }
-                let pos = positions.pos(start + 1, start + 2 + name.len());
-                let mut d =
-                    Diagnostic::nth("unused-snippet", 0, &[("name", name)], None, Some(pos));
-                d.path = Some(format!("/children/{index}"));
-                out.push(d);
-            }
-            Some("paragraph") if ids && column == 1 => {
-                let line = source.get(start..).unwrap_or("");
-                let line = line.split('\n').next().unwrap_or("");
-                if !line.starts_with("{$") {
-                    continue;
-                }
-                let Some(m) = crate::snippet::marker(line) else {
-                    continue;
-                };
-                let value = line.get(m.end..).unwrap_or("");
-                if !m.has_id || !value.starts_with(' ') || value.trim().is_empty() {
-                    continue;
-                }
-                let pos = positions.pos(start, start + m.end);
-                let mut d = Diagnostic::nth("snippet-definition-id", 0, &[], None, Some(pos));
-                d.path = Some(format!("/children/{index}"));
-                out.push(d);
-            }
-            _ => {}
+        if let Some(child) = children.get(index) {
+            scan.child(source, child, index, out);
         }
     }
 }
