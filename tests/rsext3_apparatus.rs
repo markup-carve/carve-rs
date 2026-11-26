@@ -265,3 +265,64 @@ fn pool_only_entry_closes_the_last_directive() {
         .join("\n")
     );
 }
+
+/// C2-X-072: a bundle member listed beside its bundle registers once, in either order.
+#[test]
+fn bundle_member_beside_its_bundle_registers_once() {
+    let cases = [
+        (
+            ["carve.glossary", "carve.term"],
+            "See :term[API].\n\n::: glossary\n:: API\n: An interface.\n:::\n",
+            "<a href=\"#gloss-API\" class=\"term\">API</a>",
+        ),
+        (
+            ["carve.index", "carve.indexTerm"],
+            "A :index[cat] here.\n\n::: index\n:::\n",
+            "<a href=\"#idx-cat-1\" class=\"index-backref\"",
+        ),
+    ];
+    for (names, source, piece) in cases {
+        for order in [names, [names[1], names[0]]] {
+            let mut host = Carve::new();
+            for name in order {
+                host.enable_standard(name, true).unwrap();
+            }
+            let out = host.render(source, &Options::default()).unwrap();
+            assert!(out.contains(piece), "{order:?}: {out}");
+        }
+    }
+}
+
+#[test]
+fn a_member_keeps_the_renderer_its_own_name_asks_for() {
+    let source = "See :term[API].\n\n::: glossary\n:: API\n: An interface.\n:::\n";
+    let mut host = Carve::new();
+    host.enable_standard("carve.glossary", false).unwrap();
+    let plain = host.render(source, &Options::default()).unwrap();
+    host.enable_standard("carve.term", true).unwrap();
+    let out = host.render(source, &Options::default()).unwrap();
+    assert_ne!(plain, out);
+    assert!(
+        out.contains("<a href=\"#gloss-API\" class=\"term\">API</a>"),
+        "{out}"
+    );
+}
+
+#[test]
+fn only_a_member_another_standard_name_brought_is_shared() {
+    let mut twice = Carve::new();
+    twice.enable_standard("carve.term", true).unwrap();
+    assert!(twice.enable_standard("carve.term", true).is_err());
+    for (bundle, member) in [
+        ("carve.glossary", "carve.term"),
+        ("carve.index", "carve.indexTerm"),
+    ] {
+        let mut shared = Carve::new();
+        shared.enable_standard(bundle, true).unwrap();
+        shared.enable_standard(member, true).unwrap();
+        assert!(shared.enable_standard(member, true).is_err(), "{member}");
+    }
+    let mut custom = Carve::new();
+    custom.register(extensions::glossary()).unwrap();
+    assert!(custom.enable_standard("carve.term", true).is_err());
+}

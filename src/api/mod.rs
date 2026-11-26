@@ -492,6 +492,8 @@ pub struct Carve {
     standard: standard::Standard,
     matchers: extensions::Matchers,
     host: extensions::HostFields,
+    /// Each extension `enable_standard` registered, with the name that brought it.
+    brought: Vec<(String, String)>,
 }
 
 impl Carve {
@@ -548,12 +550,45 @@ impl Carve {
                 extensions::CitationsOptions::default(),
             ));
         }
-        if let Some(bundle) = extensions::standard(name) {
-            return self.register(if renderer {
-                bundle
-            } else {
-                bundle.without_renderers()
-            });
+        if let Some(mut bundle) = extensions::standard(name) {
+            if !renderer {
+                bundle = bundle.without_renderers();
+            }
+            // C2-X-072: `carve.glossary` brings `carve.term` and `carve.index`
+            // brings `carve.indexTerm`; a member that another standard name
+            // already brought registers once, keeping a renderer either asked for.
+            let mut upgrade = Vec::new();
+            let mut taken = Vec::new();
+            for e in std::mem::take(&mut bundle.extensions) {
+                let by = |own: bool| {
+                    self.brought
+                        .iter()
+                        .any(|(member, via)| *member == e.declaration.name && (via == name) == own)
+                };
+                let shared = by(false) && !by(true);
+                if !shared {
+                    bundle.extensions.push(e);
+                    continue;
+                }
+                taken.push(e.declaration.name.clone());
+                if !e.renderers.is_empty() && !self.extensions.renders(&e.declaration) {
+                    upgrade.push(e);
+                }
+            }
+            bundle.matchers.retain(|m| !taken.contains(&m.extension));
+            let members: Vec<String> = bundle
+                .extensions
+                .iter()
+                .map(|e| e.declaration.name.clone())
+                .chain(taken)
+                .collect();
+            self.register(bundle)?;
+            for e in upgrade {
+                self.extensions.replace(e);
+            }
+            self.brought
+                .extend(members.into_iter().map(|m| (m, name.to_string())));
+            return Ok(());
         }
         self.standard.enable(name, renderer)
     }

@@ -18,6 +18,7 @@ const HELD: &[&str] = &[
     "CC-2275",
     // carve#6395: named snippets.
     "CC-2372", "CC-2377", "CC-2378", "CC-2379", "CC-2380", "CC-2383", "CC-2384",
+    "CC-2437", "CC-2438",
 ];
 
 fn call(request: &Value) -> Value {
@@ -41,7 +42,8 @@ fn check(case: &Value) -> Option<String> {
     let input = case["input"].as_str().unwrap_or("");
     let expected = &case["expected"];
     let mut failures = Vec::new();
-    if let Some(html) = expected["html"].as_str() {
+    let includes = expected["htmlIncludes"].as_str();
+    if expected["html"].is_string() || includes.is_some() {
         let mut request = json!({"call": "renderWithDiagnostics", "options": case["options"]});
         if let Some(host) = case.get("host") {
             request["host"] = host.clone();
@@ -54,11 +56,14 @@ fn check(case: &Value) -> Option<String> {
         }
         let out = call(&request);
         let got = out["ok"]["html"].as_str().unwrap_or("");
-        if got != html {
+        if let Some(html) = expected["html"].as_str().filter(|html| got != *html) {
             failures.push(format!(
                 "html\n  want {html}\n  got  {got} {}",
                 out["error"]
             ));
+        }
+        if let Some(piece) = includes.filter(|piece| !got.contains(piece)) {
+            failures.push(format!("html lacks {piece}\n  got  {got} {}", out["error"]));
         }
         let codes = out["ok"]["diagnostics"]
             .as_array()
@@ -125,6 +130,27 @@ fn c2_x_039_the_pinned_tabs_cases() {
     gate.finish();
 }
 
+/// The standard extension corpus through the boundary, as the readiness runner
+/// replays it (C2-X-072: a bundle member listed beside its bundle registers once).
+#[test]
+fn the_pinned_extension_cases() {
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/spec-conformance/extensions.json"
+    ))
+    .unwrap_or_default();
+    let corpus = parse_json(&text);
+    let cases = corpus["cases"].as_array().cloned().unwrap_or_default();
+    assert!(cases.len() >= 100, "{}", cases.len());
+    let mut gate = Gate::by_id("extension corpus", &[]);
+    for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
+        let failure = check(case);
+        gate.check(id, failure.is_none(), || failure.unwrap_or_default());
+    }
+    gate.finish();
+}
+
 /// Ruling D6 (carve#6070): clause cases of the spec after the engine pin.
 #[test]
 fn c2_x_056_selected_tab_and_static_sections() {
@@ -177,8 +203,13 @@ fn c2_x_056_selected_tab_and_static_sections() {
             "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run setup.</p></section><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Use</h3><p>Open the app.</p></section></div>",
         ),
     ];
-    let failures: Vec<String> = cases.iter().filter_map(check).collect();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let mut gate = Gate::by_id("extension corpus", &[]);
+    for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
+        let failure = check(case);
+        gate.check(id, failure.is_none(), || failure.unwrap_or_default());
+    }
+    gate.finish();
 }
 
 #[test]
