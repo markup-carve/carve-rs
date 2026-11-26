@@ -330,7 +330,7 @@ impl Tree {
             Ok(Value::Object(mut envelope)) if envelope.contains_key("document") => (
                 envelope
                     .remove("document")
-                    .map_or_else(String::new, |d| d.to_string()),
+                    .map_or_else(String::new, |d| crate::tree_number::to_string(&d)),
                 true,
             ),
             _ => (json.trim().to_string(), false),
@@ -383,7 +383,7 @@ impl Tree {
         top: Option<String>,
         keep_wire: bool,
     ) -> Result<Self, Error> {
-        let json = keep_wire.then(|| value.to_string());
+        let json = keep_wire.then(|| crate::tree_number::to_string(&value));
         if let Some(map) = value.as_object_mut() {
             map.remove("type");
         }
@@ -413,7 +413,7 @@ impl Tree {
         }
         Ok(Self {
             document: document.into(),
-            json: value.to_string().into(),
+            json: crate::tree_number::to_string(&value).into(),
             canonical: true,
             top,
             sources: std::collections::HashMap::new(),
@@ -1625,7 +1625,10 @@ pub fn encode_tree(tree: &Tree) -> String {
     }
     // serde_json's object map orders keys lexically without preserve_order.
     // Parsing the accepted tree removes input whitespace and insertion order.
-    deep_json(tree.json()).map_or_else(|_| tree.json().to_string(), |value| value.to_string())
+    deep_json(tree.json()).map_or_else(
+        |_| tree.json().to_string(),
+        |value| crate::tree_number::to_string(&value),
+    )
 }
 
 /// `encodeTree` with `positions` off or on.
@@ -1638,7 +1641,7 @@ pub fn encode_tree_with(tree: &Tree, opts: EncodeOptions) -> String {
         return encode_tree(tree);
     };
     strip_positions(&mut value);
-    value.to_string()
+    crate::tree_number::to_string(&value)
 }
 
 fn strip_positions(value: &mut Value) {

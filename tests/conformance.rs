@@ -45,14 +45,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2407", "html"),
     ("CC-2409", "html"),
     ("CC-2410", "html"),
-    // carve#6099 (carve#6812 G7): a tree number must keep its binary64 value.
-    ("CC-2313", "refusal"),
-    ("CC-2314", "refusal"),
-    ("CC-2315", "refusal"),
-    ("CC-2316", "refusal"),
-    ("CC-2317", "refusal"),
-    ("CC-2318", "refusal"),
-    ("CC-2319", "refusal"),
     // carve#6395: named snippets, `{$name}:` definitions and `{{ $name }}` uses.
     ("CC-2347", "children"),
     ("CC-2347", "html"),

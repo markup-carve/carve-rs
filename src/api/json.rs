@@ -43,12 +43,13 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
     de.disable_recursion_limit();
     let parsed =
         <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
-    let response = match parsed {
-        Ok(req) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
-        Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
+    let response = match (lost_tree_number(request, parsed.as_ref().ok()), parsed) {
+        (Some(lost), _) => Err(lost),
+        (None, Ok(req)) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
+        (None, Err(e)) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
-        Ok(Reply::Value(result)) => json!({ "ok": result }).to_string(),
+        Ok(Reply::Value(result)) => crate::tree_number::to_string(&json!({ "ok": result })),
         Ok(Reply::Tree(fields, tree)) => with_tree(fields, &tree),
         Err(e) => {
             let mut error = json!({
@@ -69,6 +70,54 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
             json!({ "error": error }).to_string()
         }
     }
+}
+
+/// C2-A-219: a number of a supplied tree, or of a patch that writes into
+/// one, that `serde_json` would round, read from the request text before it
+/// does. Text that does not parse names no call, so every tree is read.
+fn lost_tree_number(request: &str, req: Option<&Value>) -> Option<Error> {
+    let members: &[&str] = match req.map(|r| r.get("call").and_then(Value::as_str)) {
+        None => &["/tree", "/a", "/b"],
+        Some(Some("diffTree")) => &["/a", "/b"],
+        Some(Some("applyPatch")) => &["/tree", "/patch"],
+        Some(Some(
+            "render"
+            | "renderWithDiagnostics"
+            | "write"
+            | "writeWithDiagnostics"
+            | "migrateTree"
+            | "treeFingerprint"
+            | "validateTree"
+            | "encodeTree"
+            | "encodeEnvelope"
+            | "includeDependencies",
+        )) => &["/tree"],
+        Some(_) => &[],
+    };
+    let member = |path: &str| {
+        members.iter().copied().find(|t| {
+            path.strip_prefix(t)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+    };
+    if req.is_some_and(|r| members.iter().all(|t| r.pointer(t).is_none())) {
+        return None;
+    }
+    let crate::tree_number::Scan::Lost(path) =
+        crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some())
+    else {
+        return None;
+    };
+    let at = member(&path).unwrap_or("");
+    let inner = path.get(at.len()..).unwrap_or("").to_string();
+    Some(if at == "/patch" {
+        Error::Patch {
+            path: inner,
+            reason: "number does not keep its value as binary64".into(),
+        }
+    } else {
+        Error::Tree(crate::reader::lost_number(&inner))
+    })
 }
 
 /// The exit status of a response of [`call`]: 0 for `ok`, else the status
