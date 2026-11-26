@@ -905,16 +905,6 @@ impl StandardExtensions {
             if row(name).is_some_and(|r| r.get("matcher").is_none() && r["transform"] != true) {
                 continue;
             }
-            // C2-X-072: `carve.glossary` brings `carve.term`, `carve.index`
-            // brings `carve.indexTerm`; one bundle registers once.
-            let partner = match name.as_str() {
-                "carve.term" => Some("carve.glossary"),
-                "carve.indexTerm" => Some("carve.index"),
-                _ => None,
-            };
-            if partner.is_some_and(|p| names.iter().any(|n| n == p)) {
-                continue;
-            }
             let setting = |key: &str| {
                 options
                     .get(name)

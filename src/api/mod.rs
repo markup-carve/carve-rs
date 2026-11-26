@@ -548,7 +548,24 @@ impl Carve {
                 extensions::CitationsOptions::default(),
             ));
         }
-        if let Some(bundle) = extensions::standard(name) {
+        if let Some(mut bundle) = extensions::standard(name) {
+            // C2-X-072: `carve.glossary` brings `carve.term` and `carve.index`
+            // brings `carve.indexTerm`; a standard member registers once.
+            let taken: Vec<String> = bundle
+                .extensions
+                .iter()
+                .map(|e| &e.declaration)
+                .filter(|d| {
+                    self.extensions
+                        .declaration(&d.name)
+                        .is_some_and(|r| r.version == d.version)
+                })
+                .map(|d| d.name.clone())
+                .collect();
+            bundle
+                .extensions
+                .retain(|e| !taken.contains(&e.declaration.name));
+            bundle.matchers.retain(|m| !taken.contains(&m.extension));
             return self.register(if renderer {
                 bundle
             } else {
