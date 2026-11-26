@@ -210,6 +210,7 @@ pub(crate) fn expand_tree<'a>(
     let settings = snippet::expand::Settings {
         roundtrip: opts.roundtrip,
         source_len: usize::try_from(doc.src_byte_length.unwrap_or(0)).unwrap_or(0),
+        parsed: false,
     };
     let guard = snippet::expand::expand(doc, arena, settings, &mut found);
     diags.extend(snippet_diagnostics(doc, &found));
@@ -816,6 +817,7 @@ pub(crate) fn prepare_expanding<'a>(
         let settings = snippet::expand::Settings {
             roundtrip: opts.roundtrip,
             source_len: input.len(),
+            parsed: true,
         };
         *guard = snippet::expand::expand(&mut doc, arena, settings, found);
     }

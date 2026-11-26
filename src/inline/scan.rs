@@ -670,6 +670,7 @@ impl<'a> Scanner<'_, '_, 'a> {
         if self.at(i + 1) == Some(b'{')
             && let Some((end, a, b)) = crate::snippet::use_at(self.t, i)
         {
+            self.c.arena().note_snippet_use();
             let node = Node::SnippetUse(self.c.arena().alloc(crate::ast::SnippetUse {
                 name: self.c.keep(self.t.get(a..b).unwrap_or("")),
                 mode: crate::ast::SnippetUseMode::Inline,
