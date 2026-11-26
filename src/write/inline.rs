@@ -858,6 +858,9 @@ fn label_char(
 }
 
 fn image_node(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
+    if !has(node, "alt") && node.get("decorative").and_then(V::as_bool) != Some(true) {
+        w.unknown_alts.insert(id(node));
+    }
     if let Some(raw) = raw_reference(w, node, flags) {
         w.raw_refs.push(raw.clone());
         return format!("!{raw}");
@@ -888,7 +891,7 @@ fn collapsed_alt(w: &mut Writer<'_>, node: V<'_>, alt: String) -> String {
         .is_some_and(|img| {
             ty(img) == "image"
                 && s(img, "key") == Some(key)
-                && img.get("alt").map(V::to_value) == node.get("alt").map(V::to_value)
+                && s(img, "alt") == Some(s(node, "alt").unwrap_or(""))
         });
     if ok { key.to_string() } else { alt }
 }

@@ -49,10 +49,6 @@ const HELD: &[(&str, &str)] = &[
         "carve#3598 (carve#6812 G3): metadata.fields beside leading frontmatter is a loss",
     ),
     (
-        "CC-2213",
-        "carve#6804: an image whose alt is unknown is reported as image-alt-unknown",
-    ),
-    (
         "CC-2265",
         "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
     ),
@@ -63,10 +59,6 @@ const HELD: &[(&str, &str)] = &[
     (
         "CC-2267",
         "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
-    ),
-    (
-        "CC-2293",
-        "carve#6804 option A: a decorative image is written with empty brackets, no report",
     ),
     (
         "CC-2323",

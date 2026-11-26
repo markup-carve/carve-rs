@@ -194,6 +194,8 @@ pub struct Writer<'t> {
     pub written_chars: usize,
     /// The verbatim references written (C2-W-075): their backslashes are the author's.
     pub raw_refs: Vec<String>,
+    /// C2-W-011: the images written whose alt text is unknown, reported as `image-alt-unknown` after the rounds.
+    pub unknown_alts: AddrSet<usize>,
     /// C2-W-088, C2-W-075: the rounds write every reference from the tree; the verbatim texts are taken after them.
     pub tree_refs: bool,
     /// C2-W-088: the rounds report the constructs behind a comparison's stop.
@@ -270,6 +272,7 @@ impl<'t> Writer<'t> {
             work_cap: usize::MAX,
             written_chars: 0,
             raw_refs: Vec::new(),
+            unknown_alts: AddrSet::default(),
             tree_refs: false,
             tree_ref_ids: HashSet::new(),
             report_behind: false,

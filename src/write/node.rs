@@ -618,10 +618,41 @@ fn equal_json_node(
             None => false,
         };
     });
-    Some(same && left.next().is_none())
+    Some((same && left.next().is_none()) || unset_alt_equal(a, b))
 }
 
 fn equal_objects(
+    a: V<'_>,
+    lv: Option<&str>,
+    b: V<'_>,
+    rv: Option<&str>,
+    span_marks: bool,
+    unmarked: bool,
+) -> bool {
+    equal_fields_of(a, lv, b, rv, span_marks, unmarked) || unset_alt_equal(a, b)
+}
+
+/// C2-W-011: an image with no `alt`, decorative or unknown, is written `![](URL)` and reads back with the empty
+/// alt; the two are the same image but for those fields.
+fn unset_alt_equal(a: V<'_>, b: V<'_>) -> bool {
+    let unset =
+        |x: V<'_>, y: V<'_>| !has(x, "alt") && s(y, "alt") == Some("") && !has(y, "decorative");
+    if ty(a) != "image" || ty(b) != "image" || !(unset(a, b) || unset(b, a)) {
+        return false;
+    }
+    let bare = |x: V<'_>| {
+        let mut v = x.to_value();
+        if let Value::Object(m) = &mut v {
+            m.remove("alt");
+            m.remove("decorative");
+        }
+        v
+    };
+    let (x, y) = (bare(a), bare(b));
+    equal_fields_of(V::Json(&x), None, V::Json(&y), None, false, false)
+}
+
+fn equal_fields_of(
     a: V<'_>,
     lv: Option<&str>,
     b: V<'_>,
