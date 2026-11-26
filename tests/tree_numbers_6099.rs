@@ -141,3 +141,20 @@ fn a_call_is_refused_only_for_a_tree_it_reads() {
     .unwrap();
     assert_eq!(out["error"]["path"], "/metadata/fields/n/value", "{out}");
 }
+
+#[test]
+fn a_patch_value_that_binary64_does_not_keep_is_refused() {
+    let out: Value = serde_json::from_str(&call(&format!(
+        r#"{{"call":"applyPatch","tree":{},"patch":[{{"op":"replace","path":"/metadata/fields/n/value","value":0.10000000000000000001}}]}}"#,
+        metadata("1"),
+    )))
+    .unwrap();
+    assert_eq!(out["error"]["name"], "CarvePatchError", "{out}");
+    assert_eq!(out["error"]["path"], "/0/value", "{out}");
+    let out: Value = serde_json::from_str(&call(&format!(
+        r#"{{"call":"sourceFingerprint","source":"a","tree":{}}}"#,
+        metadata("0.10000000000000000001"),
+    )))
+    .unwrap();
+    assert!(out.get("ok").is_some(), "{out}");
+}

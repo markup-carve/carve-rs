@@ -72,40 +72,52 @@ fn call_in(request: &str, includes: Option<Includes>) -> String {
     }
 }
 
-/// C2-A-219: a number of a supplied tree that `serde_json` would round, read
-/// from the request text before it does. Text that does not parse names no
-/// call, so every tree member is read.
+/// C2-A-219: a number of a supplied tree, or of a patch that writes into
+/// one, that `serde_json` would round, read from the request text before it
+/// does. Text that does not parse names no call, so every tree is read.
 fn lost_tree_number(request: &str, req: Option<&Value>) -> Option<Error> {
-    let trees: &[&str] = match req.map(|r| r.get("call").and_then(Value::as_str)) {
+    let members: &[&str] = match req.map(|r| r.get("call").and_then(Value::as_str)) {
         None => &["/tree", "/a", "/b"],
         Some(Some("diffTree")) => &["/a", "/b"],
+        Some(Some("applyPatch")) => &["/tree", "/patch"],
         Some(Some(
-            "parse"
-            | "parseWithDiagnostics"
-            | "parseWithLayout"
-            | "lint"
-            | "format"
-            | "formatWithDiagnostics"
-            | "importDocument",
-        )) => &[],
-        Some(_) => &["/tree"],
+            "render"
+            | "renderWithDiagnostics"
+            | "write"
+            | "writeWithDiagnostics"
+            | "migrateTree"
+            | "treeFingerprint"
+            | "validateTree"
+            | "encodeTree"
+            | "encodeEnvelope"
+            | "includeDependencies",
+        )) => &["/tree"],
+        Some(_) => &[],
     };
     let member = |path: &str| {
-        trees.iter().copied().find(|t| {
+        members.iter().copied().find(|t| {
             path.strip_prefix(t)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         })
     };
-    if req.is_some_and(|r| trees.iter().all(|t| r.pointer(t).is_none())) {
+    if req.is_some_and(|r| members.iter().all(|t| r.pointer(t).is_none())) {
         return None;
     }
-    match crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some()) {
-        crate::tree_number::Scan::Lost(path) => {
-            let inner = member(&path).map_or("", |t| path.get(t.len()..).unwrap_or(""));
-            Some(Error::Tree(crate::reader::lost_number(inner)))
+    let crate::tree_number::Scan::Lost(path) =
+        crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some())
+    else {
+        return None;
+    };
+    let at = member(&path).unwrap_or("");
+    let inner = path.get(at.len()..).unwrap_or("").to_string();
+    Some(if at == "/patch" {
+        Error::Patch {
+            path: inner,
+            reason: "number does not keep its value as binary64".into(),
         }
-        _ => None,
-    }
+    } else {
+        Error::Tree(crate::reader::lost_number(&inner))
+    })
 }
 
 /// The exit status of a response of [`call`]: 0 for `ok`, else the status
