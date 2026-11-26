@@ -279,9 +279,11 @@ pub fn render_tree_with_diagnostics(
         &doc,
         losses,
         derived,
-        &extension_nodes,
-        &destinations,
-        &profiles,
+        &TreeLossRecords {
+            extension_nodes: &extension_nodes,
+            destinations: &destinations,
+            profiles: &profiles,
+        },
         opts,
         None,
     ));
@@ -377,9 +379,11 @@ pub(crate) fn render_arena_hooked<'a>(
         doc,
         unallowed(losses, opts),
         derived,
-        &extension_nodes,
-        &destinations,
-        &profiles,
+        &TreeLossRecords {
+            extension_nodes: &extension_nodes,
+            destinations: &destinations,
+            profiles: &profiles,
+        },
         opts,
         shift_override,
     );
@@ -586,16 +590,22 @@ fn node_paths_by<'a>(
     found
 }
 
+/// The renderer's records that name what each tree loss is about.
+struct TreeLossRecords<'r> {
+    extension_nodes: &'r [(usize, String)],
+    destinations: &'r [html::DestinationLoss],
+    profiles: &'r [html::ProfileLoss],
+}
+
 fn tree_loss_diagnostics(
     doc: &ast::Document<'_>,
     losses: Vec<&'static str>,
     derived: Option<usize>,
-    extension_nodes: &[(usize, String)],
-    destination_losses: &[html::DestinationLoss],
-    profile_losses: &[html::ProfileLoss],
+    records: &TreeLossRecords<'_>,
     opts: &Options,
     shift_override: Option<&heading_shift::Found>,
 ) -> Vec<diagnostic::Diagnostic> {
+    let (extension_nodes, destination_losses) = (records.extension_nodes, records.destinations);
     let shift = opts.heading_shift.to_string();
     let targets: std::collections::HashSet<usize> = extension_nodes
         .iter()
@@ -611,7 +621,7 @@ fn tree_loss_diagnostics(
     let node_path = |target: usize| paths.get(&target).cloned();
     let mut extensions = extension_nodes.iter();
     let mut destinations = destination_losses.iter();
-    let mut profiles = profile_losses.iter();
+    let mut profiles = records.profiles.iter();
     let profile_name = opts.profile.name();
     losses
         .into_iter()
