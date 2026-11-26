@@ -1,0 +1,31 @@
+{
+  "name": "i08-auto-assembled-under-numeric-parent",
+  "description": "A nested auto resolves against the document as assembled under a numeric parent shift.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-048",
+    "C2-N-049",
+    "C2-N-050"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"ChildTop\">\n  <h2>ChildTop</h2>\n  <section id=\"GrandTop\">\n    <h3>GrandTop</h3>\n  </section>\n</section>",
+    "fmt": "{{ child @shift:1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      },
+      {
+        "id": "grand",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child @shift:1 }}",
+  "files": {
+    "child": "# ChildTop\n\n{{ grand @shift:auto }}",
+    "grand": "# GrandTop"
+  }
+}

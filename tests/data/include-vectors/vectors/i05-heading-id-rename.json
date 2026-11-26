@@ -1,0 +1,36 @@
+{
+  "name": "i05-heading-id-rename",
+  "description": "Duplicate explicit heading ids across includes are renamed deterministically (-2).",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-057",
+    "C2-N-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"dup\">\n  <h1>A</h1>\n</section>\n<section id=\"dup\">\n  <h1>B</h1>\n</section>",
+    "fmt": "{{ a }}\n\n{{ b }}\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "b"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      },
+      {
+        "id": "b",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: `duplicate-id` (C2-N-057, C2-N-058)",
+  "entry": "{{ a }}\n\n{{ b }}",
+  "files": {
+    "a": "{#dup}\n# A",
+    "b": "{#dup}\n# B"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "i01-section-list-item-id-selects-nothing",
+  "description": "A list item id names no selectable block: include-section, the directive stays literal, the dependency still resolves (I1a).",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ c.crv #li }}</p>",
+    "fmt": "{{ c.crv #li }}\n",
+    "warnings": [
+      {
+        "code": "include-section"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "c.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-H-133 writes the directive as text, the options in the order of C2-W-058",
+  "entry": "{{ c.crv #li }}\n",
+  "files": {
+    "c.crv": "-{#li} item\n- two\n"
+  }
+}

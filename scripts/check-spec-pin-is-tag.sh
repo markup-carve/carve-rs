@@ -7,33 +7,26 @@
 # commit between two releases. Release-time only: between releases the pin
 # moves freely, and check-spec-pin-ancestry.sh guards it in CI.
 #
-# Usage: check-spec-pin-is-tag.sh [submodule-path]
-# Env:   SPEC_REMOTE (default: the submodule url from .gitmodules)
+# Usage: check-spec-pin-is-tag.sh [pin-file]
+# Env:   SPEC_REMOTE (default: https://github.com/markup-carve/carve.git)
 #
 # Exit 0  a 0.x.y tag on the spec remote resolves to the pinned commit.
 # Exit 1  no such tag - move the pin to a spec release tag before releasing.
-# Exit 2  the check could not run (no submodule gitlink, remote unreachable).
+# Exit 2  the check could not run (no pin file, remote unreachable).
 
 set -euo pipefail
 
-submodule_path="${1:-tests/spec}"
+pin_file="${1:-spec-data/SOURCE_COMMIT}"
 
 cd "$(git rev-parse --show-toplevel)"
 
-pinned=$(git ls-tree HEAD "$submodule_path" | awk '$2 == "commit" { print $3 }')
-if [ -z "$pinned" ]; then
-  echo "CANNOT CHECK: no submodule gitlink recorded at '$submodule_path'." >&2
+pinned=$(tr -d '[:space:]' < "$pin_file" 2>/dev/null || true)
+if ! printf '%s' "$pinned" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "CANNOT CHECK: no commit recorded in '$pin_file'." >&2
   exit 2
 fi
 
-remote="${SPEC_REMOTE:-}"
-if [ -z "$remote" ]; then
-  remote=$(git config -f .gitmodules --get "submodule.$submodule_path.url" || true)
-fi
-if [ -z "$remote" ]; then
-  echo "CANNOT CHECK: no url for submodule '$submodule_path' in .gitmodules; set SPEC_REMOTE." >&2
-  exit 2
-fi
+remote="${SPEC_REMOTE:-https://github.com/markup-carve/carve.git}"
 
 if ! refs=$(git ls-remote --tags "$remote"); then
   echo "CANNOT CHECK: could not list the tags of $remote." >&2
@@ -48,10 +41,10 @@ tags=$(printf '%s\n' "$refs" \
   | grep -E '^0\.[0-9]+\.[0-9]+$' | sort -u || true)
 
 if [ -n "$tags" ]; then
-  echo "ok: spec pin ${pinned:0:12} at '$submodule_path' is spec release $(echo "$tags" | paste -sd, -)."
+  echo "ok: spec pin ${pinned:0:12} in '$pin_file' is spec release $(echo "$tags" | paste -sd, -)."
   exit 0
 fi
 
-echo "::error::spec pin ${pinned:0:12} at '$submodule_path' is not a published spec release tag (0.x.y) on $remote." >&2
+echo "::error::spec pin ${pinned:0:12} in '$pin_file' is not a published spec release tag (0.x.y) on $remote." >&2
 echo "Move the pin to the spec release this engine implements, then release." >&2
 exit 1

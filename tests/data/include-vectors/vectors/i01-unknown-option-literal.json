@@ -1,0 +1,34 @@
+{
+  "name": "i01-unknown-option-literal",
+  "description": "An unknown option warns and leaves the directive literal.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-H-133",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child @nope:1 }}</p>",
+    "fmt": "{{ child @nope:1 }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` (C2-N-025); text without spans (C2-H-133)",
+  "entry": "{{ child @nope:1 }}",
+  "files": {
+    "child": "text"
+  }
+}

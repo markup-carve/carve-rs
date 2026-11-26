@@ -1,0 +1,50 @@
+{
+  "name": "i04-included-warning-source-line",
+  "description": "An unresolved directive on child line 3 names the child and that line, not the parent include site.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-061",
+    "C2-N-063"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>First.</p>\n<p>{{ missing.crv }}</p>",
+    "fmt": "{{ child.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found",
+        "file": "child.crv"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "child.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child.crv",
+        "read": true
+      },
+      {
+        "id": "missing.crv",
+        "read": false
+      }
+    ],
+    "locations": [
+      {
+        "code": "include-not-found",
+        "file": "child.crv",
+        "line": 3,
+        "column": 1
+      }
+    ]
+  },
+  "note": "`include-not-found` (C2-N-061); the line is counted in the child (C2-N-063)",
+  "entry": "{{ child.crv }}",
+  "files": {
+    "child.crv": "First.\n\n{{ missing.crv }}"
+  },
+  "options": {
+    "file": "book.crv"
+  }
+}

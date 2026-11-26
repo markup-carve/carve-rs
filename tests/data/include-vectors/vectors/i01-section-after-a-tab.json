@@ -1,0 +1,35 @@
+{
+  "name": "i01-section-after-a-tab",
+  "description": "A tab is content (CARVE-P7-001), not padding: a bare path keeps it, so the path is `child` plus a tab and does not resolve.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-202",
+    "C2-N-061",
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child\t #pick }}</p>",
+    "fmt": "{{ child\t #pick }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child\t",
+        "read": false
+      }
+    ]
+  },
+  "note": "the path `child` and a tab is not found: `include-not-found` (C2-N-061); the unexpanded directive renders as text with no tag span (C2-H-133)",
+  "entry": "{{ child\t#pick }}",
+  "files": {
+    "child": "# A\n\nskip\n\n{#pick}\n# B\n\nyes\n\n# D\n\nskip"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "i09-verbatim-raw-block",
+  "description": "A directive inside a raw block stays literal.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-127",
+    "C2-N-002"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code class=\"language-html\">{{ child }}\n</code></pre>",
+    "fmt": "```=html\n{{ child }}\n```\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "note": "`rawHtml` is off by default, so the raw block is escaped text (C2-H-127); the directive inside it is still not expanded",
+  "entry": "```=html\n{{ child }}\n```",
+  "files": {
+    "child": "EXPANDED"
+  }
+}

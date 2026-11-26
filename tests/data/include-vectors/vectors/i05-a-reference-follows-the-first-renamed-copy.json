@@ -1,0 +1,34 @@
+{
+  "name": "i05-a-reference-follows-the-first-renamed-copy",
+  "description": "With two colliding copies renamed -2 and -3, a crossref in that child resolves to -2, the copy it reaches first.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"dup\">\n  <h1>Parent</h1>\n</section>\n<section id=\"dup\">\n  <h1>One</h1>\n</section>\n<section id=\"dup\">\n  <h1>Two</h1>\n  <p>See <a href=\"#dup\">Parent</a>.</p>\n</section>",
+    "fmt": "{#dup}\n= Parent\n\n{{ a.crv }}\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "a.crv"
+      },
+      {
+        "code": "duplicate-id",
+        "file": "a.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: the cross-reference reaches the first occurrence in document order (C2-N-058)",
+  "entry": "{#dup}\n# Parent\n\n{{ a.crv }}\n",
+  "files": {
+    "a.crv": "{#dup}\n# One\n\n{#dup}\n# Two\n\nSee </#dup>.\n"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "i04-attribution-grandchild",
+  "description": "A failure deep in the chain is attributed to the grandchild, not an ancestor.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-061",
+    "C2-N-063"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Chapter.</p>\n<p>Section.</p>\n<p>{{ missing.crv }}</p>",
+    "fmt": "{{ chapter.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found",
+        "file": "section.crv"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "section.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": true
+      },
+      {
+        "id": "section.crv",
+        "read": true
+      },
+      {
+        "id": "missing.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-not-found` replaces `include-unresolved` (C2-N-061)",
+  "entry": "{{ chapter.crv }}",
+  "files": {
+    "chapter.crv": "Chapter.\n\n{{ section.crv }}",
+    "section.crv": "Section.\n\n{{ missing.crv }}"
+  },
+  "options": {
+    "file": "book.crv"
+  }
+}

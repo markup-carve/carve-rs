@@ -1,0 +1,28 @@
+{
+  "name": "i01-section-adjacent-to-a-bare-path",
+  "description": "A section name needs no space after a bare path; it selects what the spaced spelling selects.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"pick\">\n  <h1>B</h1>\n  <p>yes</p>\n</section>",
+    "fmt": "{{ child #pick }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child#pick }}",
+  "files": {
+    "child": "# A\n\nskip\n\n{#pick}\n# B\n\nyes\n\n# D\n\nskip"
+  },
+  "checkFmtExpandEquivalence": true
+}

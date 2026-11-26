@@ -1,0 +1,31 @@
+{
+  "name": "i04-fragment-containment-unclosed-fence",
+  "description": "An unclosed fence in the child closes at child EOF and does not swallow parent content.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-015",
+    "C2-A-045"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Before.</p>\n<pre><code class=\"language-js\">let x = 1;\n</code></pre>\n<p>After.</p>",
+    "fmt": "Before.\n\n{{ child }}\n\nAfter.\n",
+    "warnings": [
+      {
+        "code": "unclosed-code-fence",
+        "file": "child"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "note": "outcome unchanged (the fence ends at the end of the child); the code value gains its final line feed by C2-A-045, and the child reports `unclosed-code-fence`",
+  "entry": "Before.\n\n{{ child }}\n\nAfter.",
+  "files": {
+    "child": "```js\nlet x = 1;"
+  }
+}

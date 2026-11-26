@@ -1,0 +1,690 @@
+//! The JSON boundary: one request in, one response out, for bindings
+//! (`PyO3`, `magnus`, `wasm-bindgen`) and for hosts that run the WASI command
+//! `carve call`. Names are the `tooling.md` spellings.
+//!
+//! A request is an object: `call`, the call name; `source` (text) or
+//! `sourceBytes` (a list of byte values) for calls that read Carve source;
+//! `tree` (a tree as a JSON value) for calls that read a tree, and for
+//! `render` instead of a source; `json` (text) for `decodeTree`; `options`,
+//! an object of the options of `data/options.json`; `positions` (default
+//! true) for `parse` and `parseWithDiagnostics`; `target` for `write`
+//! (`carve`, `html`, or the exports `markdown`, `plain` and `ansi`, which
+//! also read `smartTypography`, `strictLosses` and `urlPolicy`);
+//! and, PROVISIONAL, `host` with `documentTransforms` for the render calls.
+//!
+//! The response is `{"ok": RESULT}` or `{"error": {"name", "category",
+//! "status", "message"}}`, the error row of C2-T-040.
+//!
+//! ```
+//! let out = carve::api::json::call(r#"{"call":"render","source":"Hi *there*"}"#);
+//! assert_eq!(out, r#"{"ok":{"html":"<p>Hi <strong>there</strong></p>"}}"#);
+//! ```
+
+use super::{Carve, EncodeOptions, Entry, Error, Includes, Input, Tree, options::CallOptions};
+use serde_json::{Map, Value, json};
+
+/// Runs one request and returns the response JSON text.
+#[must_use]
+pub fn call(request: &str) -> String {
+    call_in(request, None)
+}
+
+/// Runs one request as [`call`] does, with `includes` as the value of the
+/// `includes` option (C2-N-003): a host resolver, which JSON text has no form
+/// for. A request whose options also name `includes` is refused.
+#[must_use]
+pub fn call_with_includes(request: &str, includes: Includes) -> String {
+    call_in(request, Some(includes))
+}
+
+fn call_in(request: &str, includes: Option<Includes>) -> String {
+    let mut de = serde_json::Deserializer::from_str(request);
+    // A tree in a request nests past serde_json's default limit of 128.
+    de.disable_recursion_limit();
+    let parsed =
+        <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
+    let response = match (lost_tree_number(request, parsed.as_ref().ok()), parsed) {
+        (Some(lost), _) => Err(lost),
+        (None, Ok(req)) => match limits(&req) {
+            Ok(l) => crate::snippet::expand::with_limits(l, || {
+                host(&req).and_then(|h| dispatch(&h, &req, includes))
+            }),
+            Err(e) => Err(e),
+        },
+        (None, Err(e)) => Err(Error::option("request", format!("invalid JSON: {e}"))),
+    };
+    match response {
+        Ok(Reply::Value(result)) => crate::tree_number::to_string(&json!({ "ok": result })),
+        Ok(Reply::Tree(fields, tree)) => with_tree(fields, &tree),
+        Err(e) => {
+            let mut error = json!({
+                "name": e.spec_name(),
+                "category": e.category(),
+                "status": e.status(),
+                "message": e.to_string(),
+            });
+            if let (Some(path), Some(m)) = (e.path(), error.as_object_mut()) {
+                m.insert("path".into(), path.into());
+            }
+            if let (Error::Patch { reason, .. }, Some(m)) = (&e, error.as_object_mut()) {
+                m.insert("reason".into(), reason.as_str().into());
+            }
+            if let (Error::Write { diagnostics, .. }, Some(m)) = (&e, error.as_object_mut()) {
+                m.insert("diagnostics".into(), json!(diagnostics));
+            }
+            json!({ "error": error }).to_string()
+        }
+    }
+}
+
+/// C2-A-219: a number of a supplied tree, or of a patch that writes into
+/// one, that `serde_json` would round, read from the request text before it
+/// does. Text that does not parse names no call, so every tree is read.
+fn lost_tree_number(request: &str, req: Option<&Value>) -> Option<Error> {
+    let members: &[&str] = match req.map(|r| r.get("call").and_then(Value::as_str)) {
+        None => &["/tree", "/a", "/b"],
+        Some(Some("diffTree")) => &["/a", "/b"],
+        Some(Some("applyPatch")) => &["/tree", "/patch"],
+        Some(Some(
+            "render"
+            | "renderWithDiagnostics"
+            | "write"
+            | "writeWithDiagnostics"
+            | "migrateTree"
+            | "treeFingerprint"
+            | "validateTree"
+            | "encodeTree"
+            | "encodeEnvelope"
+            | "includeDependencies",
+        )) => &["/tree"],
+        Some(_) => &[],
+    };
+    let member = |path: &str| {
+        members.iter().copied().find(|t| {
+            path.strip_prefix(t)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+    };
+    if req.is_some_and(|r| members.iter().all(|t| r.pointer(t).is_none())) {
+        return None;
+    }
+    let crate::tree_number::Scan::Lost(path) =
+        crate::tree_number::scan(request, usize::MAX, |path| member(path).is_some())
+    else {
+        return None;
+    };
+    let at = member(&path).unwrap_or("");
+    let inner = path.get(at.len()..).unwrap_or("").to_string();
+    Some(if at == "/patch" {
+        Error::Patch {
+            path: inner,
+            reason: "number does not keep its value as binary64".into(),
+        }
+    } else {
+        Error::Tree(crate::reader::lost_number(&inner))
+    })
+}
+
+/// The exit status of a response of [`call`]: 0 for `ok`, else the status
+/// of its category.
+#[must_use]
+pub fn status(response: &str) -> i32 {
+    serde_json::from_str::<Value>(response)
+        .ok()
+        .and_then(|v| v.pointer("/error/status").and_then(Value::as_i64))
+        .and_then(|n| i32::try_from(n).ok())
+        .unwrap_or(0)
+}
+
+/// A result, or the members of a parse result and its tree as the JSON text
+/// the engine wrote: reading that text into a `Value` only to write it again
+/// cost several times the parse (carve-rs#4336).
+enum Reply {
+    Value(Value),
+    Tree(Map<String, Value>, String),
+}
+
+fn with_tree(fields: Map<String, Value>, tree: &str) -> String {
+    let head = Value::Object(fields).to_string();
+    let mut out = String::with_capacity(tree.len() + head.len() + 16);
+    out.push_str(r#"{"ok":"#);
+    out.push_str(&head[..head.len() - 1]);
+    if head.len() > 2 {
+        out.push(',');
+    }
+    // `tree` sorts after every other member, as the map would place it.
+    out.push_str(r#""tree":"#);
+    out.push_str(tree);
+    out.push_str("}}");
+    out
+}
+
+fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Reply, Error> {
+    let name = req
+        .get("call")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::option("call", "the request names no call"))?;
+    let mut opts = call_options(name, req)?;
+    host_includes(&mut opts, req, includes)?;
+    let enabled;
+    let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
+        host
+    } else {
+        enabled = with_extensions(host, &opts)?;
+        &enabled
+    };
+    if matches!(name, "parse" | "parseWithDiagnostics" | "parseWithLayout") {
+        return parse_call(host, name, req, &opts);
+    }
+    match name {
+        "render" | "renderWithDiagnostics" => render_call(host, name, req, &opts),
+        "lint" => lint_call(req, &opts),
+        "format" | "formatWithDiagnostics" => format_call(host, name, req, &opts),
+        "write" | "writeWithDiagnostics" => write_call(host, req, &opts),
+        "importDocument" => import_call(host, req, &opts),
+        "migrateTree" => migrate_call(req),
+        _ => helper_call(name, req, &opts),
+    }
+    .map(Reply::Value)
+}
+
+/// The host resolver of [`call_with_includes`] as the `includes` option of every stage.
+fn host_includes(
+    opts: &mut CallOptions,
+    req: &Value,
+    includes: Option<Includes>,
+) -> Result<(), Error> {
+    let Some(includes) = includes else {
+        return Ok(());
+    };
+    if req.pointer("/options/includes").is_some() {
+        return Err(Error::option(
+            "includes",
+            "the request names includes and the host passes a resolver",
+        ));
+    }
+    opts.options.includes = Some(includes);
+    opts.lint.includes.clone_from(&opts.options.includes);
+    opts.write
+        .render
+        .includes
+        .clone_from(&opts.options.includes);
+    Ok(())
+}
+
+/// The calls that read no source as a document: the tree calls, the patch
+/// calls, `headingId` and `positionOf`.
+fn helper_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    match name {
+        "diffTree" | "applyPatch" | "sourceFingerprint" | "treeFingerprint" => {
+            patch_call(name, req)
+        }
+        "headingId" => heading_id_call(req, opts),
+        "positionOf" => position_call(req),
+        _ => tree_call(name, req),
+    }
+}
+
+/// The options of a request; a `write` to an export target also reads the
+/// export options of the render stage.
+fn call_options(name: &str, req: &Value) -> Result<CallOptions, Error> {
+    let export = req
+        .get("target")
+        .and_then(Value::as_str)
+        .and_then(crate::export::Target::from_name)
+        .filter(|_| matches!(name, "write" | "writeWithDiagnostics"));
+    if let Some(target) = export {
+        super::options::export_from_json(name, target, req.get("options"))
+    } else {
+        super::options::from_json(name, req.get("options"))
+    }
+}
+
+fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
+    if let Some(ext) = opts.renderers.iter().find(|r| !opts.extensions.contains(r)) {
+        return Err(Error::option(
+            "renderers",
+            format!("{ext} is not among the enabled extensions"),
+        ));
+    }
+    let mut enabled = host.clone();
+    enabled.standard.tabs_aria = opts.tabs_aria;
+    for ext in &opts.extensions {
+        if ext == "carve.codeGroup" && opts.code_group_aria {
+            enabled.register(super::extensions::code_group(
+                super::extensions::CodeGroupOptions {
+                    mode: super::extensions::CodeGroupMode::Aria,
+                    ..Default::default()
+                },
+            ))?;
+        } else {
+            enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+        }
+    }
+    Ok(enabled)
+}
+
+fn lint_call(req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    Ok(json!({ "diagnostics": entries(&super::lint(input(&bytes), &opts.lint)?) }))
+}
+
+fn format_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    let written = host.format_with_diagnostics(input(&bytes), &opts.write)?;
+    if name == "format" {
+        super::refuse_losses(written.clone())?;
+    }
+    Ok(json!({ "source": written.output, "diagnostics": entries(&written.diagnostics) }))
+}
+
+fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
+    if name == "decodeTree" {
+        let text = req
+            .get("json")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Error::option("json", "decodeTree takes json text"))?;
+        return Ok(
+            json!({ "tree": tree_value(&super::decode_tree_with(text, super::TreeReadOptions {
+            annotations: req.get("annotations"),
+        })?) }),
+        );
+    }
+    let mut tree = tree(req)?;
+    tree.set_file(req.get("file").and_then(Value::as_str).map(str::to_string));
+    Ok(match name {
+        "validateTree" => {
+            super::validate_tree_with(
+                &tree,
+                super::TreeReadOptions {
+                    annotations: req.get("annotations"),
+                },
+            )?;
+            json!({})
+        }
+        "encodeTree" => json!({ "json": super::encode_tree(&tree) }),
+        "encodeEnvelope" => json!({ "json": super::encode_envelope(&tree) }),
+        _ => json!({ "dependencies": dependencies(&tree) }),
+    })
+}
+
+fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Reply, Error> {
+    let bytes = source(req)?;
+    let positions = req
+        .get("positions")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if name == "parseWithLayout" {
+        let parsed = super::parse_with_layout_for(host, input(&bytes), &opts.options)?;
+        let mut out = Map::new();
+        out.insert("diagnostics".into(), entries(&parsed.diagnostics));
+        out.insert(
+            "suppressedDiagnostics".into(),
+            parsed.suppressed_diagnostics.into(),
+        );
+        out.insert("layout".into(), parsed.layout);
+        let encoded = super::encode_tree_with(&parsed.tree, EncodeOptions { positions: true });
+        return Ok(Reply::Tree(out, encoded));
+    }
+    let mut out = Map::new();
+    let tree = if name == "parseWithDiagnostics" {
+        let parsed = host.parse_with_diagnostics(input(&bytes), &opts.options)?;
+        out.insert("diagnostics".into(), entries(&parsed.diagnostics));
+        out.insert(
+            "suppressedDiagnostics".into(),
+            parsed.suppressed_diagnostics.into(),
+        );
+        parsed.tree
+    } else {
+        host.parse(input(&bytes), &opts.options)?
+    };
+    let encoded = super::encode_tree_with(&tree, EncodeOptions { positions });
+    Ok(Reply::Tree(out, encoded))
+}
+
+fn render_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let o = &opts.options;
+    if req.get("tree").is_some() {
+        let tree = tree(req)?;
+        if name == "render" {
+            return Ok(json!({ "html": host.render_tree(&tree, o)? }));
+        }
+        return Ok(rendered(&host.render_tree_with_diagnostics(&tree, o)?));
+    }
+    let bytes = source(req)?;
+    if name == "render" {
+        return Ok(json!({ "html": host.render(input(&bytes), o)? }));
+    }
+    Ok(rendered(&host.render_with_diagnostics(input(&bytes), o)?))
+}
+
+/// `host.limits` of the conformance harness (conformance/README.md): the
+/// snippet limits and the derived-text budget of one case; no Carve option.
+fn limits(req: &Value) -> Result<crate::snippet::expand::Limits, Error> {
+    let mut out = crate::snippet::expand::Limits::default();
+    let Some(spec) = req.get("host").and_then(|h| h.get("limits")) else {
+        return Ok(out);
+    };
+    let Some(spec) = spec.as_object() else {
+        return Err(Error::option("limits", "not an object"));
+    };
+    for (key, value) in spec {
+        let n = value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or_else(|| Error::option("limits", format!("{key} is not a count")))?;
+        match key.as_str() {
+            "snippetDepth" => out.depth = Some(n),
+            "snippetNodes" => out.nodes = Some(n),
+            "derivedTextBytes" => out.derived = Some(n),
+            _ => return Err(Error::option("limits", format!("unknown field {key}"))),
+        }
+    }
+    Ok(out)
+}
+
+/// PROVISIONAL: `host.documentTransforms`, a list of `{name, after, insert}` or `{name, after, setLevel}`
+/// that inserts the node `insert` after the node at the pointer `after`, in
+/// order (C2-X-053). `name` is the qualified name of the inserted extension.
+fn host(req: &Value) -> Result<Carve, Error> {
+    let mut host = Carve::default();
+    let Some(spec) = req.get("host") else {
+        return Ok(host);
+    };
+    let Some(spec) = spec.as_object() else {
+        return Err(Error::option("host", "the host is not an object"));
+    };
+    for (key, list) in spec {
+        if key == "limits" {
+            continue;
+        }
+        if key != "documentTransforms" {
+            return Err(Error::option("host", format!("unknown field {key}")));
+        }
+        let Some(list) = list.as_array() else {
+            return Err(Error::option("documentTransforms", "not a list"));
+        };
+        for item in list {
+            let text = |k: &str| {
+                item.get(k)
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .ok_or_else(|| {
+                        Error::option("documentTransforms", format!("{k} is missing or not text"))
+                    })
+            };
+            let node = item.get("insert").filter(|n| n.is_object()).cloned();
+            let set_level = item.get("setLevel").and_then(Value::as_i64);
+            let set_value = item
+                .get("setValue")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if usize::from(node.is_some())
+                + usize::from(set_level.is_some())
+                + usize::from(set_value.is_some())
+                != 1
+            {
+                return Err(Error::option(
+                    "documentTransforms",
+                    "provide insert, setLevel or setValue",
+                ));
+            }
+            let version = node
+                .as_ref()
+                .and_then(|n| n.get("version"))
+                .and_then(Value::as_str)
+                .unwrap_or("1")
+                .to_string();
+            let after = text("after")?;
+            let transform: Box<dyn super::DocumentTransform> = if let Some(node) = node {
+                Box::new(super::extension::InsertTransform { after, node })
+            } else if let Some(value) = set_value {
+                Box::new(super::extension::SetValueTransform { after, value })
+            } else {
+                Box::new(super::extension::SetLevelTransform {
+                    after,
+                    level: set_level.unwrap_or(1),
+                })
+            };
+            host.register_extension(super::Extension {
+                declaration: super::ExtensionDeclaration {
+                    name: text("name")?,
+                    version,
+                    required: false,
+                    slots: Vec::new(),
+                },
+                renderers: Vec::new(),
+                transform: Some(transform),
+            })?;
+        }
+    }
+    Ok(host)
+}
+
+/// C2-M-001: `source` is the input, `from` names its format (`html`,
+/// `markdown`, `gfm` or `djot`); `rawHtml` and `strictLosses` are options.
+fn import_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let format = match req.get("from").and_then(Value::as_str) {
+        Some(name) => super::ImportFormat::from_name(name)
+            .ok_or_else(|| Error::option("from", format!("unknown value \"{name}\"")))?,
+        None => {
+            return Err(Error::option(
+                "from",
+                "importDocument takes from: html, markdown, gfm or djot",
+            ));
+        }
+    };
+    let input = req
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::option("source", "importDocument takes the input as source text"))?;
+    let imported = host.import_from(
+        input,
+        format,
+        &super::ImportOptions {
+            raw_html: opts.options.raw_html,
+            strict_losses: opts.options.strict_losses,
+            adapter: opts.adapter,
+            list_table: opts.list_table,
+        },
+        &super::LossOptions {
+            allow_losses: opts.options.allow_losses.clone(),
+            max_losses: opts.options.max_losses,
+        },
+    )?;
+    Ok(json!({
+        "tree": tree_value(&imported.tree),
+        "source": imported.source,
+        "diagnostics": entries(&imported.diagnostics),
+        "suppressedDiagnostics": imported.suppressed_diagnostics,
+    }))
+}
+
+fn write_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let tree = tree(req)?;
+    let written = match req.get("target").and_then(Value::as_str) {
+        Some(target) => host.write_to(target, &tree, &opts.write)?,
+        None => host.write_with_diagnostics(&tree, &opts.write)?,
+    };
+    if req.get("call").and_then(Value::as_str) == Some("write") {
+        super::refuse_losses(written.clone())?;
+    }
+    Ok(json!({ "output": written.output, "diagnostics": entries(&written.diagnostics) }))
+}
+
+fn rendered(r: &super::Rendered) -> Value {
+    json!({
+        "html": r.html,
+        "diagnostics": entries(&r.diagnostics),
+        "suppressedDiagnostics": r.suppressed_diagnostics,
+    })
+}
+
+/// The source of a request: `source` text or `sourceBytes`.
+fn source(req: &Value) -> Result<Source, Error> {
+    if let Some(text) = req.get("source").and_then(Value::as_str) {
+        return Ok(Source::Text(text.to_string()));
+    }
+    let Some(items) = req.get("sourceBytes").and_then(Value::as_array) else {
+        return Err(Error::option(
+            "source",
+            "the call takes source or sourceBytes",
+        ));
+    };
+    items
+        .iter()
+        .map(|b| b.as_u64().and_then(|n| u8::try_from(n).ok()))
+        .collect::<Option<Vec<u8>>>()
+        .map(Source::Bytes)
+        .ok_or_else(|| Error::option("sourceBytes", "an item is not a byte value"))
+}
+
+enum Source {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+fn input(s: &Source) -> Input<'_> {
+    match s {
+        Source::Text(t) => Input::Text(t),
+        Source::Bytes(b) => Input::Bytes(b),
+    }
+}
+
+fn tree(req: &Value) -> Result<Tree, Error> {
+    let value = req
+        .get("tree")
+        .ok_or_else(|| Error::option("tree", "the call takes a tree"))?;
+    Tree::from_value(value)
+}
+
+fn tree_value(tree: &Tree) -> Value {
+    crate::api::deep_json(&super::encode_tree(tree)).unwrap_or(Value::Null)
+}
+
+fn entries(list: &[Entry]) -> Value {
+    serde_json::to_value(list).unwrap_or_else(|_| Value::Array(Vec::new()))
+}
+
+/// C2-T-022: `path`, `from`, `file` and `read` of each dependency.
+fn dependencies(tree: &Tree) -> Value {
+    super::include_dependencies(tree)
+        .into_iter()
+        .map(|d| {
+            let mut m = Map::new();
+            m.insert("path".into(), d.path.into());
+            if let Some(from) = d.from {
+                m.insert("from".into(), from.into());
+            }
+            m.insert("read".into(), d.file.is_some().into());
+            if let Some(file) = d.file {
+                m.insert("file".into(), file.into());
+            }
+            Value::Object(m)
+        })
+        .collect()
+}
+
+/// `diffTree` (`a`, `b`), `applyPatch` (`tree`, `patch`, `fingerprint`),
+/// `sourceFingerprint` (`source` or `sourceBytes`) and `treeFingerprint`.
+fn patch_call(name: &str, req: &Value) -> Result<Value, Error> {
+    let tree_at = |key: &str| {
+        req.get(key)
+            .ok_or_else(|| Error::option(key, format!("{name} takes a tree as {key}")))
+            .and_then(Tree::from_value)
+    };
+    Ok(match name {
+        "diffTree" => json!({ "patch": super::diff_tree(&tree_at("a")?, &tree_at("b")?) }),
+        "applyPatch" => apply_patch_call(req)?,
+        "sourceFingerprint" => {
+            let bytes = source(req)?;
+            let raw = match &bytes {
+                Source::Text(t) => t.as_bytes(),
+                Source::Bytes(b) => b.as_slice(),
+            };
+            json!({ "fingerprint": super::source_fingerprint(raw) })
+        }
+        _ => json!({ "fingerprint": super::tree_fingerprint(&tree(req)?) }),
+    })
+}
+
+fn apply_patch_call(req: &Value) -> Result<Value, Error> {
+    let fingerprint = match req.get("fingerprint") {
+        None => None,
+        Some(v) => Some(
+            v.as_str()
+                .ok_or_else(|| Error::option("fingerprint", "not text"))?,
+        ),
+    };
+    let patched = super::apply_patch(
+        &tree(req)?,
+        super::patch::operations(req.get("patch"))?,
+        fingerprint,
+    )?;
+    Ok(json!({ "tree": tree_value(&patched) }))
+}
+
+/// `headingId`: `text` and the option `headingIds`; `id` is null under `off`.
+fn heading_id_call(req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    if let Some(other) = req
+        .get("options")
+        .and_then(Value::as_object)
+        .and_then(|m| m.keys().find(|k| *k != "headingIds"))
+    {
+        return Err(Error::option(other, "the call headingId does not read it"));
+    }
+    let text = req
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::option("text", "not a string"))?;
+    Ok(json!({ "id": super::heading_id(text, opts.options.heading_ids) }))
+}
+
+/// `positionOf` (C2-T-041): `source` or `sourceBytes`, and `offset`.
+fn position_call(req: &Value) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    let offset = req
+        .get("offset")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| {
+            Error::option(
+                "offset",
+                format!(
+                    "{} is no offset into the source",
+                    req.get("offset")
+                        .map_or_else(|| "undefined".into(), Value::to_string)
+                ),
+            )
+        })?;
+    let p = super::position_of(input(&bytes), offset)?;
+    Ok(json!({ "line": p.line, "column": p.column }))
+}
+
+/// `migrateTree` (C2-A-178, C2-A-180): `tree`, a 1.x or draft tree or
+/// envelope, and the optional `source` its offsets count.
+fn migrate_call(req: &Value) -> Result<Value, Error> {
+    let tree = req
+        .get("tree")
+        .ok_or_else(|| Error::option("tree", "the call takes a tree"))?;
+    let source = match req.get("source") {
+        None => None,
+        Some(v) => Some(
+            v.as_str()
+                .ok_or_else(|| Error::option("source", "not text"))?
+                .to_string(),
+        ),
+    };
+    let migrated = super::migrate_tree_with(tree, &super::MigrateOptions { source })?;
+    let mut out = json!({
+        "tree": tree_value(&migrated.tree),
+        "diagnostics": entries(&migrated.diagnostics),
+        "layout": migrated.layout,
+    });
+    if let Some(envelope) = migrated.envelope {
+        if let Some(m) = out.as_object_mut() {
+            m.insert("envelope".into(), super::writer::tree_value(&envelope)?);
+        }
+    }
+    Ok(out)
+}

@@ -1,0 +1,34 @@
+{
+  "name": "i04-attribution-toplevel",
+  "description": "An unresolvable directive is attributed to the top-level document.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-061",
+    "C2-A-142"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ missing }}</p>",
+    "fmt": "{{ missing }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "missing",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-not-found` (C2-N-061)",
+  "entry": "{{ missing }}",
+  "files": {},
+  "options": {
+    "file": "book.crv"
+  }
+}

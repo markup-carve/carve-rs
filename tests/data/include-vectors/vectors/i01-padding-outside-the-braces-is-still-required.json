@@ -1,0 +1,22 @@
+{
+  "name": "i01-padding-outside-the-braces-is-still-required",
+  "description": "The adjacency inside the slots does not relax the padding: {{path#name}} with no outer padding is ordinary text.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{child#pick}}</p>",
+    "fmt": "{{child#pick}}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "entry": "{{child#pick}}",
+  "files": {
+    "child": "{#pick}\nbody"
+  }
+}

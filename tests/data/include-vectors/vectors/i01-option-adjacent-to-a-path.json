@@ -1,0 +1,27 @@
+{
+  "name": "i01-option-adjacent-to-a-path",
+  "description": "An option needs no space after a bare path.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"Head\">\n  <h2>Head</h2>\n  <p>Body.</p>\n</section>",
+    "fmt": "{{ child @shift:1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child@shift:1 }}",
+  "files": {
+    "child": "# Head\n\nBody."
+  }
+}

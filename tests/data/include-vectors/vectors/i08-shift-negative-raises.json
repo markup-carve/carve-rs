@@ -1,0 +1,26 @@
+{
+  "name": "i08-shift-negative-raises",
+  "description": "A negative shift raises heading levels.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-048",
+    "C2-N-049",
+    "C2-N-050"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"A\">\n  <h1>A</h1>\n  <section id=\"B\">\n    <h2>B</h2>\n  </section>\n</section>",
+    "fmt": "{{ child @shift:-1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child @shift:-1 }}",
+  "files": {
+    "child": "## A\n\n### B"
+  }
+}

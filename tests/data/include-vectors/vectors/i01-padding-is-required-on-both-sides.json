@@ -1,0 +1,22 @@
+{
+  "name": "i01-padding-is-required-on-both-sides",
+  "description": "One space is required on each side: {{c.crv}} and {{ c.crv}} are literal text.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{c.crv}}</p>\n<p>{{ c.crv}}</p>\n<p>{{c.crv }}</p>",
+    "fmt": "{{c.crv}}\n\n{{ c.crv}}\n\n{{c.crv }}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "entry": "{{c.crv}}\n\n{{ c.crv}}\n\n{{c.crv }}\n",
+  "files": {
+    "c.crv": "body\n"
+  }
+}

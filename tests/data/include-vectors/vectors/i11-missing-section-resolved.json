@@ -1,0 +1,33 @@
+{
+  "name": "i11-missing-section-resolved",
+  "description": "A missing #section keeps the dependency RESOLVED (the file was read) and warns.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child #nope }}</p>",
+    "fmt": "{{ child #nope }}\n",
+    "warnings": [
+      {
+        "code": "include-section"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-H-133 writes the directive as text, the options in the order of C2-W-058",
+  "entry": "{{ child #nope }}",
+  "files": {
+    "child": "# Real"
+  }
+}

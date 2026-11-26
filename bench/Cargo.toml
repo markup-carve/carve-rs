@@ -1,0 +1,21 @@
+[package]
+name = "carve-bench"
+version = "0.0.0"
+edition = "2024"
+description = "Times the 0.2 engine against the 0.1 engine on the normal path, stage by stage."
+license = "MIT"
+publish = false
+
+# Its own workspace: the 0.1 crate is a dependency here, so the lints of the
+# 0.2 crate's CI must not reach it.
+[workspace]
+
+[dependencies]
+carve = { package = "carve-lang", path = "..", features = ["profile"] }
+carve_0_1 = { package = "carve-lang", version = "=0.1.14" }
+libc = "0.2"
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

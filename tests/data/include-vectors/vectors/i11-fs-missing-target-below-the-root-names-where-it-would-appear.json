@@ -1,0 +1,41 @@
+{
+  "name": "i11-fs-missing-target-below-the-root-names-where-it-would-appear",
+  "description": "An unresolved target in a file below the root is resolved against that file, like a resolved one.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-013",
+    "C2-N-084"
+  ],
+  "resolver": "filesystem",
+  "expected": {
+    "html": "<p>{{ missing.crv }}</p>",
+    "fmt": "{{ sub/frag.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found",
+        "file": "sub/frag.crv"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "sub/frag.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "sub/frag.crv",
+        "read": true
+      },
+      {
+        "id": "sub/missing.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-not-found` (C2-N-013); the place is computed by the host from the path and the including file (C2-N-084)",
+  "tree": {
+    "main.crv": "{{ sub/frag.crv }}\n",
+    "sub/frag.crv": "{{ missing.crv }}\n"
+  },
+  "entryPath": "main.crv",
+  "root": "."
+}

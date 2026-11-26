@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Breaking
+
+- The crate is now the Carve 0.2 engine: the `carve2` crate moves to the root as `carve-lang` (imported as `carve`), its library is `carve::api`, and the `carve2` binary, including the WASI `carve2 call`, is now `carve` (`carve call`). The 0.1 engine, its API, CLI, docs and the `experimental-event-parser` features are removed; `README.md` maps every 0.1 call to its 0.2 counterpart. The `fs` feature (default on) still removes every code path that opens a file. Rust 1.88 is the new minimum. The Markdown, plain-text and ANSI writers return as `markdown`, `plain` and `ansi` writer targets in a later change.
+
 ### Fixes
 
 - `to_html` renders a loose bullet list, such as a blank line before a nested list, on its fast path instead of the full parser; a blank before a nested list had made 0.1.14 about 1.7x slower than 0.1.13 on such documents (markup-carve/carve#6026).

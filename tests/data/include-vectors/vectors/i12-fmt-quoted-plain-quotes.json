@@ -1,0 +1,32 @@
+{
+  "name": "i12-fmt-quoted-plain-quotes",
+  "description": "A quoted path formats with PLAIN quotes so any engine reads it back the same.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ \"my chapter.crv\" }}</p>",
+    "fmt": "{{ \"my chapter.crv\" }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "my chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver`; the text writes the decoded path, not curly quotes (C2-H-133); `fmt` unchanged",
+  "entry": "{{ \"my chapter.crv\" }}",
+  "files": {}
+}

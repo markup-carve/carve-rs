@@ -1,4 +1,0 @@
-| Item | Qty |
-| --- | --- |
-| Apple | 3 |
-| Pear | 5 |

@@ -1,0 +1,33 @@
+{
+  "name": "i01c-code-section-conflict",
+  "description": "`#section` with `@code` is a selection conflict.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child #intro @code:js }}</p>",
+    "fmt": "{{ child #intro @code:js }}\n",
+    "warnings": [
+      {
+        "code": "include-selection-conflict"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "the conflicting directive is now a dependency that was not read (C2-N-083)",
+  "entry": "{{ child #intro @code:js }}",
+  "files": {
+    "child": "# Intro\n\nBody."
+  }
+}

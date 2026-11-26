@@ -1,493 +1,505 @@
-//! Port of carve-js `test/svg-sanitize.test.ts`: the hand-rolled SVG sanitizer.
-//!
-//! Behavioral assertions mirror the carve-js `toContain` / `not.toContain`
-//! checks; several cases also pin the exact byte output captured from carve-js
-//! (`dist/svg-sanitize.js`) so the two implementations cannot silently diverge.
+//! PROVISIONAL public `sanitize_svg` (carve#6754): byte parity with carve-php
+//! `SvgSanitizer` (7f531fa), which carries the fixes of carve#6755,
+//! carve#6760, carve#6761, carve#6763, carve#6764, carve#6765, carve#6773 and
+//! carve#6774.
 
-use carve::{sanitize_svg, SanitizeSvgOptions};
+use carve::api::UrlPolicy;
+use carve::api::extensions::{SanitizeResult, SanitizeSvgOptions, sanitize_svg};
+use serde_json::Value;
 
-fn opts() -> SanitizeSvgOptions {
-    SanitizeSvgOptions::default()
+fn options(value: &Value) -> SanitizeSvgOptions {
+    let flag = |name: &str| value[name].as_bool().unwrap_or(false);
+    let list = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s.as_str().unwrap().to_string())
+            .collect()
+    };
+    let policy = &value["urlPolicy"];
+    SanitizeSvgOptions {
+        allow_style: flag("allowStyle"),
+        allow_links: flag("allowLinks"),
+        allow_animation: flag("allowAnimation"),
+        allow_external_images: flag("allowExternalImages"),
+        url_policy: if policy.get("allow").is_some() {
+            Some(UrlPolicy::Allow(list(&policy["allow"])))
+        } else if policy.get("deny").is_some() {
+            Some(UrlPolicy::Deny(list(&policy["deny"])))
+        } else {
+            None
+        },
+    }
 }
 
-fn san(src: &str) -> String {
-    sanitize_svg(src, &opts()).svg
+fn sanitize(source: &str) -> SanitizeResult {
+    sanitize_svg(source, &SanitizeSvgOptions::default())
 }
 
-fn san_with(src: &str, o: SanitizeSvgOptions) -> String {
-    sanitize_svg(src, &o).svg
+fn kept(source: &str, opts: &SanitizeSvgOptions) -> String {
+    sanitize_svg(source, opts).svg
 }
-
-fn wrap(inner: &str) -> String {
-    format!("<svg viewBox=\"0 0 10 10\">{inner}</svg>")
-}
-
-const NS: &str = "xmlns=\"http://www.w3.org/2000/svg\"";
-
-// ---------------------------------------------------------------------------
-// element filtering
-// ---------------------------------------------------------------------------
 
 #[test]
-fn keeps_a_clean_presentational_svg() {
-    let src = wrap("<path d=\"M0 0L10 10\" fill=\"currentColor\"/>");
-    let r = sanitize_svg(&src, &opts());
-    assert!(r.ok);
+fn output_equals_carve_php_on_its_parity_rows() {
+    let mut rows: Vec<Value> =
+        serde_json::from_str(include_str!("data/svg-sanitize/parity.json")).unwrap();
+    assert_eq!(rows.len(), 770);
+    // The rows a js-first ruling changed (carve#6763, #6765, #6774), as
+    // carve-php f23005e8 and 7f531fa writes them.
+    let deltas: Vec<Value> =
+        serde_json::from_str(include_str!("data/svg-sanitize/parity-js-first.json")).unwrap();
+    assert_eq!(deltas.len(), 130);
+    for delta in &deltas {
+        let row = &mut rows[usize::try_from(delta["index"].as_u64().unwrap()).unwrap()];
+        assert_eq!(row["src"], delta["src"], "delta {}", delta["index"]);
+        row["svg"] = delta["svg"].clone();
+        row["ok"] = delta["ok"].clone();
+    }
+    let mut failures = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let source = row["src"].as_str().unwrap();
+        let got = sanitize_svg(source, &options(&row["opts"]));
+        let want_svg = row["svg"].as_str().unwrap();
+        let want_ok = row["ok"].as_bool().unwrap();
+        if got.svg != want_svg || got.ok != want_ok {
+            failures.push(format!(
+                "{} {i}: {source:?}\n  want {want_ok} {want_svg:?}\n  got  {} {:?}",
+                row["from"], got.ok, got.svg
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} rows differ:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn script_is_dropped_with_its_subtree() {
     assert_eq!(
-        r.svg,
-        format!(
-            "<svg {NS} viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\" fill=\"currentColor\"/></svg>"
-        )
+        sanitize("<svg><script>alert(1)</script><circle r=\"5\"/></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"5\"/></svg>".into(),
+            ok: true,
+        }
     );
 }
 
 #[test]
-fn drops_script_and_its_content() {
-    let r = sanitize_svg(&wrap("<script>alert(1)</script><circle r=\"5\"/>"), &opts());
-    assert!(r.ok);
-    assert!(!r.svg.contains("script"));
-    assert!(!r.svg.contains("alert"));
-    assert!(r.svg.contains("<circle r=\"5\""));
-}
-
-#[test]
-fn drops_foreign_object_subtree() {
-    let svg = san(&wrap(
-        "<foreignObject><body xmlns=\"http://www.w3.org/1999/xhtml\"><img src=x onerror=alert(1)></body></foreignObject>",
-    ));
-    assert!(!svg.contains("foreignObject"));
-    assert!(!svg.contains("onerror"));
-    assert!(!svg.contains("<img"));
-}
-
-#[test]
-fn drops_smil_animation_by_default() {
-    let svg = san(&wrap(
-        "<rect width=\"10\" height=\"10\"><animate onbegin=\"alert(1)\" attributeName=\"x\"/></rect>",
-    ));
-    assert!(svg.contains("<rect"));
-    assert!(!svg.contains("animate"));
-    assert!(!svg.contains("onbegin"));
-}
-
-#[test]
-fn drops_comments_cdata_pi_and_doctype() {
-    let src = format!(
-        "<!DOCTYPE svg><?xml-stylesheet href=\"x\"?>{}",
-        wrap("<!-- c --><![CDATA[ x ]]><path d=\"M0 0\"/>")
+fn root_xmlns_inside_a_value_is_kept() {
+    // carve#6755: the carve-js regex cut the quote here and turned the rect's
+    // id text into an onload attribute.
+    assert_eq!(
+        sanitize("<svg id=\"a xmlns=b\"><rect id=\"x onload=alert(1) y\"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"a xmlns=b\"><rect id=\"x onload=alert(1) y\"/></svg>"
     );
-    let svg = san(&src);
-    assert!(!svg.contains("<!--"));
-    assert!(!svg.contains("CDATA"));
-    assert!(!svg.contains("DOCTYPE"));
-    assert!(!svg.contains("xml-stylesheet"));
-    assert!(svg.contains("<path d=\"M0 0\""));
 }
 
 #[test]
-fn keeps_nested_allowed_tags() {
-    let inner =
-        "<defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/></linearGradient>\
-<filter id=\"f\"><feGaussianBlur stdDeviation=\"2\"/></filter></defs>\
-<g transform=\"translate(1,1)\"><rect width=\"8\" height=\"8\" fill=\"url(#g)\"/></g>";
-    let r = sanitize_svg(&wrap(inner), &opts());
-    assert!(r.ok);
-    assert!(r.svg.contains("<linearGradient"));
-    assert!(r.svg.contains("<feGaussianBlur"));
-    assert!(r.svg.contains("<g transform=\"translate(1,1)\""));
-}
-
-// ---------------------------------------------------------------------------
-// attribute filtering
-// ---------------------------------------------------------------------------
-
-#[test]
-fn strips_every_on_handler() {
-    let svg = san(&wrap("<circle r=\"5\" onclick=\"x()\" onload=\"y()\"/>"));
-    assert!(svg.contains("<circle r=\"5\""));
-    assert!(!svg.contains("onclick"));
-    assert!(!svg.contains("onload"));
-}
-
-#[test]
-fn blocks_entity_encoded_schemes_in_href() {
-    let links = SanitizeSvgOptions {
-        allow_links: true,
-        ..Default::default()
-    };
-    let num = san_with(
-        &wrap("<a href=\"jav&#x61;script:alert(1)\"><rect width=\"1\" height=\"1\"/></a>"),
-        links,
+fn root_xmlns_attributes_are_replaced_by_name() {
+    assert_eq!(
+        sanitize("<svg xmlns=\"x\" XMLNS=\"y\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><rect/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><rect/></svg>"
     );
-    assert!(!num.contains("href="));
-    let named = san_with(
-        &wrap("<a href=\"javascript&colon;alert(1)\"><rect width=\"1\" height=\"1\"/></a>"),
-        links,
+    assert_eq!(
+        sanitize("<svg xmlns><rect/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
     );
-    assert!(!named.contains("href="));
 }
 
 #[test]
-fn accepts_leading_whitespace_after_dropped_declaration() {
-    let src = "<?xml version=\"1.0\"?>\n<!DOCTYPE svg>\n<svg viewBox=\"0 0 1 1\"><rect width=\"1\" height=\"1\"/></svg>";
-    let r = sanitize_svg(src, &opts());
-    assert!(r.ok);
-    assert!(r.svg.starts_with("<svg"));
-    assert!(r.svg.contains("<rect width=\"1\" height=\"1\""));
-}
-
-#[test]
-fn drops_dangerous_href_keeps_local_frag() {
-    let bad = san(&wrap("<use href=\"javascript:alert(1)\"/>"));
-    assert!(!bad.contains("javascript"));
-    let ext = san(&wrap("<use href=\"https://evil.example/x.svg#a\"/>"));
-    assert!(!ext.contains("https://evil"));
-    let local = san(&wrap("<use href=\"#icon\"/>"));
-    assert!(local.contains("href=\"#icon\""));
-}
-
-#[test]
-fn drops_style_by_default() {
-    let svg = san(&wrap(
-        "<rect style=\"fill:red\" width=\"10\" height=\"10\"/>",
-    ));
-    assert!(!svg.contains("style"));
-}
-
-#[test]
-fn allow_style_keeps_benign_scrubs_dangerous() {
-    let style = SanitizeSvgOptions {
+fn style_with_a_css_image_function_is_dropped() {
+    // carve#6760: C2-H-162 blanks these in the core renderer.
+    let opts = SanitizeSvgOptions {
         allow_style: true,
-        ..Default::default()
+        ..SanitizeSvgOptions::default()
     };
-    let ok = san_with(
-        &wrap("<rect style=\"fill:red\" width=\"1\" height=\"1\"/>"),
-        style,
-    );
-    assert!(ok.contains("style=\"fill:red\""));
-    let bad = san_with(
-        &wrap("<rect style=\"background:url(javascript:alert(1))\" width=\"1\" height=\"1\"/>"),
-        style,
-    );
-    assert!(!bad.contains("url("));
-    assert!(!bad.contains("javascript"));
-}
-
-#[test]
-fn always_drops_style_element_even_with_allow_style() {
-    let style = SanitizeSvgOptions {
-        allow_style: true,
-        ..Default::default()
-    };
-    let svg = san_with(
-        &wrap("<style>@import url(https://attacker.example/x.css)</style><rect width=\"1\" height=\"1\"/>"),
-        style,
-    );
-    assert!(!svg.contains("style"));
-    assert!(!svg.contains("@import"));
-    assert!(!svg.contains("attacker"));
-    assert!(svg.contains("<rect width=\"1\" height=\"1\""));
-}
-
-#[test]
-fn allow_links_does_not_widen_external_href_onto_use() {
-    let links = SanitizeSvgOptions {
-        allow_links: true,
-        ..Default::default()
-    };
-    let on = san_with(&wrap("<use href=\"https://evil.example/x.svg#a\"/>"), links);
-    assert!(!on.contains("https://evil"));
-    assert!(san_with(&wrap("<use href=\"#i\"/>"), links).contains("href=\"#i\""));
-    let link = san_with(
-        &wrap("<a href=\"https://ok.example/\"><rect width=\"1\" height=\"1\"/></a>"),
-        links,
-    );
-    assert!(link.contains("href=\"https://ok.example/\""));
-}
-
-#[test]
-fn blocks_os_handler_schemes_on_links_even_with_allow_links() {
-    let links = SanitizeSvgOptions {
-        allow_links: true,
-        ..Default::default()
-    };
-    for scheme in ["ms-msdt:x", "shell:x", "vscode:x", "jar:x", "search-ms:x"] {
-        let svg = san_with(
-            &wrap(&format!(
-                "<a href=\"{scheme}\"><rect width=\"1\" height=\"1\"/></a>"
-            )),
-            links,
+    for style in [
+        "cursor:image-set(\"https://e.example/p.png\" 1x),auto",
+        "background:-webkit-image-set(\"https://e.example/p.png\" 1x)",
+        "background:image('https://e.example/p.png')",
+        "background:src(\"https://e.example/p.png\")",
+        "background:IMAGE\\2d set(\"https://e.example/p.png\" 1x)",
+    ] {
+        assert_eq!(
+            kept(&format!("<svg style='{style}'/>"), &opts),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+            "{style}"
         );
-        assert!(!svg.contains("href="), "{scheme} must not survive");
+    }
+    assert_eq!(
+        kept("<svg style=\"fill:red;cursor:pointer\"/>", &opts),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" style=\"fill:red;cursor:pointer\"/>"
+    );
+}
+
+#[test]
+fn an_href_animation_keeps_only_local_references() {
+    // carve#6761.
+    let opts = SanitizeSvgOptions {
+        allow_animation: true,
+        ..SanitizeSvgOptions::default()
+    };
+    assert_eq!(
+        kept(
+            "<svg><use href=\"#x\"><set attributeName=\"href\" to=\"evil.svg#x\"/></use></svg>",
+            &opts
+        ),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><use href=\"#x\"><set attributeName=\"href\"/></use></svg>"
+    );
+    assert_eq!(
+        kept(
+            "<svg><use href=\"#x\"><animate attributeName=\"xlink:href\" values=\"#a;evil.svg#x\" dur=\"1s\"/></use></svg>",
+            &opts
+        ),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><use href=\"#x\"><animate attributeName=\"xlink:href\" dur=\"1s\"/></use></svg>"
+    );
+    let local = "<svg xmlns=\"http://www.w3.org/2000/svg\"><use href=\"#x\"><animate attributeName=\"HREF\" values=\"#a;#b;\"/></use></svg>";
+    assert_eq!(kept(local, &opts), local);
+}
+
+#[test]
+fn url_policy_allow_list_limits_link_schemes() {
+    let opts = SanitizeSvgOptions {
+        allow_links: true,
+        url_policy: Some(UrlPolicy::Allow(vec!["HTTPS".into()])),
+        ..SanitizeSvgOptions::default()
+    };
+    assert_eq!(
+        kept(
+            "<svg><a href=\"https://example.com/\"><text>x</text></a><a href=\"mailto:a@b.c\"><text>y</text></a></svg>",
+            &opts
+        ),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><a href=\"https://example.com/\"><text>x</text></a><a><text>y</text></a></svg>"
+    );
+}
+
+#[test]
+fn malformed_input_is_refused() {
+    for source in [
+        "",
+        "x<svg/>",
+        "<svg><rect></svg>",
+        "<svg/><svg/>",
+        "<SVG/>",
+        "<svg><g>",
+        "<svg a=\"b>",
+    ] {
+        assert_eq!(
+            sanitize(source),
+            SanitizeResult {
+                svg: String::new(),
+                ok: false
+            },
+            "{source}"
+        );
     }
 }
 
 #[test]
-fn allow_external_images_keeps_image_href() {
-    let images = SanitizeSvgOptions {
-        allow_external_images: true,
-        ..Default::default()
-    };
-    let src = wrap("<image href=\"https://cdn.example/logo.png\" width=\"10\" height=\"10\"/>");
-    assert!(!san(&src).contains("<image"));
-    let on = san_with(&src, images);
-    assert!(on.contains("<image"));
-    assert!(on.contains("href=\"https://cdn.example/logo.png\""));
-    let bad = san_with(
-        &wrap("<image href=\"javascript:alert(1)\" width=\"1\" height=\"1\"/>"),
-        images,
-    );
-    assert!(!bad.contains("javascript"));
-}
-
-#[test]
-fn drops_presentation_attrs_with_external_url_keeps_local() {
-    let ext = san(&wrap(
-        "<rect width=\"1\" height=\"1\" fill=\"url(https://attacker.example/p.svg#x)\"/>",
-    ));
-    assert!(!ext.contains("attacker"));
-    assert!(!ext.contains("url(http"));
-    let filt = san(&wrap(
-        "<rect width=\"1\" height=\"1\" filter=\"url(//evil/x)\"/>",
-    ));
-    assert!(!filt.contains("filter="));
-    let local = san(&wrap(
-        "<rect width=\"1\" height=\"1\" fill=\"url(#grad)\"/>",
-    ));
-    assert!(local.contains("fill=\"url(#grad)\""));
-}
-
-#[test]
-fn rejects_quoted_url_whose_target_contains_paren() {
-    let svg = san(&wrap(
-        "<rect width=\"1\" height=\"1\" fill='url(\"https://attacker.example/a)b.svg#x\")'/>",
-    ));
-    assert!(!svg.contains("attacker"));
-    assert!(!svg.contains("fill="));
-}
-
-#[test]
-fn validates_each_smil_values_entry() {
-    let anim = SanitizeSvgOptions {
-        allow_animation: true,
-        ..Default::default()
-    };
-    let svg = san_with(
-        &wrap("<use href=\"#i\"><animate attributeName=\"href\" values=\"#i;https://attacker.example/x.svg#j\"/></use>"),
-        anim,
-    );
-    assert!(!svg.contains("attacker"));
-    assert!(!svg.contains("values="));
-    let rel = san_with(
-        &wrap("<rect width=\"1\" height=\"1\"><animate attributeName=\"fill\" values=\"#i;//evil.example/x.svg#j\"/></rect>"),
-        anim,
-    );
-    assert!(!rel.contains("evil"));
-    assert!(!rel.contains("values="));
-    let clean = san_with(
-        &wrap("<rect width=\"1\" height=\"1\"><animate attributeName=\"fill\" values=\"#a;#b\"/></rect>"),
-        anim,
-    );
-    assert!(clean.contains("values=\"#a;#b\""));
-}
-
-#[test]
-fn allow_style_rejects_css_escaped_url() {
-    let style = SanitizeSvgOptions {
-        allow_style: true,
-        ..Default::default()
-    };
-    let svg = san_with(
-        &wrap("<rect width=\"1\" height=\"1\" style=\"fill:u\\72l(https://attacker.example/x.svg#p)\"/>"),
-        style,
-    );
-    assert!(!svg.contains("style"));
-    assert!(!svg.contains("attacker"));
-}
-
-#[test]
-fn drops_unknown_attributes() {
-    let svg = san(&wrap("<path d=\"M0 0\" formaction=\"x\" srcdoc=\"y\"/>"));
-    assert!(svg.contains("d=\"M0 0\""));
-    assert!(!svg.contains("formaction"));
-    assert!(!svg.contains("srcdoc"));
-}
-
-#[test]
-fn preserves_existing_xml_entities_without_double_escaping() {
-    let t = san(&wrap("<text>A &amp; B</text>"));
-    assert!(t.contains("A &amp; B"));
-    assert!(!t.contains("&amp;amp;"));
-    let a = san(&wrap("<text aria-label=\"A &quot; B\">x</text>"));
-    assert!(a.contains("aria-label=\"A &quot; B\""));
-    assert!(!a.contains("&amp;quot;"));
-    assert!(san(&wrap("<text>a & b</text>")).contains("a &amp; b"));
-}
-
-// ---------------------------------------------------------------------------
-// root guard + xmlns
-// ---------------------------------------------------------------------------
-
-#[test]
-fn rejects_non_svg_root() {
-    assert!(!sanitize_svg("<div>not svg</div>", &opts()).ok);
-    assert!(!sanitize_svg("hello", &opts()).ok);
-}
-
-#[test]
-fn rejects_unclosed_root() {
-    assert!(!sanitize_svg("<svg><path d=\"M0 0\"", &opts()).ok);
-}
-
-#[test]
-fn rejects_non_whitespace_text_before_root() {
-    assert!(!sanitize_svg("caption<svg><rect/></svg>", &opts()).ok);
-    assert!(
-        sanitize_svg(
-            "  \n<svg viewBox=\"0 0 1 1\"><rect width=\"1\" height=\"1\"/></svg>",
-            &opts()
-        )
-        .ok
-    );
-}
-
-#[test]
-fn deduplicates_repeated_attributes_keeps_first() {
-    let r = sanitize_svg(
-        "<svg viewBox=\"0 0 1 1\" viewBox=\"0 0 2 2\"><rect id=\"a\" id=\"b\" width=\"1\" height=\"1\"/></svg>",
-        &opts(),
-    );
-    assert!(r.ok);
-    assert_eq!(r.svg.matches("viewBox=").count(), 1);
-    assert!(r.svg.contains("viewBox=\"0 0 1 1\""));
-    // exact byte golden from carve-js
+fn quoted_and_spaced_local_url_references_are_kept() {
+    // carve#6763.
     assert_eq!(
-        r.svg,
-        format!("<svg {NS} viewBox=\"0 0 1 1\"><rect id=\"a\" width=\"1\" height=\"1\"/></svg>")
+        sanitize("<svg><rect fill=\"url('#g')\"/><rect fill='url(\"#g\")'/><rect fill=\"url( #g)\"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"url('#g')\"/><rect fill=\"url(&quot;#g&quot;)\"/><rect fill=\"url( #g)\"/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg><rect fill=\"url(\t'#g')\" stroke=\"url( ' #g' )\"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"url(\t'#g')\" stroke=\"url( ' #g' )\"/></svg>"
     );
 }
 
 #[test]
-fn escapes_non_xml_named_entities() {
-    let svg = san(&wrap("<text>a&nbsp;b &copy; c</text>"));
-    assert!(svg.contains("&amp;nbsp;"));
-    assert!(svg.contains("&amp;copy;"));
-    let keep = san(&wrap("<text>a &amp; b &#160; c</text>"));
-    assert!(keep.contains("&amp; "));
-    assert!(keep.contains("&#160;"));
+fn a_non_css_space_before_the_hash_is_not_local() {
+    // carve#6773: the URL keeps a leading U+00A0, U+3000 or U+FEFF.
+    for space in ['\u{A0}', '\u{3000}', '\u{FEFF}'] {
+        assert_eq!(
+            sanitize(&format!(
+                "<svg><rect fill=\"url({space}#g)\"/><rect fill=\"url('{space}#g')\"/></svg>"
+            ))
+            .svg,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><rect/></svg>",
+            "{space:?}"
+        );
+    }
 }
 
 #[test]
-fn rejects_multiple_top_level_roots() {
-    assert!(!sanitize_svg("<svg></svg><svg></svg>", &opts()).ok);
-    let src = format!("{}<svg></svg>", wrap("<rect width=\"1\" height=\"1\"/>"));
-    assert!(!sanitize_svg(&src, &opts()).ok);
-}
-
-#[test]
-fn rejects_mismatched_closing_tags() {
-    assert!(!sanitize_svg("<svg><path></rect></svg>", &opts()).ok);
-    assert!(!sanitize_svg("<svg><g></svg>", &opts()).ok);
-}
-
-#[test]
-fn rejects_case_mismatched_tag_names() {
-    assert!(!sanitize_svg("<svg><g></G></svg>", &opts()).ok);
-    assert!(!sanitize_svg("<SVG><rect/></SVG>", &opts()).ok);
-}
-
-#[test]
-fn does_not_exit_dropped_subtree_on_mismatched_close() {
-    assert!(
-        !sanitize_svg(
-            "<svg><script></svg><rect width=\"1\" height=\"1\"/></svg>",
-            &opts()
+fn output_holds_only_xml_characters() {
+    // carve#6764.
+    assert_eq!(
+        sanitize("<svg><text>&#0;</text><text>a&#x1;b</text></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>&amp;#0;</text><text>a&amp;#x1;b</text></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize(
+            "<svg><text id=\"a&#xFFFE;\">&#55296;&#9;&#0000000065;&#x10FFFF;&#x110000;</text></svg>"
         )
-        .ok
+        .svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><text id=\"a&amp;#xFFFE;\">&amp;#55296;&#9;&#0000000065;&#x10FFFF;&amp;#x110000;</text></svg>"
+    );
+    // Raw characters go before any check, so they cannot split a needle.
+    assert_eq!(
+        sanitize(
+            "<svg><rect fill=\"ur\u{1}l(https://e.example/x)\"/><text>a\u{0}b\u{FFFF}c</text></svg>"
+        )
+        .svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/><text>abc</text></svg>"
     );
 }
 
 #[test]
-fn drops_well_formed_disallowed_subtree_keeps_siblings() {
-    let r = sanitize_svg(
-        "<svg><script>x</script><rect width=\"1\" height=\"1\"/></svg>",
-        &opts(),
+fn camel_case_animation_elements_are_kept() {
+    // carve#6765.
+    let opts = SanitizeSvgOptions {
+        allow_animation: true,
+        ..SanitizeSvgOptions::default()
+    };
+    let source = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect><animateTransform attributeName=\"transform\" type=\"rotate\" from=\"0\" to=\"360\" dur=\"1s\"/><animateMotion dur=\"1s\"/></rect></svg>";
+    assert_eq!(kept(source, &opts), source);
+    assert_eq!(
+        kept(source, &SanitizeSvgOptions::default()),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
     );
-    assert!(r.ok);
-    assert!(!r.svg.contains("script"));
-    assert!(r.svg.contains("<rect width=\"1\" height=\"1\""));
 }
 
 #[test]
-fn injects_xmlns_on_root_when_missing() {
-    let svg = san("<svg viewBox=\"0 0 1 1\"><path d=\"M0 0\"/></svg>");
-    assert!(svg.contains("xmlns=\"http://www.w3.org/2000/svg\""));
-}
-
-#[test]
-fn forces_canonical_xmlns_even_when_author_is_wrong() {
-    let wrong = san("<svg xmlns=\"https://example.com\" viewBox=\"0 0 1 1\"><rect width=\"1\" height=\"1\"/></svg>");
-    assert!(wrong.contains("xmlns=\"http://www.w3.org/2000/svg\""));
-    assert!(!wrong.contains("example.com"));
-    assert_eq!(wrong.matches("xmlns=").count(), 1);
-    let danger = san(
-        "<svg xmlns=\"javascript:x\" viewBox=\"0 0 1 1\"><rect width=\"1\" height=\"1\"/></svg>",
+fn an_attribute_without_a_value_is_dropped() {
+    // carve#6774.
+    assert_eq!(
+        sanitize("<svg id/>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"/>".into(),
+            ok: true,
+        }
     );
-    assert!(danger.contains("xmlns=\"http://www.w3.org/2000/svg\""));
-    assert!(!danger.contains("javascript"));
-}
-
-#[test]
-fn accepts_self_closing_empty_root() {
-    let r = sanitize_svg("<svg viewBox=\"0 0 1 1\"/>", &opts());
-    assert!(r.ok);
-    assert_eq!(r.svg, format!("<svg {NS} viewBox=\"0 0 1 1\"/>"));
-    assert!(r.svg.contains("xmlns=\"http://www.w3.org/2000/svg\""));
-}
-
-// ---------------------------------------------------------------------------
-// idempotence
-// ---------------------------------------------------------------------------
-
-#[test]
-fn idempotent() {
-    let src = wrap(
-        "<script>x</script><g><rect style=\"fill:red\" width=\"5\" height=\"5\" onclick=\"e\"/></g>",
+    assert_eq!(
+        sanitize("<svg><rect width fill/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
     );
-    let once = san(&src);
-    let twice = san(&once);
-    assert_eq!(twice, once);
 }
 
-// ---------------------------------------------------------------------------
-// byte-exact goldens captured from carve-js dist/svg-sanitize.js
-// ---------------------------------------------------------------------------
+#[test]
+fn an_empty_prefixed_namespace_declaration_is_dropped() {
+    // carve#6779: Namespaces in XML 1.0 forbids undeclaring a prefix.
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\"\"><rect/></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=''/></svg>"),
+        SanitizeResult {
+            svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><g/></svg>".into(),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize("<svg XMLNS:XLINK='' id=\"a\"><g xmlns:xlink = ''></g></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"a\"><g/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\"\"><g xmlns:xlink=\"http://www.w3.org/1999/xlink\"/></svg>")
+            .svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g xmlns:xlink=\"http://www.w3.org/1999/xlink\"/></svg>"
+    );
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=\" \"/></svg>").svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g/></svg>"
+    );
+}
+
+const OPEN: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"";
+const XLINK_DECL: &str = " xmlns:xlink=\"http://www.w3.org/1999/xlink\"";
 
 #[test]
-fn byte_goldens_match_carve_js() {
-    let cases: &[(SanitizeSvgOptions, &str, &str)] = &[
+fn the_xlink_prefix_is_bound_on_the_root() {
+    // carve#6782: a written xlink:href with no xmlns:xlink in scope.
+    assert_eq!(
+        sanitize("<svg><use xlink:href=\"#a\"/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}{XLINK_DECL}><use xlink:href=\"#a\"/></svg>"),
+            ok: true,
+        }
+    );
+    let cases = [
         (
-            opts(),
-            "<svg viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\" fill=\"currentColor\"/></svg>",
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M0 0L10 10\" fill=\"currentColor\"/></svg>",
+            "<svg xlink:href=\"#a\" id=\"r\"/>",
+            format!("{OPEN}{XLINK_DECL} xlink:href=\"#a\" id=\"r\"/>"),
         ),
         (
-            opts(),
-            "<svg viewBox=\"0 0 10 10\"><script>alert(1)</script><circle r=\"5\"/></svg>",
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><circle r=\"5\"/></svg>",
+            "<svg xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></svg>",
+            format!("{OPEN} xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></svg>"),
         ),
         (
-            opts(),
-            "<svg viewBox=\"0 0 10 10\"><text>a&nbsp;b &copy; c &amp; d &#160; e</text></svg>",
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><text>a&amp;nbsp;b &amp;copy; c &amp; d &#160; e</text></svg>",
+            "<svg><use xlink:href=\"#a\" xmlns:xlink=\"urn:x\"/></svg>",
+            format!("{OPEN}><use xlink:href=\"#a\" xmlns:xlink=\"urn:x\"/></svg>"),
         ),
         (
-            opts(),
-            "<svg viewBox=\"0 0 10 10\"><rect width=\"1\" height=\"1\" fill=\"url(#grad)\"/></svg>",
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"1\" height=\"1\" fill=\"url(#grad)\"/></svg>",
+            "<svg><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g></svg>",
+            format!("{OPEN}><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g></svg>"),
+        ),
+        // A declaration inside a subtree binds only that subtree.
+        (
+            "<svg><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g><use xlink:href=\"#b\"/></svg>",
+            format!(
+                "{OPEN}{XLINK_DECL}><g xmlns:xlink=\"urn:x\"><use xlink:href=\"#a\"/></g><use xlink:href=\"#b\"/></svg>"
+            ),
+        ),
+        // A dropped declaration binds nothing.
+        (
+            "<svg><g xmlns:xlink=\" \"><use xlink:href=\"#a\"/></g></svg>",
+            format!("{OPEN}{XLINK_DECL}><g><use xlink:href=\"#a\"/></g></svg>"),
+        ),
+        // Nothing is added when the xlink attribute is dropped.
+        (
+            "<svg><use xlink:href=\"https://e/x\"/><use XLINK:HREF=\"#a\"/></svg>",
+            format!("{OPEN}><use/><use/></svg>"),
+        ),
+        (
+            "<svg><script><use xlink:href=\"#a\"/></script></svg>",
+            format!("{OPEN}/>"),
         ),
     ];
-    for (o, input, expected) in cases {
-        assert_eq!(&san_with(input, *o), expected, "input: {input}");
+    for (source, want) in cases {
+        assert_eq!(sanitize(source).svg, want, "{source}");
     }
+}
+
+#[test]
+fn a_prefixed_name_in_another_spelling_is_dropped() {
+    // carve#6783: only lower-case xmlns: declares, and prefixes are case-sensitive.
+    assert_eq!(
+        sanitize("<svg XMLNS:XLINK=\"http://www.w3.org/1999/xlink\"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize(
+            "<svg Xmlns:xlink=\"urn:x\" XML:SPACE=\"preserve\" data-a:b=\"1\" aria-x:y=\"2\" xml:space=\"preserve\"/>"
+        )
+        .svg,
+        format!("{OPEN} xml:space=\"preserve\"/>")
+    );
+}
+
+#[test]
+fn a_namespace_declaration_with_whitespace_is_dropped() {
+    // carve#6783: whitespace only; carve#6811: whitespace or U+00A0 anywhere,
+    // literal or as a reference.
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\" \"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    let values = [
+        "\t",
+        " \n ",
+        "\r",
+        "&#32;",
+        "&#x20;&#9;",
+        "&#xA;",
+        "&#13;",
+        "&#x0D;",
+        " urn:x",
+        "urn:x ",
+        "urn: x",
+        "urn:x\tb",
+        "\u{A0}",
+        "urn:\u{A0}x",
+        "&#160;",
+        "urn:&#xA0;x",
+        "&#32;urn:x",
+        "urn:&nbsp;x",
+        " urn:x ",
+    ];
+    for value in values {
+        assert_eq!(
+            sanitize(&format!("<svg><g xmlns:xlink=\"{value}\"/></svg>")),
+            SanitizeResult {
+                svg: format!("{OPEN}><g/></svg>"),
+                ok: true,
+            },
+            "{value:?}"
+        );
+    }
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=\"urn:x\"/></svg>").svg,
+        format!("{OPEN}><g xmlns:xlink=\"urn:x\"/></svg>")
+    );
+}
+
+#[test]
+fn a_child_default_namespace_with_whitespace_is_dropped() {
+    // carve#6843: the carve#6811 rule on a child's xmlns; an empty one is a legal undeclaration.
+    assert_eq!(
+        sanitize("<svg><g xmlns=\" \"><rect/></g><g xmlns=\"&#160;urn:x\"/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><g><rect/></g><g/></svg>"),
+            ok: true,
+        }
+    );
+    let values = [
+        " ",
+        "\t",
+        " \n ",
+        "\r",
+        "&#32;",
+        "&#x20;&#9;",
+        "&#xA;",
+        "&#13;",
+        "&#x0D;",
+        " urn:x",
+        "urn:x ",
+        "urn: x",
+        "urn:x\tb",
+        "\u{A0}",
+        "urn:\u{A0}x",
+        "&#160;",
+        "urn:&#xA0;x",
+        "&#32;urn:x",
+        "urn:&nbsp;x",
+        "&nbsp;",
+        " http://www.w3.org/2000/svg",
+    ];
+    let shapes = [
+        ("<g xmlns=\"%s\"/>", "<g/>"),
+        (
+            "<g><g><symbol xmlns='%s'><g/></symbol></g></g>",
+            "<g><g><symbol><g/></symbol></g></g>",
+        ),
+        (
+            "<g><text xmlns=\"%s\">t</text></g>",
+            "<g><text>t</text></g>",
+        ),
+    ];
+    for value in values {
+        for (shape, want) in shapes {
+            assert_eq!(
+                sanitize(&format!("<svg>{}</svg>", shape.replace("%s", value))),
+                SanitizeResult {
+                    svg: format!("{OPEN}>{want}</svg>"),
+                    ok: true,
+                },
+                "{value:?} in {shape}"
+            );
+        }
+    }
+    let kept = "<g xmlns=\"\"/><g xmlns=\"urn:x\"/><g xmlns=\"http://www.w3.org/2000/svg\"/>";
+    assert_eq!(
+        sanitize(&format!("<svg>{kept}</svg>")).svg,
+        format!("{OPEN}>{kept}</svg>")
+    );
 }

@@ -1,2 +1,0 @@
-: Term
-Definition text.

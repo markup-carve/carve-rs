@@ -1,0 +1,30 @@
+{
+  "name": "i05-rename-suffix-skips-an-id-written-later",
+  "description": "A rename takes the least -N no explicit id in the assembled document uses, including one written after the include.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-057"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"dup\">\n  <h1>Parent</h1>\n</section>\n<section id=\"dup\">\n  <h1>Child</h1>\n</section>\n<section id=\"dup-2\">\n  <h1>Later</h1>\n</section>",
+    "fmt": "{#dup}\n= Parent\n\n{{ a.crv }}\n\n{#dup-2}\n= Later\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "a.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename; the vector loses its subject (C2-N-057)",
+  "entry": "{#dup}\n# Parent\n\n{{ a.crv }}\n\n{#dup-2}\n# Later\n",
+  "files": {
+    "a.crv": "{#dup}\n# Child\n"
+  }
+}

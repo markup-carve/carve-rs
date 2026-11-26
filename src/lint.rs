@@ -1,2044 +1,772 @@
-//! Source diagnostics for silent degradations.
-//!
-//! [`lint_carve_with_options`] should receive the same [`Options`] used for
-//! rendering. Under PART 9 §9-10, core reserves `abbr`, `time`, and `kbd`;
-//! `samp`, `var`, `cite`, and `dfn` become semantic elements only with the
-//! `SemanticSpan` extension.
-//! The parser records unattached block attributes, which leave no AST node;
-//! this pass reports that record instead of re-reading source attachment.
-//! Unattached attributes follow PART 9 §15 A4.
-//! See `docs/linting.md` for rule ids and examples.
+//! Source lint under C2-W-103 to C2-W-109.
 
-macro_rules! lint_regex {
-    ($pattern:literal) => {{
-        static COMPILED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        COMPILED.get_or_init(|| regex::Regex::new($pattern).unwrap())
-    }};
+use crate::diagnostic::Diagnostic;
+use crate::source::Source;
+use std::cell::OnceCell;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+mod braced;
+mod controls;
+mod data_attrs;
+mod data_interpreter;
+mod data_model;
+mod data_rules;
+mod includes;
+mod lines;
+mod nodes;
+mod pairs;
+mod snippets;
+use crate::view::V;
+mod walk;
+
+/// Rule switches and platform selection for a lint run.
+#[derive(Debug, Clone, Default)]
+pub struct LintOptions {
+    /// Heading id policy used to resolve fragment targets.
+    pub heading_ids: crate::options::HeadingIds,
+    /// Whether raw HTML blocks contribute rendered anchors.
+    pub raw_html: bool,
+    /// A rule id mapped to `on` or `off`.
+    pub rules: HashMap<String, String>,
+    /// Platform names, currently `github`.
+    pub platforms: Vec<String>,
+    /// Turns on the migration notices, the rules whose default is `upgrade` (C2-W-156).
+    pub upgrade: bool,
+    /// Registered extensions that may contribute generated IDs.
+    pub extensions: Vec<String>,
+    /// Include expansion for lint of an entry document (C2-N-085).
+    pub includes: Option<crate::include::Includes>,
 }
 
-mod consumed_key;
-mod delimited_table;
-mod marker_before_attributes;
-mod reference_rules;
-mod source_rules;
-mod suppression;
-mod thematic_break;
-
-use crate::ast::*;
-use crate::ast_json::emphasis_type;
-use crate::escape::{escape_attr, sanitize_attr_value};
-use crate::extension::Options;
-use crate::parse::parse_with_options;
-use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
-use crate::source_positions::CodepointLineStarts;
-use crate::table_spans::TableSpanPlan;
-
-/// One diagnostic: a silent degradation, located in the source the caller
-/// passed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LintWarning {
-    /// Identity of the source file, when supplied.
-    pub file: Option<String>,
-    /// Directive sites leading to the included source.
-    pub included_by: Vec<crate::includes::IncludeSite>,
-    /// 1-based line number.
-    pub line: usize,
-    /// 1-based column number.
-    pub column: usize,
-    /// Stable rule id, e.g. `"semantic-attribute-outside-span"`. Shared with
-    /// carve-js and carve-php: the same trigger reports the same id everywhere.
-    pub rule: &'static str,
-    /// Human-readable explanation of the degradation.
-    pub message: String,
-    /// 0-based start offset in the source, inclusive, in BYTES.
-    ///
-    /// Deliberately NOT the CODEPOINT offsets PART 12 §4 pins for a serialized
-    /// AST, which is what [`Pos`] carries. This struct is a diagnostic a Rust
-    /// caller slices its own `&str` with, and a codepoint offset handed to
-    /// `&source[start..end]` PANICS on the first non-ASCII character before it.
-    /// That is a crash, not a wrong highlight. carve-js converts the same
-    /// positions to UTF-16 for the same reason; the unit follows the host
-    /// language.
-    pub start: usize,
-    /// 0-based end offset in the source, exclusive, in bytes.
-    pub end: usize,
+mod catalog {
+    include!(concat!(env!("OUT_DIR"), "/lint_catalog_gen.rs"));
 }
 
-/// Lint `source` as a CORE render, with no extensions registered.
-///
-/// Equivalent to [`lint_carve_with_options`] with [`Options::default`]. Use
-/// that instead whenever the caller renders with extensions.
-pub fn lint_carve(source: &str) -> Vec<LintWarning> {
-    lint_carve_with_options(source, &Options::default())
+/// The `default` of a catalog row; `Upgrade` marks a migration notice (C2-W-156).
+enum RowDefault {
+    On,
+    Off,
+    Upgrade,
 }
 
-/// Lint `source` for the render `options` describe.
-///
-/// `options.extensions` selects extension-specific rules and decides which
-/// reserved names become elements. Heading-id options keep reference checks
-/// consistent with rendering. Positions are
-/// forced on regardless of what the caller set, since a diagnostic with no
-/// location is not one. Nothing here renders, so the render-only fields
-/// (`profile`, `mode`, `symbols`, ...) are deliberately ignored rather than
-/// half-applied.
-pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintWarning> {
-    let mut out = lint_with_recovery(source, options).0;
-    if let Some(includes) = &options.lint_includes {
-        let found = lint_includes(source, options, includes, &mut out);
-        out.extend(found);
-    }
-    out
+/// What `active` reads of a catalog row, indexed by rule id once.
+struct Row {
+    usable: bool,
+    default: RowDefault,
+    modeled: bool,
 }
 
-fn lint_includes(
-    source: &str,
-    options: &Options<'_>,
-    includes: &crate::includes::IncludeOptions<'_>,
-    root: &mut Vec<LintWarning>,
-) -> Vec<LintWarning> {
-    use crate::includes::AcceptedInclude;
-    use std::collections::{HashMap, HashSet};
-    let parse_options = Options {
-        positions: true,
-        extensions: options.extensions.clone(),
-        ..Options::default()
-    };
-    let doc = parse_with_options(source, &parse_options);
-    let result =
-        crate::includes::expand_includes(doc, source, &includes.clone().collecting_included());
-    // A heading an include supplies is a cross-reference target too.
-    if root.iter().any(|finding| finding.rule == "broken-crossref") {
-        let index =
-            crate::parse::crossref_index_for_document(&result.doc, options.heading_id_options());
-        let targets: HashSet<&str> = index.ids().collect();
-        root.retain(|finding| {
-            finding.rule != "broken-crossref"
-                || !source
-                    .get(finding.start..finding.end)
-                    .and_then(|text| text.strip_prefix("</#"))
-                    .and_then(|text| text.strip_suffix('>'))
-                    .is_some_and(|target| targets.contains(target))
-        });
-    }
-    let parent_sources: HashMap<_, _> = result
-        .included
-        .iter()
-        .filter_map(|entry| {
-            if let AcceptedInclude::Carve {
-                file,
-                included_by,
-                source,
-                first_line,
-                ..
-            } = entry
-            {
-                Some((
-                    (file.clone(), included_by.clone()),
-                    (source.clone(), *first_line),
-                ))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let mut findings = Vec::new();
-    for entry in result.included {
-        match entry {
-            AcceptedInclude::Carve {
-                file,
-                included_by,
-                source,
-                first_line,
-                selected_lines,
-            } => {
-                for mut finding in lint_with_recovery(&source, options).0 {
-                    finding.line += first_line;
-                    if selected_lines
-                        .is_some_and(|(start, end)| finding.line < start || finding.line > end)
-                    {
-                        continue;
-                    }
-                    finding.file = Some(file.clone());
-                    finding.included_by = included_by.clone();
-                    findings.push(finding);
-                }
-            }
-            AcceptedInclude::Code {
-                file,
-                included_by,
-                block,
-                payload,
-            } => {
-                let marked = match block.as_ref() {
-                    BlockNode::CodeBlock(code) => code
-                        .attrs
-                        .as_ref()
-                        .is_some_and(|a| a.key_values.get("table").is_some_and(String::is_empty)),
-                    BlockNode::Table(table) => table.source_format.is_some(),
-                    _ => false,
-                };
-                if !marked {
-                    continue;
-                }
-                if let Some(site) = included_by.last() {
-                    let parent = if included_by.len() == 1 {
-                        Some((source, 0))
-                    } else {
-                        parent_sources
-                            .get(&(
-                                site.file.clone(),
-                                included_by[..included_by.len() - 1].to_vec(),
-                            ))
-                            .map(|(source, first_line)| (source.as_str(), *first_line))
-                    };
-                    if let Some((text, first_line)) = parent {
-                        let selected = site
-                            .line
-                            .checked_sub(first_line)
-                            .and_then(|line| line.checked_sub(1))
-                            .and_then(|index| text.lines().nth(index))
-                            .is_some_and(|line| {
-                                crate::includes::code_line_selector_at(line, site.column)
-                            });
-                        if selected {
-                            findings.push(LintWarning {
-                                file: (!site.file.is_empty()).then(|| site.file.clone()),
-                                included_by: included_by[..included_by.len() - 1].to_vec(),
-                                line: site.line,
-                                column: site.column,
-                                rule: "include-lines-table-rows-hint",
-                                message: "Use @rows to select complete CSV/TSV records.".into(),
-                                start: 0,
-                                end: 0,
-                            });
-                        }
-                    }
-                }
-                let separator = match block.as_ref() {
-                    BlockNode::CodeBlock(code) => match code.lang.as_deref() {
-                        Some("csv") => ',',
-                        Some("tsv") => '\t',
-                        _ => continue,
-                    },
-                    BlockNode::Table(table) => match table.source_format {
-                        Some(format) => format.separator(),
-                        None => continue,
-                    },
-                    _ => continue,
-                };
-                let start_line = crate::ast_json::block_pos(&block).map_or(1, |pos| pos.start_line);
-                if let Some((rule, message, line)) = crate::parse::delimited_table::lint_payload(
-                    &payload,
-                    separator,
-                    crate::includes::is_table_record_marker,
-                ) {
-                    findings.push(LintWarning {
-                        file: Some(file),
-                        included_by,
-                        line: start_line + line - 1,
-                        column: 1,
-                        rule,
-                        message: message.into(),
-                        start: 0,
-                        end: 0,
-                    });
-                }
-            }
+fn rows() -> &'static HashMap<&'static str, Row> {
+    static ROWS: OnceLock<HashMap<&'static str, Row>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let mut rows = HashMap::new();
+        for &(id, usable, default) in catalog::ROWS {
+            rows.entry(id).or_insert_with(|| Row {
+                usable,
+                default: match default {
+                    "on" => RowDefault::On,
+                    "upgrade" => RowDefault::Upgrade,
+                    _ => RowDefault::Off,
+                },
+                modeled: data_rules::modeled_ids().contains(id),
+            });
         }
-    }
-    for warning in result.warnings {
-        let Some(rule) = literal_include_rule(&warning.rule) else {
-            continue;
-        };
-        findings.push(LintWarning {
-            file: warning.included_by.first().and(warning.file),
-            included_by: warning.included_by,
-            line: warning.line,
-            column: warning.column,
-            rule,
-            message: warning.message,
-            start: 0,
-            end: 0,
-        });
-    }
-    let mut seen = HashSet::new();
-    findings.retain(|finding| {
-        finding.included_by.is_empty()
-            || seen.insert((
-                finding.file.clone(),
-                finding.line,
-                finding.column,
-                finding.rule,
-            ))
-    });
-    findings
-}
-
-/// The include Warnings that leave a directive literal; renames and clamps keep their content.
-fn literal_include_rule(rule: &str) -> Option<&'static str> {
-    Some(match rule {
-        "include-block-in-inline" => "include-block-in-inline",
-        "include-budget" => "include-budget",
-        "include-call-limit" => "include-call-limit",
-        "include-cycle" => "include-cycle",
-        "include-depth" => "include-depth",
-        "include-duplicate-option" => "include-duplicate-option",
-        "include-lines-out-of-range" => "include-lines-out-of-range",
-        "include-rows-invalid" => "include-rows-invalid",
-        "include-rows-out-of-range" => "include-rows-out-of-range",
-        "include-cols-invalid" => "include-cols-invalid",
-        "include-cols-duplicate" => "include-cols-duplicate",
-        "include-non-text" => "include-non-text",
-        "include-region-invalid" => "include-region-invalid",
-        "include-section" => "include-section",
-        "include-selection-conflict" => "include-selection-conflict",
-        "include-unknown-option" => "include-unknown-option",
-        "include-unresolved" => "include-unresolved",
-        _ => return None,
+        rows
     })
 }
 
-/// Rewrite each reference that misses its target only by case to the target's
-/// exact spelling, as `carve fmt --migrate` does before formatting.
-///
-/// Covers `</#id>` cross-references, `[text][label]` / `[text][]` reference
-/// links (PART 9R R1) and `![alt][label]` / `![alt][]` reference images. A reference is rewritten only when exactly one target
-/// matches it case-insensitively; with several, it is left as written and
-/// [`lint_carve_with_options`] reports it.
-pub fn migrate_case_only_references(source: &str, options: &Options<'_>) -> String {
-    let mut parse_options = Options {
-        positions: true,
-        lowercase_heading_ids: options.lowercase_heading_ids,
-        ascii_heading_ids: options.ascii_heading_ids,
-        ..Options::default()
+fn active(code: &str, opts: &LintOptions) -> bool {
+    let Some(row) = rows().get(code) else {
+        return false;
     };
-    parse_options.extensions.clone_from(&options.extensions);
-    let doc = parse_with_options(source, &parse_options);
-    let byte_at = codepoint_to_byte_map(source);
-    let to_byte = |offset: usize| -> usize {
-        match &byte_at {
-            Some(map) => map.get(offset).copied().unwrap_or(source.len()),
-            None => offset.min(source.len()),
-        }
-    };
-    let mut edits = reference_rules::case_only_edits(source, &doc, options, &to_byte);
-    edits.sort_by_key(|&(start, end, _)| (start, end));
-    let mut out = String::with_capacity(source.len());
-    let mut at = 0;
-    for (start, end, replacement) in edits {
-        if start < at {
-            continue;
-        }
-        out.push_str(&source[at..start]);
-        out.push_str(&replacement);
-        at = end;
+    !row.modeled && row_active(code, row, opts)
+}
+
+fn active_catalog(code: &str, opts: &LintOptions) -> bool {
+    rows()
+        .get(code)
+        .is_some_and(|row| row_active(code, row, opts))
+}
+
+fn row_active(code: &str, row: &Row, opts: &LintOptions) -> bool {
+    if !row.usable {
+        return false;
     }
-    out.push_str(&source[at..]);
+    if code.starts_with("platform-") && !opts.platforms.iter().any(|p| p == "github") {
+        return false;
+    }
+    opts.rules.get(code).map_or(
+        match row.default {
+            RowDefault::On => true,
+            RowDefault::Off => false,
+            RowDefault::Upgrade => opts.upgrade,
+        },
+        |setting| setting == "on",
+    )
+}
+
+/// C2-W-156, C2-B-231: the line-1 frontmatter declares with `carve` or
+/// `carve-version` a version below 0.2 (`0`, `0.0`, `0.1`, `0.1.13`).
+fn declares_below_0_2(tree: V<'_>) -> bool {
+    let Some(first) = tree
+        .at("children")
+        .as_array()
+        .and_then(crate::view::Arr::first)
+    else {
+        return false;
+    };
+    if first.at("type").as_str() != Some("frontmatter")
+        || first.field("/pos/startLine").as_i64() != Some(1)
+    {
+        return false;
+    }
+    first.at("value").as_str().is_some_and(|text| {
+        text.lines().any(|line| {
+            let line = line.trim_start_matches([' ', '\t']);
+            let Some((key, version)) = line.split_once(':') else {
+                return false;
+            };
+            let version = version.trim_matches([' ', '\t', '\r']);
+            let mut parts = version.split('.').map(|part| part.trim_start_matches('0'));
+            matches!(key, "carve" | "carve-version")
+                && version
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+                && parts.next() == Some("")
+                && parts.next().is_none_or(|minor| matches!(minor, "" | "1"))
+        })
+    })
+}
+
+/// Runs enabled lint rules and returns catalog diagnostics in source order.
+#[must_use]
+pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+    let includes = opts.includes.is_some() && source.contains("{{");
+    let parse = crate::Options {
+        includes: opts.includes.clone().filter(|_| includes),
+        heading_ids: opts.heading_ids,
+        raw_html: opts.raw_html,
+        ..crate::Options::default()
+    };
+    let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
+    let declared = std::cell::OnceCell::new();
+    let (mut out, diagnostics) = crate::with_lint_tree(
+        source,
+        &crate::Options::default(),
+        &parse,
+        same,
+        |tree, arena| {
+            // The entry's declaration controls notices in the entry source.
+            let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
+                declared.get_or_init(|| LintOptions {
+                    upgrade: true,
+                    ..opts.clone()
+                })
+            } else {
+                opts
+            };
+            lint_core(source, opts, tree, arena)
+        },
+    );
+    out.extend(
+        diagnostics
+            .into_iter()
+            .filter(|diagnostic| !data_rules::modeled_ids().contains(diagnostic.code)),
+    );
+    if includes {
+        // C2-N-087: a file included twice reports each parse finding once.
+        let mut seen = HashSet::new();
+        out.retain(|d| match (&d.file, d.pos) {
+            (Some(file), Some(pos)) => seen.insert((
+                file.clone(),
+                pos.start_offset,
+                pos.end_offset,
+                d.code,
+                d.message.clone(),
+            )),
+            _ => true,
+        });
+        includes::scan(source, opts, &mut out);
+    }
     out
 }
 
-pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<LintWarning>, bool) {
-    let mut parse_options = Options {
-        positions: true,
-        lowercase_heading_ids: options.lowercase_heading_ids,
-        ascii_heading_ids: options.ascii_heading_ids,
-        ..Options::default()
-    };
-    parse_options.extensions.clone_from(&options.extensions);
-    // The one rule the AST cannot answer. An unattached block attribute leaves
-    // NOTHING behind - no node, no attrs on a neighbour - which is precisely why
-    // §15 A4 needs a diagnostic, and why the parser has to say where it dropped
-    // one rather than the linter guessing from the source.
-    let ((doc, unattached), mut lint_events) = crate::parse::collecting_lint_events(|| {
-        crate::parse::collecting_unattached_block_attrs(|| {
-            parse_with_options(source, &parse_options)
-        })
+fn lint_core<'a>(
+    source: &str,
+    opts: &LintOptions,
+    tree: Option<V<'a>>,
+    arena: &'a crate::Arena,
+) -> Vec<Diagnostic> {
+    let parsed = Source::new(source);
+    let walk::Walk {
+        ranges,
+        items,
+        comments,
+        holders,
+        values,
+    } = tree.map_or_else(walk::Walk::empty, |tree| {
+        walk::Walk::new(tree, arena, source)
     });
-    // The event parser can handle a line block without entering the legacy
-    // reader that publishes lint events. Read the ownership verdict directly
-    // for comment spans; the cached walk avoids a second layout pass.
-    if source.contains("%%%") {
-        if let Some(owned) =
-            crate::parse::own_lines(crate::parse::normalize_source(source).as_ref())
-        {
-            lint_events.extend(owned.unclosed_comments.iter().map(
-                |&(line, column, width, end_of_document)| crate::parse::LintEvent::CommentFence {
-                    line,
-                    column,
-                    width,
-                    end_of_document,
-                },
-            ));
-        }
-    }
-
-    let element_names = semantic_span_order(options);
-    let byte_at = codepoint_to_byte_map(source);
-    let to_byte = |offset: usize| -> usize {
-        match &byte_at {
-            Some(map) => map.get(offset).copied().unwrap_or(source.len()),
-            None => offset.min(source.len()),
-        }
+    let positions = Ranges {
+        all: ranges,
+        holders,
     };
     let mut out = Vec::new();
-    collect_parser_events(source, &doc, &lint_events, &mut out);
-    let mut visit = |node_type: &'static str, attrs: &Attrs, pos: Option<Pos>| {
-        collect_semantic_attribute_warnings(
-            node_type,
-            attrs,
-            pos,
-            &element_names,
-            &to_byte,
-            &mut out,
-        );
-    };
-    walk_blocks(&doc.children, &mut visit);
-    // A footnote definition hoists to the document (PART 9 §7), so its body is
-    // not reachable from `children` and a rule that only walked those would be
-    // silent inside every footnote.
-    for body in doc.footnote_defs.values() {
-        walk_blocks(body, &mut visit);
+    let line_model = lines::lines(source, &positions.all);
+    if tree.is_some() {
+        let references: HashSet<&str> = positions
+            .all
+            .iter()
+            .filter_map(|range| range.footnote_key)
+            .collect();
+        nodes::scan(source, opts, items, &references, &mut out);
     }
-    collect_figure_group_warnings(&doc.children, false, &to_byte, &mut out);
-    for body in doc.footnote_defs.values() {
-        collect_figure_group_warnings(body, false, &to_byte, &mut out);
+    if let Some(tree) = tree {
+        snippets::scan(source, tree, opts, &mut out);
     }
-    collect_quote_fence_warnings(&doc.children, &to_byte, &mut out);
-    let term_fold_bodies: Vec<&[BlockNode]> = std::iter::once(doc.children.as_slice())
-        .chain(doc.footnote_defs.values().map(Vec::as_slice))
-        .collect();
-    collect_term_fold_warnings(source, &term_fold_bodies, &to_byte, &mut out);
-    // A footnote definition hoists to the document (PART 9 §7), so its body is
-    // not reachable from `children`. The walk reports nothing there yet, for a
-    // reason outside this rule: a block opener below a quote line in a footnote
-    // body is folded into the quote's paragraph as lazy text
-    // (markup-carve/carve-rs#1415), so the construct is never parsed. Walking
-    // it anyway is what makes the rule fire on the day the parse agrees, rather
-    // than leaving a second defect behind the first.
-    for body in doc.footnote_defs.values() {
-        collect_quote_fence_warnings(body, &to_byte, &mut out);
-    }
-    if options
-        .extensions
-        .iter()
-        .any(|ext| ext.name() == "citations")
-    {
-        collect_contained_reference_placements(&doc.children, false, &to_byte, &mut out);
-        for body in doc.footnote_defs.values() {
-            collect_contained_reference_placements(body, true, &to_byte, &mut out);
-        }
-    }
-    reference_rules::collect(source, &doc, options, &to_byte, &mut out);
-    let recovered_metadata = source_rules::collect(
-        source,
-        &doc,
-        &to_byte,
-        options.lint_caption_looking_paragraph,
-        &mut out,
-    );
-    let item_overindent_lines: std::collections::HashSet<_> = out
-        .iter()
-        .filter(|warning| warning.rule == "list-item-block-overindented")
-        .map(|warning| warning.line)
-        .collect();
-    out.retain(|warning| {
-        warning.rule != "block-opener-overindented"
-            || !item_overindent_lines.contains(&warning.line)
-    });
-    collect_template_source_warning(source, &doc, &mut out);
-    collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
-    collect_table_column_warnings(source, &mut out);
-    delimited_table::collect(source, &doc, &to_byte, &mut out);
-    consumed_key::collect(&doc, &to_byte, &mut out);
-    thematic_break::collect(source, &doc, &to_byte, &mut out);
-    marker_before_attributes::collect(source, &doc, &to_byte, &mut out);
-    collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
-    for body in doc.footnote_defs.values() {
-        collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
-    }
-    suppression::apply(source, &doc, &to_byte, &mut out);
-    out.sort_by_key(|w| (w.start, w.end, w.rule));
-    (out, recovered_metadata)
-}
-
-fn collect_parser_events(
-    source: &str,
-    doc: &Document,
-    events: &[crate::parse::LintEvent],
-    out: &mut Vec<LintWarning>,
-) {
-    use crate::parse::LintEvent;
-    use std::collections::{HashMap, HashSet};
-    let lines: Vec<&str> = source.split('\n').collect();
-    let mut line_starts = Vec::with_capacity(lines.len());
-    let mut byte_starts = Vec::with_capacity(lines.len());
-    let (mut next_start, mut next_byte) = (0, 0);
-    for row in &lines {
-        line_starts.push(next_start);
-        byte_starts.push(next_byte);
-        next_start += row.chars().count() + 1;
-        next_byte += row.len() + 1;
-    }
-    let mut fences = HashMap::new();
-    let mut attached_first_block_items = HashSet::new();
-    let mut visible_plus_spans = Vec::new();
-    // The walk reads lines strictly inside a multi-line `{% %}` run as blocks;
-    // the readers keep them as run text (carve-rs#4260).
-    let mut comment_interior = HashSet::new();
-    let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
-    for body in doc.footnote_defs.values() {
-        blocks.extend(body.iter().map(|block| (block, 0)));
-    }
-    while let Some((block, depth)) = blocks.pop() {
-        match block {
-            BlockNode::List(list) => {
-                for item in &list.items {
-                    // A `+` attaches the first visible block: comment lines kept in
-                    // the item are skipped (carve-rs#4286).
-                    let comments = item
-                        .children
-                        .iter()
-                        .take_while(|child| matches!(child, BlockNode::Comment(_)))
-                        .count();
-                    let after = item.children[..comments]
-                        .last()
-                        .and_then(crate::ast_json::block_pos)
-                        .map(|pos| pos.end_line);
-                    if let (Some(marker), Some(child)) = (
-                        item.pos.as_ref(),
-                        item.children
-                            .get(comments)
-                            .and_then(crate::ast_json::block_pos),
-                    ) {
-                        if child.start_line == after.unwrap_or(marker.start_line) + 1
-                            && child.start_column == marker.start_column
-                        {
-                            attached_first_block_items.insert(marker.start_line);
-                        }
-                    }
-                }
-            }
-            BlockNode::CodeBlock(code) => {
-                if let Some(pos) = &code.pos {
-                    fences.insert((pos.start_line, pos.start_column), pos.end_line);
-                }
-            }
-            BlockNode::RawBlock(raw) => {
-                if let Some(pos) = &raw.pos {
-                    fences.insert((pos.start_line, pos.start_column), pos.end_line);
-                }
-            }
-            BlockNode::Figure(figure) => {
-                if let FigureTarget::CodeBlock(code) = &*figure.target {
-                    if let Some(pos) = &code.pos {
-                        fences.insert((pos.start_line, pos.start_column), pos.end_line);
-                    }
-                }
-            }
-            BlockNode::Comment(comment) => {
-                if let Some(pos) = &comment.pos {
-                    comment_interior.extend(pos.start_line + 1..pos.end_line);
-                }
-            }
-            _ => {}
-        }
-        let mut inlines = Vec::new();
-        crate::render_depth::push_block_children(block, depth, &mut blocks, &mut inlines);
-        while let Some((inline, inline_depth)) = inlines.pop() {
-            if let InlineNode::Comment(comment) = inline {
-                if let Some(pos) = &comment.pos {
-                    comment_interior.extend(pos.start_line + 1..pos.end_line);
-                }
-            }
-            if let InlineNode::Text(text) = inline {
-                if text.value.contains('+') {
-                    if let Some(pos) = &text.pos {
-                        visible_plus_spans.push((pos.start_offset, pos.end_offset));
-                    }
-                }
-            }
-            crate::render_depth::push_inline_children(inline, inline_depth, &mut inlines);
-        }
-    }
-    visible_plus_spans.sort_unstable_by_key(|span| span.0);
-    let mut merged_plus_spans: Vec<(usize, usize)> = Vec::with_capacity(visible_plus_spans.len());
-    for (start, end) in visible_plus_spans {
-        if let Some(last) = merged_plus_spans.last_mut() {
-            if start <= last.1 {
-                last.1 = last.1.max(end);
-                continue;
-            }
-        }
-        merged_plus_spans.push((start, end));
-    }
-    let mut seen = HashSet::new();
-    for event in events {
-        let (line, column, rule, message, len) = match event {
-            LintEvent::Fence {
-                pos,
-                marker,
-                end_line,
-            } => {
-                // Reader events can be measured in a dedented quote or note,
-                // or before definition collection erases an invisible line.
-                // The AST fence gives the authored opener; require its marker
-                // on that source line so speculative reader events stay silent.
-                let (line, column) = if fences.contains_key(&(pos.start_line, pos.start_column)) {
-                    (pos.start_line, pos.start_column)
-                } else {
-                    let Some(&(line, column)) = fences
-                        .keys()
-                        .filter(|&&(line, column)| {
-                            line >= pos.start_line
-                                && line <= *end_line
-                                && lines.get(line - 1).is_some_and(|text| {
-                                    text.chars()
-                                        .skip(column - 1)
-                                        .collect::<String>()
-                                        .starts_with(marker)
-                                })
-                        })
-                        .min()
-                    else {
-                        continue;
-                    };
-                    (line, column)
-                };
-                // A temporary container view can stop immediately before a
-                // source-owned closer. The final AST still has the opener,
-                // but that view's unclosed event is no longer authoritative.
-                if fences[&(line, column)] > *end_line
-                    && lines.get(*end_line).is_some_and(|text| {
-                        let suffix = text.chars().skip(column - 1).collect::<String>();
-                        let run = suffix
-                            .bytes()
-                            .take_while(|byte| *byte == marker.as_bytes()[0])
-                            .count();
-                        run >= marker.len() && suffix[run..].trim_matches([' ', '\t']).is_empty()
-                    })
-                {
-                    continue;
-                }
-                let ending = if *end_line > lines.len()
-                    || (*end_line == lines.len() && lines.last() == Some(&""))
-                {
-                    "it runs to the end of the document".to_string()
-                } else if lines
-                    .get(end_line.saturating_sub(1))
-                    .is_some_and(|line| line.trim() == "+")
-                {
-                    format!("a continuation marker on line {end_line} ends it")
-                } else {
-                    format!("it ends at the end of its container on line {end_line}")
-                };
-                (line, column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
-            }
-            LintEvent::Marker {
-                line,
-                column,
-                host,
-                reason,
-                first_block,
-            } => {
-                // A nested ownership walk may skip invisible line comments
-                // before the marker. Its local line then names the first
-                // skipped comment; restore the authored marker line before
-                // applying line-scoped suppression.
-                let mut line = *line;
-                if !*first_block {
-                    while lines.get(line.saturating_sub(1)).is_some_and(|row| {
-                        row.trim_start_matches([' ', '\t', '>'])
-                            .trim_start()
-                            .starts_with("%%")
-                    }) && lines.get(line).is_some_and(|row| {
-                        row.chars().nth(column.saturating_sub(1)) == Some('+')
-                            && row.chars().skip(*column).all(char::is_whitespace)
-                    }) {
-                        line += 1;
-                    }
-                }
-                if matches!(*reason, "wrong-column" | "unclaimed") {
-                    continue;
-                }
-                if *first_block
-                    && *host == "list item"
-                    && attached_first_block_items.contains(&line)
-                {
-                    continue;
-                }
-                let marker_offset = line_starts
-                    .get(line.saturating_sub(1))
-                    .copied()
-                    .unwrap_or(0)
-                    + lines
-                        .get(line.saturating_sub(1))
-                        .and_then(|row| row.rfind('+').map(|byte| row[..byte].chars().count()))
-                        .unwrap_or(column.saturating_sub(1));
-                let visible = merged_plus_spans
-                    .get(
-                        merged_plus_spans
-                            .partition_point(|&(start, _)| start <= marker_offset)
-                            .saturating_sub(1),
-                    )
-                    .is_some_and(|&(start, end)| start <= marker_offset && marker_offset < end);
-                if !*first_block && visible {
-                    continue;
-                }
-                let explanation = match *reason {
-                    "blank" => "a blank line follows it",
-                    "document" => "it reaches the end of the document",
-                    "sibling" if *host == "footnote" => "the next footnote definition is a sibling",
-                    "sibling" => "the next list item is a sibling",
-                    "list" => "the first-block form does not attach a list",
-                    "left" => "the next block starts left of its column",
-                    "right"
-                        if *first_block && !matches!(*host, "list item" | "description body") =>
-                    {
-                        "the next block starts right of its column and follows the column rules"
-                    }
-                    "right" => "the next block starts right of its column",
-                    "unclaimed" => "no open container claims it",
-                    "claimed" => "an earlier marker already claims the next block",
-                    _ => "its column names no open container",
-                };
-                // PART 9 §17 L4: a refused `+` is consumed and renders nothing (carve#5013).
-                let effect = match (*first_block, *host) {
-                    (true, "list item" | "description body") => {
-                        let name = if *host == "list item" {
-                            "item"
-                        } else {
-                            "description"
-                        };
-                        if *reason == "right" {
-                            format!("It adds no block to the {name}, and the next line follows the ordinary column rules.")
-                        } else {
-                            format!("The {name} stays empty.")
-                        }
-                    }
-                    _ => "It renders nothing.".to_string(),
-                };
-                (
-                    line,
-                    *column,
-                    if *first_block { "continuation-marker-refused" } else { "refused-continuation-marker" },
-                    format!("This + attaches nothing because {explanation}. {effect} It can be removed."),
-                    1,
-                )
-            }
-            LintEvent::CommentFence {
-                line,
-                column,
-                width,
-                end_of_document,
-            } => {
-                let marker = "%".repeat(*width);
-                let ending = if *end_of_document {
-                    "the end of the document"
-                } else {
-                    "the end of its container"
-                };
-                (
-                    *line,
-                    *column,
-                    "unclosed-comment-fence",
-                    format!("The {marker} comment fence opened here has no closing fence and hides everything to {ending}. Add a closing {marker} where the comment should stop."),
-                    *width,
-                )
-            }
-            LintEvent::Opener(opener) => {
-                // PART 0 S3: an opener past its owner's content column still opens there.
-                let past = opener.authored_column - opener.content_column;
-                let owner = match opener.owner {
-                    "doc" => "the document",
-                    "quote" => "its block quote",
-                    "note" => "its footnote body",
-                    "dd" => "its description",
-                    _ => "its fenced container",
-                };
-                let kind = opener.kind;
-                (
-                    opener.line,
-                    opener.column,
-                    "block-opener-overindented",
-                    format!(
-                        "This {kind} is indented {past} column{} past the content column of {owner}, and it still opens a {kind}, measured from its own line. Remove the indentation to make the structure explicit, or escape the opener to keep the line as text.",
-                        if past == 1 { "" } else { "s" }
-                    ),
-                    1,
-                )
-            }
+    if let Some(tree) = tree {
+        out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+        let mut positions = positions;
+        let mut joined = Vec::new();
+        joined_rows(source, tree, &mut positions, &values, &mut joined);
+        let nodes = TreeNodes {
+            values: &values,
+            joined,
+            made: std::cell::RefCell::new(Vec::new()),
         };
-        if rule != "unclosed-code-fence" && comment_interior.contains(&line) {
-            continue;
-        }
-        if !seen.insert((line, column, rule)) {
-            continue;
-        }
-        let Some(text) = lines.get(line.saturating_sub(1)) else {
-            continue;
-        };
-        let before = if rule == "unclosed-comment-fence" {
-            let bom = if line == 1 && text.starts_with('\u{feff}') {
-                3
-            } else {
-                0
-            };
-            let authored = &text[bom..];
-            let mut visual = 0;
-            let mut offset = authored.len();
-            for (at, ch) in authored.char_indices() {
-                if visual >= column.saturating_sub(1) {
-                    offset = at;
-                    break;
-                }
-                visual += if ch == '\t' { 4 - visual % 4 } else { 1 };
-            }
-            bom + offset
-        } else {
-            text.char_indices()
-                .nth(column.saturating_sub(1))
-                .map_or(text.len(), |(offset, _)| offset)
-        };
-        let start = byte_starts[line.saturating_sub(1)] + before;
-        out.push(LintWarning {
-            file: None,
-            included_by: Vec::new(),
-            line,
-            column,
-            rule,
-            message,
-            start,
-            end: (start + len).min(source.len()),
-        });
-    }
-}
-
-fn collect_contained_reference_placements(
-    blocks: &[BlockNode],
-    contained: bool,
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    for block in blocks {
-        match block {
-            BlockNode::Directive(d) => {
-                if contained && d.kind == "references" {
-                    out.push(warning(
-                        d.pos.clone(),
-                        to_byte,
-                        "references-placement-in-container",
-                        "This \"::: references\" marker is inside a container and does not place the reference list. Move it to document level, or remove it if no placement is needed.".to_string(),
-                    ));
-                }
-                collect_contained_reference_placements(&d.children, true, to_byte, out);
-            }
-            BlockNode::Admonition(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::Div(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::Section(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::BlockQuote(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::LineBlock(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::FigureGroup(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::ExtensionCarrier(n) => {
-                collect_contained_reference_placements(&n.children, true, to_byte, out)
-            }
-            BlockNode::List(n) => {
-                for item in &n.items {
-                    collect_contained_reference_placements(&item.children, true, to_byte, out);
-                }
-            }
-            BlockNode::DefinitionList(n) => {
-                for item in &n.items {
-                    for definition in &item.definitions {
-                        collect_contained_reference_placements(
-                            &definition.children,
-                            true,
-                            to_byte,
-                            out,
-                        );
-                    }
-                }
-            }
-            BlockNode::Figure(n) => {
-                if let FigureTarget::BlockQuote(quote) = &*n.target {
-                    collect_contained_reference_placements(&quote.children, true, to_byte, out);
-                }
-            }
-            BlockNode::Table(n) => {
-                for row in &n.rows {
-                    for cell in &row.cells {
-                        if let Some(blocks) = &cell.blocks {
-                            collect_contained_reference_placements(blocks, true, to_byte, out);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
-    let lines: Vec<&str> = source.lines().collect();
-    let mut line_start = 0usize;
-    for (index, line) in lines.iter().enumerate() {
-        let trimmed = line.trim_start();
-        if !trimmed.starts_with('|')
-            && ["aligns", "valigns", "widths"]
-                .iter()
-                .any(|k| line.contains(&format!("{k}=")))
-        {
-            let next = lines.get(index + 1).copied().unwrap_or("");
-            // THE LINE HAS TO BE A BLOCK-ATTRIBUTE LINE, not merely hold a
-            // brace run. A `{…}` with text beside it attaches to nothing under
-            // PART 9 §15, so it is paragraph text and lists none of the table's
-            // column metadata - every rule below was reporting on a table that
-            // had not been configured at all (markup-carve/carve-rs#2099).
-            let attribute_line = trimmed.starts_with('{') && trimmed.trim_end().ends_with('}');
-            if attribute_line && next.trim_start().starts_with('|') {
-                let columns = next.matches('|').count().saturating_sub(1);
-                let mut marked: Vec<(bool, bool)> = Vec::new();
-                for row in lines[index + 1..]
-                    .iter()
-                    .map(|l| l.trim_start())
-                    .take_while(|l| l.starts_with('|') || l.starts_with('+'))
-                {
-                    let cells = crate::parse::row_cell_alignment_axes(row);
-                    if !cells.iter().any(|cell| cell.0) {
-                        continue;
-                    }
-                    marked.resize(marked.len().max(cells.len()), (false, false));
-                    for (c, cell) in cells.iter().enumerate() {
-                        marked[c].0 |= cell.1;
-                        marked[c].1 |= cell.2;
-                    }
-                }
-                let mut set_aligns: Vec<bool> = Vec::new();
-                for key in ["aligns", "valigns", "widths"] {
-                    // `aligns=` also ends `valigns=`; the key starts at a word boundary.
-                    let Some(key_at) = line
-                        .match_indices(&format!("{key}="))
-                        .map(|(at, _)| at)
-                        .find(|&at| {
-                            !line[..at]
-                                .chars()
-                                .next_back()
-                                .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
-                        })
-                    else {
-                        continue;
-                    };
-                    let value_at = key_at + key.len() + 1;
-                    let rest = &line[value_at..];
-                    let raw = if let Some(q) = rest.strip_prefix('"') {
-                        q.split('"').next().unwrap_or("")
-                    } else {
-                        rest.split(|c: char| c.is_whitespace() || c == '}')
-                            .next()
-                            .unwrap_or("")
-                    };
-                    let values: Vec<&str> = raw.split(',').collect();
-                    // A `LintWarning`'s `start` and `end` are byte offsets by
-                    // design, stated on the struct; its `column` is the number a
-                    // `Pos` carries, so a consumer can line a diagnostic up with
-                    // a node, and PART 12 §4 counts that in codepoints. These
-                    // rules passed the byte offset straight through, so one run
-                    // reported columns in two units on any line holding a
-                    // non-ASCII character (markup-carve/carve-rs#2099).
-                    let push = |out: &mut Vec<LintWarning>, rule, message: String| {
-                        out.push(LintWarning {
-                            file: None,
-                            included_by: Vec::new(),
-                            line: index + 1,
-                            column: line[..key_at].chars().count() + 1,
-                            rule,
-                            message,
-                            start: line_start + key_at,
-                            end: line_start + key_at + key.len(),
-                        })
-                    };
-                    if values.len() < columns {
-                        push(out, "table-column-arity", format!("{key} supplies {} column entries for a {columns}-column table; the unset tail is valid but may be accidental.", values.len()));
-                    }
-                    if key == "widths"
-                        && values
-                            .iter()
-                            .filter_map(|v| v.trim().parse::<f64>().ok())
-                            .sum::<f64>()
-                            > 100.0
-                    {
-                        push(
-                            out,
-                            "table-width-total",
-                            "The specified table column widths total more than 100%.".to_owned(),
-                        );
-                    }
-                    // One report per column, under `aligns` when that axis overlaps.
-                    for (c, &(align, valign)) in marked.iter().enumerate() {
-                        let set = values.get(c).is_some_and(|v| !v.trim().is_empty());
-                        let overlap = match key {
-                            "aligns" => align && set,
-                            "valigns" => {
-                                valign
-                                    && set
-                                    && !(align && set_aligns.get(c).copied().unwrap_or(false))
-                            }
-                            _ => false,
-                        };
-                        if overlap {
-                            push(out, "table-column-overlap", format!("Column {} supplies the same alignment axis both in the table and in a table attribute; the in-table marker wins.", c + 1));
-                        }
-                    }
-                    if key == "aligns" {
-                        set_aligns = values.iter().map(|v| !v.trim().is_empty()).collect();
-                    }
-                }
-            }
-        }
-        line_start += line.len() + 1;
-    }
-}
-
-fn collect_table_span_marker_warnings(
-    source: &str,
-    blocks: &[BlockNode],
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    walk_all_blocks(blocks, &mut |block| {
-        let table = match block {
-            BlockNode::Table(table) => table,
-            BlockNode::Figure(figure) => match &*figure.target {
-                FigureTarget::Table(table) => table,
-                _ => return,
-            },
-            _ => return,
-        };
-        let plan = TableSpanPlan::new(table);
-        for (r, row) in table.rows.iter().enumerate() {
-            for (c, cell) in row.cells.iter().enumerate() {
-                let Some(span) = cell.span else { continue };
-                if plan.entry(r, c).skip {
-                    continue;
-                }
-                let (marker, reason) = match span {
-                    TableCellSpan::Rowspan if r == 0 || c >= table.rows[r - 1].cells.len() =>
-                        ('^', "There is no cell above it to extend."),
-                    TableCellSpan::Rowspan =>
-                        ('^', "Extending the cell above would cover another cell."),
-                    TableCellSpan::Colspan if c == 0 =>
-                        ('<', "There is no cell to its left to widen."),
-                    TableCellSpan::Colspan =>
-                        ('<', "The cell to its left starts in an earlier row, so widening it would cover cells already placed."),
-                };
-                let located = cell
-                    .pos
-                    .as_ref()
-                    .and_then(|pos| {
-                        let start = to_byte(pos.start_offset);
-                        let end = to_byte(pos.end_offset).min(source.len());
-                        source
-                            .get(start..end)
-                            .and_then(|s| s.find(marker))
-                            .map(|at| {
-                                let marker_start = start + at;
-                                (
-                                    pos.start_line,
-                                    pos.start_column + source[start..marker_start].chars().count(),
-                                    marker_start,
-                                )
-                            })
-                    })
-                    .or_else(|| locate_marker_in_row(source, row, c, marker));
-                let Some((line, column, start)) = located else {
-                    continue;
-                };
-                out.push(LintWarning { file: None, included_by: Vec::new(),
-                    line,
-                    column,
-                    start,
-                    end: start + marker.len_utf8(),
-                    rule: "table-span-marker-blocked",
-                    message: format!(
-                        "The \"{marker}\" span marker cannot extend a cell. {reason} It renders as a cell of its own; escape it as \"\\{marker}\" to keep the character as text, or remove it."
-                    ),
-                });
-            }
-        }
-    });
-}
-
-/// The byte start and text of 1-based `line`, breaking at CRLF, lone CR or LF
-/// as the parser does.
-fn source_line(source: &str, line: usize) -> Option<(usize, &str)> {
-    let bytes = source.as_bytes();
-    let mut start = 0;
-    let mut current = 1;
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'\r' || bytes[at] == b'\n' {
-            if current == line {
-                return Some((start, &source[start..at]));
-            }
-            at += if bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n') {
-                2
-            } else {
-                1
-            };
-            start = at;
-            current += 1;
-        } else {
-            at += 1;
-        }
-    }
-    (current == line).then(|| (start, &source[start..]))
-}
-
-fn locate_marker_in_row(
-    source: &str,
-    row: &TableRow,
-    cell: usize,
-    marker: char,
-) -> Option<(usize, usize, usize)> {
-    let line = row.pos.as_ref()?.start_line;
-    let (line_start, line_text) = source_line(source, line)?;
-    let row_column = row.pos.as_ref()?.start_column;
-    let row_at = line_text
-        .char_indices()
-        .nth(row_column.checked_sub(1)?)
-        .map_or(line_text.len(), |(at, _)| at);
-    let (from, to) = crate::parse::lint_table_cell_ranges(&line_text[row_at..])
-        .get(cell)
-        .map(|&(from, to)| (row_at + from, row_at + to))?;
-    let at = line_text.get(from..to)?.find(marker)? + from;
-    Some((line, line_text[..at].chars().count() + 1, line_start + at))
-}
-
-/// PART 9 §15 A4: a floating `{…}` that ran out of blocks to attach to.
-///
-/// Both ways of running out are the same finding - the DOCUMENT ended, or the
-/// CONTAINER holding the attribute did. Nothing is emitted for it either way, so
-/// `> {.k}` written on a quote's last line renders neither on the quote nor on
-/// anything after it, and without this the loss is invisible.
-fn collect_unattached_block_attribute_warnings(
-    source: &str,
-    spans: &[Pos],
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    if spans.is_empty() {
-        return;
-    }
-    let line_starts = CodepointLineStarts::original(source);
-    for pos in spans {
-        let start = to_byte(codepoint_offset_at(
-            &line_starts,
-            pos.start_line,
-            pos.start_column,
+        out.extend(data_rules::run(
+            source,
+            &parsed,
+            &positions.all,
+            &positions.holders,
+            &nodes,
+            &values,
+            tree,
+            &line_model,
+            opts,
         ));
-        let end = to_byte(codepoint_offset_at(
-            &line_starts,
-            pos.end_line,
-            pos.end_column,
-        ))
-        .max(start);
-        out.push(LintWarning {
-            file: None,
-            included_by: Vec::new(),
-            line: pos.start_line.max(1),
-            column: pos.start_column.max(1),
-            rule: "unattached-block-attribute",
-            message: "This block attribute reaches no block: the document or the container \
-                      holding it ended first, so nothing is emitted for it. Move it in front of \
-                      the block it belongs to, or delete it."
-                .to_string(),
-            start,
-            end,
-        });
     }
+    out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
+    controls::filter(source, out, &comments)
 }
 
-/// The CODEPOINT offset of a 1-based (line, column) pair.
-///
-/// `line_starts` holds codepoint offsets and [`Pos`] counts columns in
-/// codepoints too (PART 12 §4), so this is one addition; the conversion to bytes
-/// is the caller's `to_byte`, the same map every other rule here goes through.
-///
-/// Computed rather than read off a node, because these spans are taken DURING
-/// the parse and `fill_offsets` only ever runs over nodes that reached the tree.
-/// An unattached attribute reaches none, by definition.
-fn codepoint_offset_at(line_starts: &CodepointLineStarts, line: usize, column: usize) -> usize {
-    let Some(&line_start) = line_starts.get(line.saturating_sub(1)) else {
-        return line_starts.last().copied().unwrap_or(0);
-    };
-    line_start + column.saturating_sub(1)
-}
-
-fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<LintWarning>) {
-    // The AST test keeps verbatim contexts opaque. The source scan then asks
-    // the separate, document-level question: does this look like a template
-    // file that reached Carve before its template engine ran?
-    let json = crate::ast_json::to_json(doc);
-    let mut comment_starts = std::collections::BTreeSet::new();
-    let mut json_at = 0;
-    while let Some(rel) = json[json_at..].find("\"delimited\":true") {
-        let field = json_at + rel;
-        let Some(offset_rel) = json[field..].find("\"startOffset\":") else {
-            break;
-        };
-        let digits = &json[field + offset_rel + "\"startOffset\":".len()..];
-        let digit_len = digits.bytes().take_while(u8::is_ascii_digit).count();
-        if let Ok(offset) = digits[..digit_len].parse::<usize>() {
-            comment_starts.insert(offset);
+/// Drops every finding that a later finding of the same code at `replacing`
+/// overlaps: one pass in place of a scan of all findings per emit.
+fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
+    let mut later: HashMap<&'static str, Vec<(u32, u32, usize)>> = HashMap::new();
+    for &at in replacing {
+        if let Some(finding) = output.get(at)
+            && let Some(pos) = finding.pos
+        {
+            later
+                .entry(finding.code)
+                .or_default()
+                .push((pos.start_offset, pos.end_offset, at));
         }
-        json_at = field + "\"delimited\":true".len();
     }
-    if comment_starts.is_empty() {
+    if later.is_empty() {
         return;
     }
-    let mut at = 0;
-    let mut position_byte = 0;
-    let mut codepoint_start = 0;
-    let mut line = 1;
-    let mut column = 1;
-    while let Some(rel) = source[at..].find("{%") {
-        let start = at + rel;
-        let Some(close_rel) = source[start + 2..].find("%}") else {
-            break;
-        };
-        let end = start + 2 + close_rel + 2;
-        for ch in source[position_byte..start].chars() {
-            codepoint_start += 1;
-            if ch == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
-            }
-        }
-        position_byte = start;
-        if !comment_starts.contains(&codepoint_start) {
-            at = end;
-            continue;
-        }
-        let tag = source[start + 2..end - 2].trim();
-        let shaped = matches!(tag, "raw" | "endraw" | "endif" | "endfor" | "endblock")
-            || ["if", "for", "block"].iter().any(|head| {
-                tag.strip_prefix(head)
-                    .is_some_and(|rest| rest.starts_with(char::is_whitespace))
-            });
-        if shaped {
-            out.push(LintWarning { file: None, included_by: Vec::new(),
-                line,
-                column,
-                rule: "braced-comment-in-a-template-source",
-                message: "This `{% … %}` comment is a template tag. Liquid and Nunjucks render before the converter runs, so a page that wraps its tags in `{% raw %}` hands Carve bare template text - and PART 9 §21a makes that text a comment. Reported, never rewritten: only the author knows which of the two the document meant.".to_string(),
-                start,
-                end,
-            });
-        }
-        at = end;
-    }
-}
-
-/// The PART 9 §4c findings: what a `::: figure` spelling silently is not.
-///
-/// `in_group` says the walk is inside an open composite figure's body, at any
-/// depth - the state that turns a BARE `figure` opener from a group into the
-/// demoted generic container `figure-group-nested` reports. The parser makes
-/// the same decision with the same scope (`IN_FIGURE_GROUP`), which is why a
-/// bare `figure` admonition is only reported where that flag would have been
-/// set: anywhere else the node can only come from an ingested tree, which this
-/// surface never sees (it parses the source itself).
-fn collect_figure_group_warnings(
-    blocks: &[BlockNode],
-    in_group: bool,
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    for block in blocks {
-        match block {
-            BlockNode::Admonition(a) => {
-                if a.kind == "figure" {
-                    if a.title.is_some() || a.label.is_some() {
-                        out.push(warning(
-                            a.pos.clone(),
-                            to_byte,
-                            "figure-group-opener-metadata",
-                            "A `::: figure` opener carrying a quoted title or a [label] stays a \
-                             generic container, not a composite figure: the group has no title or \
-                             label slot (PART 9 \u{a7}4c). Its one authored metadata channel is \
-                             the `^ ` caption after the closing fence."
-                                .to_string(),
-                        ));
-                    } else if in_group {
-                        out.push(warning(
-                            a.pos.clone(),
-                            to_byte,
-                            "figure-group-nested",
-                            "Composite figures do not nest (PART 9 \u{a7}4c): a bare `::: figure` \
-                             opener inside an open group's body stays a generic container. Close \
-                             the outer group first, or drop the inner fence."
-                                .to_string(),
-                        ));
-                    }
-                }
-                collect_figure_group_warnings(&a.children, in_group, to_byte, out);
-            }
-            BlockNode::FigureGroup(g) => {
-                let panels = g
-                    .children
-                    .iter()
-                    .filter(|child| matches!(child, BlockNode::Figure(_) | BlockNode::Table(_)))
-                    .count();
-                if panels < 2 {
-                    out.push(warning(g.pos.clone(), to_byte, if panels == 0 { "figure-group-empty" } else { "figure-group-single-panel" },
-                        if panels == 0 { "This figure group has no captionable panel." } else { "This figure group has one panel; a plain figure does not need the group wrapper." }.into()));
-                }
-                for child in &g.children {
-                    let panel_caption = match child {
-                        BlockNode::Figure(f) => Some(&f.caption),
-                        BlockNode::Table(t) => t.caption.as_ref(),
-                        _ => None,
-                    };
-                    if let Some(caption) = panel_caption {
-                        for node in caption.iter() {
-                            if let InlineNode::CaptionNumber(n) = node {
-                                out.push(warning(
-                                    n.pos.clone(),
-                                    to_byte,
-                                    "figure-group-panel-number",
-                                    "A `#` placeholder in a panel caption stays literal: panels \
-                                     are not sequence units, so it has nothing to resolve against \
-                                     (PART 9 \u{a7}4c). Number the GROUP caption instead, or drop \
-                                     the `#`."
-                                        .to_string(),
-                                ));
-                            }
+    let mut dropped = vec![false; output.len()];
+    for (code, mut spans) in later {
+        // A Fenwick tree over the starts of the replacing findings holds the
+        // furthest end; filled from the last finding back, a query sees only later ones.
+        let mut starts: Vec<u32> = spans.iter().map(|span| span.0).collect();
+        starts.sort_unstable();
+        starts.dedup();
+        let mut furthest = vec![0u32; starts.len() + 1];
+        spans.sort_unstable_by_key(|span| span.2);
+        let mut spans = spans.into_iter().rev().peekable();
+        for (at, finding) in output.iter().enumerate().rev() {
+            if finding.code == code
+                && let Some(pos) = finding.pos
+            {
+                let mut slot = starts.partition_point(|start| *start < pos.end_offset);
+                while slot > 0 {
+                    if furthest
+                        .get(slot)
+                        .is_some_and(|end| *end > pos.start_offset)
+                    {
+                        if let Some(flag) = dropped.get_mut(at) {
+                            *flag = true;
                         }
+                        break;
                     }
-                }
-                collect_figure_group_warnings(&g.children, true, to_byte, out);
-            }
-            BlockNode::Directive(d) => {
-                collect_figure_group_warnings(&d.children, in_group, to_byte, out)
-            }
-            BlockNode::Div(d) => collect_figure_group_warnings(&d.children, in_group, to_byte, out),
-            BlockNode::Section(d) => {
-                collect_figure_group_warnings(&d.children, in_group, to_byte, out)
-            }
-            BlockNode::Table(t) => {
-                for row in &t.rows {
-                    for cell in &row.cells {
-                        if let Some(blocks) = &cell.blocks {
-                            collect_figure_group_warnings(blocks, in_group, to_byte, out);
-                        }
-                    }
+                    slot &= slot - 1;
                 }
             }
-            BlockNode::BlockQuote(b) => {
-                collect_figure_group_warnings(&b.children, in_group, to_byte, out)
-            }
-            BlockNode::LineBlock(lb) => {
-                collect_figure_group_warnings(&lb.children, in_group, to_byte, out)
-            }
-            BlockNode::List(l) => {
-                for item in &l.items {
-                    collect_figure_group_warnings(&item.children, in_group, to_byte, out);
+            while let Some((start, end, _)) = spans.next_if(|span| span.2 == at) {
+                let mut slot = starts.partition_point(|s| *s < start) + 1;
+                while let Some(slot_end) = furthest.get_mut(slot) {
+                    *slot_end = (*slot_end).max(end);
+                    slot += slot & slot.wrapping_neg();
                 }
             }
-            BlockNode::DefinitionList(dl) => {
-                for item in &dl.items {
-                    for def in &item.definitions {
-                        collect_figure_group_warnings(&def.children, in_group, to_byte, out);
-                    }
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &*f.target {
-                    collect_figure_group_warnings(&b.children, in_group, to_byte, out);
-                }
-            }
-            BlockNode::ExtensionCarrier(e) => {
-                collect_figure_group_warnings(&e.children, in_group, to_byte, out)
-            }
-            _ => {}
         }
+    }
+    let mut flags = dropped.into_iter();
+    output.retain(|_| !flags.next().unwrap_or(false));
+}
+
+/// The node ranges and the holders their `children` lists belong to.
+struct Ranges<'a> {
+    all: Vec<Range<'a>>,
+    holders: Vec<Holder>,
+}
+
+#[allow(clippy::struct_excessive_bools)] // Independent facts of a node, read by separate rules.
+struct Range<'a> {
+    start: usize,
+    end: usize,
+    path: LazyPath<'a>,
+    kind: &'a str,
+    start_line: usize,
+    end_line: usize,
+    has_attrs: bool,
+    footnote_key: Option<&'a str>,
+    /// A comment written as a block.
+    form_block: bool,
+    /// A paragraph whose only child is an image.
+    image_line: bool,
+    /// The holder whose `children` hold this node; `None` for the document's own children.
+    holder: Option<u32>,
+    /// The node's index in its `children` list.
+    index: u32,
+    /// The range of the item before it in the same `children` list.
+    prev: Option<u32>,
+    /// A table row without `pos` that a continuation row joined, placed by its source layout entry
+    /// for the data rules (C2-W-150).
+    joined: bool,
+}
+
+/// A node that holds `children`: its range, if it has one, and the holder that holds it.
+struct Holder {
+    range: Option<u32>,
+    up: Option<u32>,
+    /// The `title` list of its range's node: inline content whose leaf is that node, as carve-js reads it.
+    title: bool,
+}
+
+/// A node's pointer, written out only when a rule reads it.
+struct LazyPath<'a> {
+    node: Option<&'a walk::PathNode<'a>>,
+    /// The pointer text, built on first use by the data rules.
+    text: OnceCell<String>,
+}
+
+impl LazyPath<'_> {
+    fn len(&self) -> usize {
+        self.node.map_or(0, |node| node.len)
+    }
+
+    /// Whether this is the document's own path, without building the text.
+    const fn is_empty(&self) -> bool {
+        self.node.is_none()
+    }
+
+    fn as_str(&self) -> &str {
+        self.text.get_or_init(|| self.text())
+    }
+
+    fn text(&self) -> String {
+        walk::path_text(self.node)
     }
 }
 
-/// A block opener indented past a term's marker folds into the term as text,
-/// because a term has no content column (carve#2411). One warning per term, on
-/// its first opener-shaped folded line.
-fn collect_term_fold_warnings(
-    source: &str,
-    bodies: &[&[BlockNode]],
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    // The same line split as `CodepointLineStarts::original`. A leading BOM stays
-    // in line 1 because positions count it; `visual_column` gives it no width.
-    let lines: Vec<&str> = source
-        .split('\n')
-        .flat_map(|line| line.strip_suffix('\r').unwrap_or(line).split('\r'))
-        .collect();
-    let starts = CodepointLineStarts::original(source);
-    let mut visit = |block: &BlockNode| {
-        let BlockNode::DefinitionList(dl) = block else {
-            return;
+impl PartialEq<&str> for LazyPath<'_> {
+    fn eq(&self, other: &&str) -> bool {
+        self.len() == other.len() && self.text() == *other
+    }
+}
+
+/// The tree nodes of the ranges, the rows of `joined_rows` after those of the walk, and the values
+/// the data rules have stepped into, by handle.
+struct TreeNodes<'v, 't> {
+    values: &'v [V<'t>],
+    joined: Vec<V<'t>>,
+    made: std::cell::RefCell<Vec<V<'t>>>,
+}
+
+impl<'t> TreeNodes<'_, 't> {
+    fn handle(&self, node: V<'t>) -> Option<u32> {
+        let mut made = self.made.borrow_mut();
+        made.push(node);
+        u32::try_from(made.len() - 1).ok()
+    }
+}
+
+impl data_model::NodeTree for TreeNodes<'_, '_> {
+    fn root(&self, range: u32) -> Option<u32> {
+        let at = range as usize;
+        let node = self
+            .values
+            .get(at)
+            .or_else(|| self.joined.get(at.wrapping_sub(self.values.len())))
+            .copied()
+            .filter(|node| node.is_object())?;
+        self.handle(node)
+    }
+
+    fn step(&self, node: u32, step: data_model::Step) -> data_model::Leaf<'_> {
+        use data_model::Leaf;
+        let Some(value) = self.made.borrow().get(node as usize).copied() else {
+            return Leaf::Absent;
         };
-        for term in dl.items.iter().flat_map(|item| &item.terms) {
-            let Some(pos) = &term.pos else { continue };
-            if pos.end_line <= pos.start_line {
-                continue;
-            }
-            let term_line = lines.get(pos.start_line - 1).copied().unwrap_or("");
-            let marker_chars = pos.start_column.saturating_sub(1);
-            let marker_byte = term_line
-                .char_indices()
-                .nth(marker_chars)
-                .map_or(term_line.len(), |(i, _)| i);
-            let quotes = term_line[..marker_byte].matches('>').count();
-            let marker_column = visual_column(&term_line[..marker_byte]);
-            // A line inside a multi-line code, math or raw span is verbatim
-            // content, not a folded opener.
-            let mut spans = Vec::new();
-            let mut stack: Vec<(&InlineNode, usize)> =
-                term.children.iter().map(|child| (child, 0)).collect();
-            while let Some((node, depth)) = stack.pop() {
-                let span = match node {
-                    InlineNode::Code(c) => c.pos.as_ref(),
-                    InlineNode::Math(m) => m.pos.as_ref(),
-                    InlineNode::RawInline(r) => r.pos.as_ref(),
-                    InlineNode::LiteralInline(l) => l.pos.as_ref(),
-                    _ => None,
-                };
-                if let Some(p) = span {
-                    spans.push((p.start_line, p.end_line));
-                }
-                // A folded comment's lines are all comment, its first included.
-                if let InlineNode::Comment(Comment { pos: Some(p), .. }) = node {
-                    spans.push((p.start_line.saturating_sub(1), p.end_line));
-                }
-                crate::render_depth::push_inline_children(node, depth, &mut stack);
-            }
-            let verbatim = |line_no: usize| {
-                spans
-                    .iter()
-                    .any(|&(first, last)| first < line_no && line_no <= last)
-            };
-            for line_no in pos.start_line + 1..=pos.end_line {
-                if verbatim(line_no) {
-                    continue;
-                }
-                let line = lines.get(line_no - 1).copied().unwrap_or("");
-                let Some(indent) = past_quotes_and_indent(line, quotes) else {
-                    continue;
-                };
-                let rest = &line[indent..];
-                if visual_column(&line[..indent]) <= marker_column
-                    || !crate::parse::opens_block_for_term_lint(rest)
-                {
-                    continue;
-                }
-                let start =
-                    starts.get(line_no - 1).copied().unwrap_or(0) + line[..indent].chars().count();
-                out.push(LintWarning {
-                    file: None,
-                    included_by: Vec::new(),
-                    line: line_no,
-                    column: line[..indent].chars().count() + 1,
-                    rule: "definition-term-block-folded",
-                    message: "This block opener is indented under a definition term, which has \
-                              no content column, so it folds into the term as text. Dedent it to \
-                              the container's content column to open the block, or put it in the \
-                              term's \": \" description."
-                        .to_string(),
-                    start: to_byte(start),
-                    end: to_byte(start + rest.chars().count()),
-                });
-                break;
-            }
-        }
-    };
-    for blocks in bodies {
-        walk_all_blocks(blocks, &mut visit);
-    }
-}
-
-fn visual_column(prefix: &str) -> usize {
-    prefix.chars().fold(0, |column, c| {
-        if c == '\u{feff}' {
-            column
-        } else if c == '\t' {
-            (column / 4 + 1) * 4
+        let found = match step {
+            data_model::Step::Key(key) => value.get(key),
+            data_model::Step::Index(index) => value.as_array().and_then(|items| items.get(index)),
+        };
+        let Some(found) = found.filter(|found| !found.is_null()) else {
+            return Leaf::Absent;
+        };
+        if let Some(text) = found.as_str() {
+            Leaf::Str(text)
+        } else if let Some(b) = found.as_bool() {
+            Leaf::Bool(b)
+        } else if found.is_number() {
+            Leaf::Num(found.as_i64().unwrap_or(0))
         } else {
-            column + 1
-        }
-    })
-}
-
-/// Byte index past `quotes` quote markers and the indentation after them.
-fn past_quotes_and_indent(line: &str, quotes: usize) -> Option<usize> {
-    let mut at = 0;
-    for _ in 0..quotes {
-        let rest = &line[at..];
-        let lead = rest.len() - rest.trim_start_matches([' ', '\t']).len();
-        let after = &rest[lead..];
-        if !after.starts_with('>') {
-            return None;
-        }
-        at += lead + 1;
-        if line[at..].starts_with(' ') {
-            at += 1;
+            self.handle(found).map_or(Leaf::Absent, Leaf::Node)
         }
     }
-    let rest = &line[at..];
-    Some(at + rest.len() - rest.trim_start_matches([' ', '\t']).len())
-}
 
-/// Visit every block, descending into every container that holds blocks.
-fn walk_all_blocks(blocks: &[BlockNode], visit: &mut dyn FnMut(&BlockNode)) {
-    for block in blocks {
-        visit(block);
-        match block {
-            BlockNode::BlockQuote(b) => walk_all_blocks(&b.children, visit),
-            BlockNode::Admonition(a) => walk_all_blocks(&a.children, visit),
-            BlockNode::Directive(d) => walk_all_blocks(&d.children, visit),
-            BlockNode::Div(d) => walk_all_blocks(&d.children, visit),
-            BlockNode::Section(d) => walk_all_blocks(&d.children, visit),
-            BlockNode::LineBlock(lb) => walk_all_blocks(&lb.children, visit),
-            BlockNode::FigureGroup(g) => walk_all_blocks(&g.children, visit),
-            BlockNode::ExtensionCarrier(e) => walk_all_blocks(&e.children, visit),
-            BlockNode::Table(t) => {
-                for cell in t.rows.iter().flat_map(|row| &row.cells) {
-                    if let Some(blocks) = &cell.blocks {
-                        walk_all_blocks(blocks, visit);
-                    }
-                }
-            }
-            BlockNode::List(l) => {
-                for item in &l.items {
-                    walk_all_blocks(&item.children, visit);
-                }
-            }
-            BlockNode::DefinitionList(dl) => {
-                for def in dl.items.iter().flat_map(|item| &item.definitions) {
-                    walk_all_blocks(&def.children, visit);
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &*f.target {
-                    walk_all_blocks(&b.children, visit);
-                }
-            }
-            _ => {}
-        }
+    fn len(&self, node: u32) -> Option<usize> {
+        let value = self.made.borrow().get(node as usize).copied()?;
+        value.as_array().map(crate::view::Arr::len)
     }
 }
 
-/// The one authoring hazard around the fenced block quote that no other rule
-/// here reaches (markup-carve/carve#1718).
-fn collect_quote_fence_warnings(
-    blocks: &[BlockNode],
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
+/// The span of each continuation row of a table, by group and row index.
+type RowSpans = HashMap<(usize, usize), (usize, usize)>;
+
+/// C2-W-150: a table row that a continuation row joined omits `pos` (C2-A-158) and still has a block
+/// record, placed where its source layout entry is.
+fn joined_rows<'t>(
+    source: &str,
+    tree: V<'_>,
+    positions: &mut Ranges<'_>,
+    values: &[V<'t>],
+    joined: &mut Vec<V<'t>>,
 ) {
-    for pair in blocks.windows(2) {
-        let (BlockNode::BlockQuote(above), BlockNode::BlockQuote(fence)) = (&pair[0], &pair[1])
+    let rows = pos_less_rows(&positions.all, values);
+    if rows.is_empty() {
+        return;
+    }
+    // Only a row with continuation lines of a table the layout walk reaches has a span.
+    let scanned = crate::api::layout::ScannedTables::new(source);
+    let mut spans: HashMap<usize, RowSpans> = HashMap::new();
+    for &(table, ..) in &rows {
+        spans
+            .entry(table)
+            .or_insert_with(|| match (positions.all.get(table), values.get(table)) {
+                (Some(range), Some(&value)) if layout_reaches(tree, range.path.node) => {
+                    crate::api::layout::continuation_rows(
+                        source,
+                        &scanned,
+                        value,
+                        range.start,
+                        range.end,
+                    )
+                    .into_iter()
+                    .collect()
+                }
+                _ => HashMap::new(),
+            });
+    }
+    let breaks: Vec<usize> = memchr_lines(source);
+    let line_of = |at: usize| breaks.partition_point(|&brk| brk < at) + 1;
+    let mut index = JoinIndex::new(positions);
+    for (table, group, row_at, row) in rows {
+        let Some(table_path) = positions
+            .all
+            .get(table)
+            .map(|range| range.path.as_str().to_owned())
         else {
             continue;
         };
-        if above.fenced || !fence.fenced {
-            continue;
-        }
-        let (Some(above_pos), Some(opener)) = (above.pos.clone(), fence.pos.clone()) else {
-            continue;
-        };
-        if opener.start_line != above_pos.end_line + 1 {
-            continue;
-        }
-        out.push(warning(
-            fence.pos.clone(),
-            to_byte,
-            "quote-fence-ends-the-quote-above",
-            "A \"::: >\" opener at the column of the quote above it ENDS that quote and opens a \
-             sibling one; the two render as adjacent blockquotes, not one nested in the other. \
-             Write \"> ::: >\" to nest it, or leave a blank line to make two quotes deliberate."
-                .to_string(),
-        ));
-    }
-
-    // The same mistake sits at a different column under a list item, inside a
-    // container body and in a definition, so every block list is walked rather
-    // than the document's own children alone.
-    for block in blocks {
-        match block {
-            BlockNode::BlockQuote(b) => collect_quote_fence_warnings(&b.children, to_byte, out),
-            BlockNode::Admonition(a) => collect_quote_fence_warnings(&a.children, to_byte, out),
-            BlockNode::Directive(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
-            BlockNode::Div(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
-            BlockNode::Section(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
-            BlockNode::Table(t) => {
-                for row in &t.rows {
-                    for cell in &row.cells {
-                        if let Some(blocks) = &cell.blocks {
-                            collect_quote_fence_warnings(blocks, to_byte, out);
-                        }
-                    }
-                }
-            }
-            BlockNode::LineBlock(lb) => collect_quote_fence_warnings(&lb.children, to_byte, out),
-            BlockNode::FigureGroup(g) => collect_quote_fence_warnings(&g.children, to_byte, out),
-            BlockNode::ExtensionCarrier(e) => {
-                collect_quote_fence_warnings(&e.children, to_byte, out)
-            }
-            BlockNode::List(l) => {
-                for item in &l.items {
-                    collect_quote_fence_warnings(&item.children, to_byte, out);
-                }
-            }
-            BlockNode::DefinitionList(dl) => {
-                for item in &dl.items {
-                    for def in &item.definitions {
-                        collect_quote_fence_warnings(&def.children, to_byte, out);
-                    }
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &*f.target {
-                    collect_quote_fence_warnings(&b.children, to_byte, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Byte offset of each codepoint in `source`, plus one past the end.
-///
-/// `None` for an all-ASCII source, where the two units coincide and the table
-/// would be a per-lint allocation the size of the document for nothing.
-fn codepoint_to_byte_map(source: &str) -> Option<Vec<usize>> {
-    if source.is_ascii() {
-        return None;
-    }
-    let mut map: Vec<usize> = source.char_indices().map(|(byte, _)| byte).collect();
-    map.push(source.len());
-    Some(map)
-}
-
-/// Reserved names that ARE valid HTML attributes on a given node, so finding
-/// one there is the author getting what they asked for rather than a silent
-/// failure.
-///
-/// `cite` on a block quote is the case that matters: it is a URL attribute of
-/// `blockquote` and `q` in HTML, and `{cite="https://…"}` on a quote renders
-/// `<blockquote cite="https://…">`. Reporting that would be telling an author
-/// their correct markup is wrong.
-fn is_valid_html_attribute_on(node_type: &str, name: &str) -> bool {
-    matches!((node_type, name), ("block_quote", "cite"))
-}
-
-fn collect_semantic_attribute_warnings(
-    node_type: &'static str,
-    attrs: &Attrs,
-    pos: Option<Pos>,
-    element_names: &[&'static str],
-    to_byte: &dyn Fn(usize) -> usize,
-    out: &mut Vec<LintWarning>,
-) {
-    for name in EXTENDED_SEMANTIC_SPAN_ORDER {
-        let Some(value) = attrs.key_values.get(name) else {
+        let group_path = format!("{table_path}/children/{group}");
+        let path = format!("{group_path}/children/{row_at}");
+        let (Some(&(start, end)), Some(&parent), Ok(at), Ok(made)) = (
+            spans
+                .get(&table)
+                .and_then(|rows| rows.get(&(group, row_at))),
+            index.groups.get(group_path.as_str()),
+            u32::try_from(row_at),
+            u32::try_from(positions.all.len()),
+        ) else {
             continue;
         };
-
-        if node_type == "span" {
-            // §10 applies only to a name that becomes an ELEMENT in this
-            // render. One that does not stays an ordinary attribute and carries
-            // its value to the output, so there is nothing to report.
-            if value.is_empty()
-                || !element_names.contains(&name)
-                || semantic_value_target(name).is_some()
-            {
-                continue;
-            }
-            out.push(warning(
-                pos.clone(),
-                to_byte,
-                "semantic-attribute-value-ignored",
-                format!(
-                    "Value on the semantic attribute \"{name}\" is discarded: it selects the \
-                     <{name}> element and reaches no output. Only abbr, dfn and time carry a \
-                     value (as title or datetime)."
-                ),
-            ));
-            continue;
+        let prev = at
+            .checked_sub(1)
+            .and_then(|before| index.siblings.get(&(parent, before)).copied())
+            .and_then(|before| u32::try_from(before).ok());
+        let next = index.siblings.get(&(parent, at + 1)).copied();
+        let (node, holder) = index.cells.get(&(parent, at)).copied().unzip();
+        let node = node.flatten();
+        let text = OnceCell::new();
+        if node.is_none() {
+            let _ = text.set(path);
         }
-
-        // Same tier test for the other rule: a name this render leaves an
-        // ordinary attribute is an ordinary attribute everywhere, so it is not
-        // "outside the span" - it is exactly what the author asked for.
-        if !element_names.contains(&name) {
-            continue;
+        positions.all.push(Range {
+            start,
+            end,
+            path: LazyPath { node, text },
+            kind: "table_row",
+            start_line: line_of(start),
+            end_line: line_of(end.saturating_sub(1).max(start)),
+            has_attrs: false,
+            footnote_key: None,
+            form_block: false,
+            image_line: false,
+            holder: Some(parent),
+            index: at,
+            prev,
+            joined: true,
+        });
+        index.siblings.insert((parent, at), made as usize);
+        joined.push(row);
+        if let Some(holder) = holder.and_then(|cells| positions.holders.get_mut(cells as usize)) {
+            holder.range = Some(made);
         }
-        if is_valid_html_attribute_on(node_type, name) {
-            continue;
-        }
-        // The tail quotes the value the RENDERER emits, escaped the way it
-        // escapes it. A fixed `name=""` is true only for the boolean form and
-        // false the moment a value is authored - `` `c`{kbd="V"} `` renders
-        // `<code kbd="V">` - and the valued case is precisely the one where a
-        // reader needs the sentence to describe their own input back to them.
-        let emitted = quoted_attribute_value(name, value);
-        out.push(warning(
-            pos.clone(),
-            to_byte,
-            "semantic-attribute-outside-span",
-            format!(
-                "\"{name}\" is a semantic span attribute (PART 9 §10) and only applies to an \
-                 ordinary [content]{{attrs}} span; on {node_type} it stays a raw attribute and \
-                 renders as {name}=\"{emitted}\"."
-            ),
-        ));
-    }
-}
-
-/// The attribute value as it reaches the output, ready to sit inside the
-/// message's own quotes.
-///
-/// Put through the SAME two steps the renderer puts an attribute value
-/// through, in the same order: [`sanitize_attr_value`] then [`escape_attr`].
-/// Sanitizing is not decoration here - a value carrying a dangerous URL scheme
-/// is blanked on the way out, so `` `c`{kbd="javascript:alert(1)"} `` really
-/// does render `kbd=""`, and a message that quoted the authored text would be
-/// wrong in exactly the way this rule was fixed to stop being wrong.
-///
-/// Capped, because the value is author text and a diagnostic is read in a
-/// terminal or an editor gutter: an attribute carrying a paragraph would push
-/// the part of the sentence that explains the problem off the line.
-///
-/// THE THREE STEPS RUN IN EXACTLY THAT ORDER AND NONE OF THEM COMMUTES:
-///
-/// The sanitizer runs FIRST. It reads the WHOLE value, so cutting first can
-/// quote a payload back as a harmless-looking prefix while the output holds an
-/// empty attribute.
-///
-/// The cut counts CHARACTERS rather than bytes, so it never lands inside a
-/// UTF-8 sequence and quotes a broken character back at the author.
-///
-/// Escaping happens LAST, so the cut cannot land inside an entity and print
-/// `&qu` as though it were authored.
-fn quoted_attribute_value(name: &str, value: &str) -> String {
-    let emitted = sanitize_attr_value(name, value);
-    match emitted.char_indices().nth(QUOTED_VALUE_LIMIT) {
-        Some((byte, _)) => format!("{}{QUOTED_VALUE_ELLIPSIS}", escape_attr(&emitted[..byte])),
-        None => escape_attr(&emitted),
-    }
-}
-
-/// Longest rendered value quoted back whole, in CHARACTERS.
-///
-/// The number is not the spec's - the ruling says the diagnostic quotes the
-/// value the renderer emits, truncated if long, and fixes no length. It is
-/// carve-js' and carve-php's, so that one authored value produces one message
-/// whichever engine a consumer reads it from (markup-carve/carve-js#1058).
-const QUOTED_VALUE_LIMIT: usize = 120;
-
-/// Marks a value the diagnostic cut, inside the quotes it was cut from.
-const QUOTED_VALUE_ELLIPSIS: char = '…';
-
-/// A node whose `pos` the parser could not determine still gets a diagnostic -
-/// dropping it would make the rule silent on exactly the constructs whose
-/// positions are hardest to derive. It points at the start of the document,
-/// which is where a reader with no better information should start looking.
-fn warning(
-    pos: Option<Pos>,
-    to_byte: &dyn Fn(usize) -> usize,
-    rule: &'static str,
-    message: String,
-) -> LintWarning {
-    let pos = pos.unwrap_or_default();
-    let start = to_byte(pos.start_offset);
-    LintWarning {
-        file: None,
-        included_by: Vec::new(),
-        line: pos.start_line.max(1),
-        column: pos.start_column.max(1),
-        rule,
-        message,
-        start,
-        end: to_byte(pos.end_offset.max(pos.start_offset)).max(start),
-    }
-}
-
-type Visit<'f> = dyn FnMut(&'static str, &Attrs, Option<Pos>) + 'f;
-
-/// Hand the node to `visit` when it carries attributes at all. A node without
-/// them can hold no reserved name, so it is not worth a call.
-fn report(node_type: &'static str, attrs: &Option<Attrs>, pos: Option<Pos>, visit: &mut Visit<'_>) {
-    if let Some(attrs) = attrs {
-        visit(node_type, attrs, pos);
-    }
-}
-
-fn walk_blocks(nodes: &[BlockNode], visit: &mut Visit<'_>) {
-    for node in nodes {
-        walk_block(node, visit);
-    }
-}
-
-/// Every block variant, with NO wildcard arm.
-///
-/// That is the point of writing it out: a variant added to [`BlockNode`] breaks
-/// this build instead of silently becoming a place the rules never fire. A lint
-/// rule that cannot fire is the failure mode these two rules exist to remove,
-/// so the walker must not reintroduce it one node type at a time.
-///
-/// The type strings are the PART 12 wire names `ast_json` publishes, because
-/// they are what the `outside-span` message names and what carve-js reports.
-/// `tests/lint.rs` pins each one against `to_json` output rather than trusting
-/// this list.
-fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
-    match node {
-        BlockNode::Heading(n) => {
-            report("heading", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        BlockNode::CitationDefinition(n) => {
-            report("citation_definition", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        BlockNode::Paragraph(n) => {
-            report("paragraph", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        BlockNode::CodeBlock(n) => report("code_block", &n.attrs, n.pos.clone(), visit),
-        BlockNode::List(n) => {
-            report("list", &n.attrs, n.pos.clone(), visit);
-            for item in &n.items {
-                report("list_item", &item.attrs, item.pos.clone(), visit);
-                walk_blocks(&item.children, visit);
-            }
-        }
-        BlockNode::BlockQuote(n) => walk_block_quote(n, visit),
-        BlockNode::Table(n) => walk_table(n, visit),
-        BlockNode::Admonition(n) => {
-            report("admonition", &n.attrs, n.pos.clone(), visit);
-            if let Some(title) = &n.title {
-                walk_inlines(title, visit);
-            }
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::Directive(n) => {
-            report("directive", &n.attrs, n.pos.clone(), visit);
-            if let Some(title) = &n.title {
-                walk_inlines(title, visit);
-            }
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::Div(n) => {
-            report("div", &n.attrs, n.pos.clone(), visit);
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::Section(n) => {
-            report("section", &n.attrs, n.pos.clone(), visit);
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::LineBlock(n) => {
-            report("line_block", &n.attrs, n.pos.clone(), visit);
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::DefinitionList(n) => {
-            report("definition_list", &n.attrs, n.pos.clone(), visit);
-            for item in &n.items {
-                for term in &item.terms {
-                    report("definition_term", &term.attrs, term.pos.clone(), visit);
-                    walk_inlines(&term.children, visit);
-                }
-                for def in &item.definitions {
-                    report("definition_description", &def.attrs, def.pos.clone(), visit);
-                    walk_blocks(&def.children, visit);
-                }
-            }
-        }
-        BlockNode::Figure(n) => {
-            report("figure", &n.attrs, n.pos.clone(), visit);
-            match &*n.target {
-                FigureTarget::Image(image) => {
-                    report("image", &image.attrs, image.pos.clone(), visit)
-                }
-                FigureTarget::BlockQuote(quote) => walk_block_quote(quote, visit),
-                FigureTarget::Table(table) => walk_table(table, visit),
-                FigureTarget::CodeBlock(block) => {
-                    report("code_block", &block.attrs, block.pos.clone(), visit)
-                }
-                FigureTarget::Paragraph(para) => {
-                    report("paragraph", &para.attrs, para.pos.clone(), visit);
-                    walk_inlines(&para.children, visit);
-                }
-            }
-            walk_inlines(&n.caption, visit);
-            if let Some(short) = &n.short_caption {
-                walk_inlines(short, visit);
-            }
-        }
-        BlockNode::FigureGroup(n) => {
-            report("figure_group", &n.attrs, n.pos.clone(), visit);
-            walk_blocks(&n.children, visit);
-            if let Some(caption) = &n.caption {
-                walk_inlines(caption, visit);
-            }
-        }
-        // Carries no `attrs` field and no children.
-        BlockNode::AbbreviationDef(_) => {}
-        BlockNode::LinkReferenceDefinition(n) => {
-            report("link_reference_definition", &n.attrs, n.pos.clone(), visit)
-        }
-        // The payload is not markup; only the attribute line is checked.
-        BlockNode::RawBlock(n) => report("raw_block", &n.attrs, n.pos.clone(), visit),
-        BlockNode::Comment(_) => {}
-        BlockNode::BlockExtension(n) => {
-            report("block_extension", &n.attrs, n.pos.clone(), visit);
-            walk_blocks(n.fallback_slice(), visit);
-        }
-        // Reported under the feature that gates it - see
-        // `profile::canonical_block_type`. The carrier is not the schema's
-        // `block_extension`; it never reaches the wire under that name.
-        BlockNode::ExtensionCarrier(n) => {
-            report("inline_extension", &n.attrs, n.pos.clone(), visit);
-            if let Some(summary) = &n.summary {
-                walk_inlines(summary, visit);
-            }
-            walk_blocks(&n.children, visit);
-        }
-        BlockNode::BlockImage(n) => report("image", &n.attrs, n.pos.clone(), visit),
-        BlockNode::ThematicBreak(n) => report("thematic_break", &n.attrs, n.pos.clone(), visit),
-    }
-}
-
-fn walk_block_quote(n: &BlockQuote, visit: &mut Visit<'_>) {
-    report("block_quote", &n.attrs, n.pos.clone(), visit);
-    walk_blocks(&n.children, visit);
-}
-
-fn walk_table(n: &Table, visit: &mut Visit<'_>) {
-    report("table", &n.attrs, n.pos.clone(), visit);
-    if let Some(caption) = &n.caption {
-        walk_inlines(caption, visit);
-    }
-    if let Some(short) = &n.short_caption {
-        walk_inlines(short, visit);
-    }
-    for row in &n.rows {
-        report("table_row", &row.attrs, row.pos.clone(), visit);
-        for cell in &row.cells {
-            report("table_cell", &cell.attrs, cell.pos.clone(), visit);
-            walk_inlines(&cell.children, visit);
-            if let Some(blocks) = &cell.blocks {
-                walk_blocks(blocks, visit);
-            }
+        if let Some(next) = next.and_then(|after| positions.all.get_mut(after)) {
+            next.prev = Some(made);
         }
     }
 }
 
-fn walk_inlines(nodes: &[InlineNode], visit: &mut Visit<'_>) {
-    for node in nodes {
-        walk_inline(node, visit);
+/// Whether the layout walk (`api::layout`) reaches the node at `path`: it descends only through
+/// the `title`, `children` and `caption` slots of typed nodes, and not into an include's children.
+fn layout_reaches(tree: V<'_>, path: Option<&walk::PathNode<'_>>) -> bool {
+    let mut segments = Vec::new();
+    let mut at = path;
+    while let Some(node) = at {
+        segments.push(&node.segment);
+        at = node.previous;
     }
-}
-
-/// Every inline variant, with NO wildcard arm - see [`walk_block`].
-fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
-    match node {
-        // No `attrs` field: the parser has nowhere to put a reserved name.
-        InlineNode::Text(_)
-        | InlineNode::EscapedText(_)
-        | InlineNode::SmartPunctuation(_)
-        | InlineNode::RawInline(_)
-        | InlineNode::CrossRef(_)
-        | InlineNode::CaptionNumber(_)
-        | InlineNode::Abbreviation(_)
-        | InlineNode::NonBreakingSpace(_)
-        | InlineNode::SoftBreak(_)
-        | InlineNode::CellWrap(_)
-        | InlineNode::HardBreak(_)
-        | InlineNode::CriticComment(_)
-        | InlineNode::Comment(_) => {}
-        InlineNode::Emphasis(n) => {
-            report(emphasis_type(n.kind), &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
+    let mut node = tree;
+    let mut steps = segments.into_iter().rev();
+    while let Some(segment) = steps.next() {
+        let Some(ty) = node.ty().as_str() else {
+            return false;
+        };
+        let walk::Segment::Key(slot) = segment else {
+            return false;
+        };
+        if !matches!(*slot, "title" | "children" | "caption")
+            || ty == "include" && *slot == "children"
+        {
+            return false;
         }
-        InlineNode::Code(n) => report("code", &n.attrs, n.pos.clone(), visit),
-        InlineNode::Link(n) => {
-            report("link", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        InlineNode::Image(n) => report("image", &n.attrs, n.pos.clone(), visit),
-        InlineNode::Span(n) => {
-            report("span", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        InlineNode::Ruby(n) => {
-            report("ruby", &n.attrs, n.pos.clone(), visit);
-            for pair in &n.pairs {
-                walk_inlines(&pair.base, visit);
-                walk_inlines(&pair.annotation, visit);
-            }
-        }
-        InlineNode::Math(n) => report("math", &n.attrs, n.pos.clone(), visit),
-        InlineNode::LiteralInline(n) => report("literal_inline", &n.attrs, n.pos.clone(), visit),
-        InlineNode::Symbol(n) => report("symbol", &n.attrs, n.pos.clone(), visit),
-        InlineNode::AutoLink(n) => report("autolink", &n.attrs, n.pos.clone(), visit),
-        InlineNode::Mention(n) => report("mention", &n.attrs, n.pos.clone(), visit),
-        InlineNode::Tag(n) => report("tag", &n.attrs, n.pos.clone(), visit),
-        InlineNode::CitationGroup(n) => {
-            for item in &n.items {
-                for part in [&item.prefix, &item.locator, &item.suffix]
-                    .into_iter()
-                    .flatten()
-                {
-                    walk_inlines(part, visit);
-                }
-            }
-        }
-        InlineNode::Extension(n) => {
-            report("inline_extension", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
-        }
-        InlineNode::Footnote(n) => {
-            let node_type = if n.inline.is_some() {
-                "inline_footnote"
-            } else {
-                "footnote_ref"
+        let Some(value) = node.get(slot) else {
+            return false;
+        };
+        node = if let Some(items) = value.as_array() {
+            let Some(walk::Segment::Index(index)) = steps.next() else {
+                return false;
             };
-            report(node_type, &n.attrs, n.pos.clone(), visit);
-            if let Some(inline) = &n.inline {
-                walk_inlines(inline, visit);
+            let Some(item) = items.get(*index) else {
+                return false;
+            };
+            item
+        } else if value.is_object() {
+            value
+        } else {
+            return false;
+        };
+    }
+    node.ty().as_str().is_some()
+}
+
+/// The offsets of the line breaks of a source.
+fn memchr_lines(source: &str) -> Vec<usize> {
+    source
+        .bytes()
+        .enumerate()
+        .filter_map(|(at, byte)| (byte == b'\n').then_some(at))
+        .collect()
+}
+
+/// What `joined_rows` looks up, indexed once per call.
+struct JoinIndex<'a> {
+    /// The holder of the children of each table group, by the group's path.
+    groups: HashMap<String, u32>,
+    /// The range of each item of a `children` list, by holder and index.
+    siblings: HashMap<(u32, u32), usize>,
+    /// For a row without a range: the path node of the row and the holder of its cells, read off a
+    /// cell of it that has a range, by the group's holder and the row's index.
+    cells: HashMap<(u32, u32), (Option<&'a walk::PathNode<'a>>, u32)>,
+}
+
+impl<'a> JoinIndex<'a> {
+    fn new(positions: &Ranges<'a>) -> Self {
+        let holder_of: HashMap<u32, u32> = positions
+            .holders
+            .iter()
+            .enumerate()
+            .filter_map(|(at, holder)| Some((holder.range?, u32::try_from(at).ok()?)))
+            .collect();
+        let mut groups = HashMap::new();
+        let mut siblings = HashMap::new();
+        let mut cells = HashMap::new();
+        for (at, range) in positions.all.iter().enumerate() {
+            let Ok(own) = u32::try_from(at) else {
+                break;
+            };
+            if let Some(parent) = range.holder {
+                siblings.insert((parent, range.index), at);
+            }
+            if matches!(range.kind, "table_head" | "table_body" | "table_foot")
+                && let Some(&holder) = holder_of.get(&own)
+            {
+                groups.insert(range.path.as_str().to_owned(), holder);
+            }
+            let Some(cell_holder) = range.holder.filter(|_| range.kind == "table_cell") else {
+                continue;
+            };
+            let Some(row_holder) = positions.holders.get(cell_holder as usize) else {
+                continue;
+            };
+            let row = range.path.node.and_then(|node| node.previous?.previous);
+            if let (None, Some(group), Some(walk::Segment::Index(index))) = (
+                row_holder.range,
+                row_holder.up,
+                row.map(|node| node.segment),
+            ) && let Ok(index) = u32::try_from(index)
+            {
+                cells.entry((group, index)).or_insert((row, cell_holder));
             }
         }
-        InlineNode::CriticInsert(n) => {
-            report("insert", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
+        Self {
+            groups,
+            siblings,
+            cells,
         }
-        InlineNode::CriticDelete(n) => {
-            report("delete", &n.attrs, n.pos.clone(), visit);
-            walk_inlines(&n.children, visit);
+    }
+}
+
+/// The table rows without `pos`: the table's range, the group and row indexes, and the row.
+fn pos_less_rows<'t>(ranges: &[Range<'_>], values: &[V<'t>]) -> Vec<(usize, usize, usize, V<'t>)> {
+    let mut rows = Vec::new();
+    for (table, (range, value)) in ranges.iter().zip(values).enumerate() {
+        if range.kind != "table" {
+            continue;
         }
-        InlineNode::CriticSubstitute(n) => {
-            walk_inlines(&n.old, visit);
-            walk_inlines(&n.new, visit);
+        let groups = value.at("children");
+        let groups = groups
+            .as_array()
+            .into_iter()
+            .flat_map(crate::view::Arr::iter);
+        for (group, rows_of) in groups.enumerate() {
+            let list = rows_of.at("children");
+            let list = list.as_array().into_iter().flat_map(crate::view::Arr::iter);
+            for (index, row) in list.enumerate() {
+                if row.ty() == "table_row" && row.pos().is_none() {
+                    rows.push((table, group, index, row));
+                }
+            }
+        }
+    }
+    rows
+}
+
+/// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.
+fn link_prev(slot: &mut Option<(u32, u32)>, at: u32, made: u32, out: &mut [Range<'_>]) {
+    if let Some((later, range)) = *slot
+        && later == at + 1
+        && let Some(next) = out.get_mut(range as usize)
+    {
+        next.prev = Some(made);
+    }
+    *slot = Some((at, made));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Diagnostic, LintOptions, drop_replaced, walk};
+    use crate::ast::Pos;
+    use crate::include::{Cause, Includes};
+    use std::sync::Arc;
+
+    #[test]
+    fn configured_resolver_without_include_opener_parses_once() {
+        let options = LintOptions {
+            includes: Some(Includes::new(Arc::new(|_| Err(Cause::NotFound)))),
+            ..LintOptions::default()
+        };
+        crate::PREPARE_COUNT.with(|count| count.set(0));
+        let _ = super::lint("| a | b |\n", &options);
+        crate::PREPARE_COUNT.with(|count| assert_eq!(count.get(), 1));
+    }
+
+    #[test]
+    fn data_walk_does_not_prepare_hand_records_for_clean_tables_at_scale() {
+        for rows in [32, 512] {
+            let source = format!("|= A |= B |\n{}", "| a | b |\n".repeat(rows));
+            let opts = crate::Options::default();
+            crate::with_lint_tree(&source, &opts, &opts, true, |tree, arena| {
+                let checked = tree.map(|tree| {
+                    let walk = walk::Walk::new(tree, arena, &source);
+                    assert!(
+                        walk.items.is_empty(),
+                        "{rows} rows prepared hand-node items: {:?}",
+                        walk.items
+                            .iter()
+                            .map(|item| item.node.ty().as_str().unwrap_or("").to_string())
+                            .collect::<Vec<_>>()
+                    );
+                });
+                assert!(checked.is_some(), "parsed table");
+            });
+        }
+    }
+
+    fn finding(code: &'static str, start: u32, end: u32) -> Diagnostic {
+        let pos = Pos {
+            start_offset: start,
+            end_offset: end,
+            ..Pos::default()
+        };
+        Diagnostic::new(code, &[], None, Some(pos))
+    }
+
+    /// The one-pass filter keeps exactly what a `retain` before each replacing push kept.
+    #[test]
+    fn drop_replaced_matches_retain_per_emit() {
+        let mut seed = 7u64;
+        let mut next = |bound: u64| {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            u32::try_from((seed >> 33) % bound).unwrap_or(0)
+        };
+        for _ in 0..500 {
+            let mut expected: Vec<Diagnostic> = Vec::new();
+            let mut output: Vec<Diagnostic> = Vec::new();
+            let mut replacing = Vec::new();
+            for _ in 0..next(40) {
+                let code = match next(3) {
+                    0 => "a",
+                    1 => "b",
+                    _ => "c",
+                };
+                let start = next(60);
+                let item = finding(code, start, start + next(6));
+                if next(4) == 0 {
+                    expected.push(item.clone());
+                } else {
+                    let pos = item.pos.unwrap_or_default();
+                    expected.retain(|d| {
+                        !(d.code == code
+                            && d.pos.is_some_and(|p| {
+                                p.start_offset < pos.end_offset && pos.start_offset < p.end_offset
+                            }))
+                    });
+                    expected.push(item.clone());
+                    replacing.push(output.len());
+                }
+                output.push(item);
+            }
+            drop_replaced(&mut output, &replacing);
+            assert_eq!(output, expected);
         }
     }
 }

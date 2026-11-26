@@ -1,1 +1,0 @@
-Call `foo()` now.

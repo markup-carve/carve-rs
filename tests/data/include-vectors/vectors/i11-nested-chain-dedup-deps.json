@@ -1,0 +1,30 @@
+{
+  "name": "i11-nested-chain-dedup-deps",
+  "description": "A nested chain is reported deduplicated in first-encounter order.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-083",
+    "C2-N-084"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Child.</p>\n<p>Grandchild.</p>",
+    "fmt": "{{ child }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      },
+      {
+        "id": "grandchild",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child }}",
+  "files": {
+    "child": "Child.\n\n{{ grandchild }}",
+    "grandchild": "Grandchild."
+  }
+}

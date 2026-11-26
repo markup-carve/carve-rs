@@ -1,0 +1,30 @@
+{
+  "name": "i12-fmt-verbatim-wellformed",
+  "description": "A well-formed directive formats verbatim, not escaped.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv }}</p>",
+    "fmt": "{{ chapter.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver` (C2-N-003)",
+  "entry": "{{ chapter.crv }}",
+  "files": {}
+}

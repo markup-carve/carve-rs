@@ -1,0 +1,32 @@
+{
+  "name": "i12-fmt-across-blocks",
+  "description": "Directives across paragraphs, a blockquote and a list item all survive formatting.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-002",
+    "C2-N-003",
+    "C2-N-083"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ a.crv }}</p>\n<p>prose {{ b.crv }} prose</p>\n<blockquote><p>quoted {{ c.crv }} here</p></blockquote>\n<ul>\n  <li>item {{ d.crv }} tail</li>\n</ul>",
+    "fmt": "{{ a.crv }}\n\nprose {{ b.crv }} prose\n\n> quoted {{ c.crv }} here\n\n- item {{ d.crv }} tail\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "the three directives inside prose are text (C2-N-002); the block directive gets `include-no-resolver`; restate as a block-only vector",
+  "entry": "{{ a.crv }}\n\nprose {{ b.crv }} prose\n\n> quoted {{ c.crv }} here\n\n- item {{ d.crv }} tail\n",
+  "files": {}
+}

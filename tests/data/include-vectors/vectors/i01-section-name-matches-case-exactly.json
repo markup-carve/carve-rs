@@ -1,0 +1,33 @@
+{
+  "name": "i01-section-name-matches-case-exactly",
+  "description": "A #name matches an id exactly, as a crossref does (R4): #intro selects nothing next to # Intro.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ c.crv #intro }}</p>\n<section id=\"Intro\">\n  <h1>Intro</h1>\n  <p>body</p>\n</section>",
+    "fmt": "{{ c.crv #intro }}\n\n{{ c.crv #Intro }}\n",
+    "warnings": [
+      {
+        "code": "include-section"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "c.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-H-133 writes the directive as text, the options in the order of C2-W-058",
+  "entry": "{{ c.crv #intro }}\n\n{{ c.crv #Intro }}\n",
+  "files": {
+    "c.crv": "# Intro\n\nbody\n"
+  }
+}

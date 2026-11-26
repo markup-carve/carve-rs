@@ -1,0 +1,32 @@
+{
+  "name": "i12-fmt-auto-preserved",
+  "description": "An auto shift survives formatting.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-H-133",
+    "C2-N-080"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv @shift:auto }}</p>",
+    "fmt": "{{ chapter.crv @shift:auto }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "no resolver: `include-no-resolver`; the text has no mention span (C2-H-133); the `fmt` golden is unchanged",
+  "entry": "{{ chapter.crv @shift:auto }}",
+  "files": {}
+}

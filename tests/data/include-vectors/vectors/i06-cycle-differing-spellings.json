@@ -1,0 +1,42 @@
+{
+  "name": "i06-cycle-differing-spellings",
+  "description": "Two spellings of one file collapse via resolver-supplied ids so the cycle is still caught.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-064",
+    "C2-N-065",
+    "C2-N-066",
+    "C2-N-083",
+    "C2-N-084"
+  ],
+  "resolver": "virtual-ids",
+  "expected": {
+    "html": "<p>{{ a }}</p>",
+    "fmt": "{{ a }}\n",
+    "warnings": [
+      {
+        "code": "include-cycle",
+        "file": "b"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "b"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      },
+      {
+        "id": "b",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ a }}",
+  "files": {
+    "a": "{{ ./b }}",
+    "b": "{{ a }}"
+  }
+}

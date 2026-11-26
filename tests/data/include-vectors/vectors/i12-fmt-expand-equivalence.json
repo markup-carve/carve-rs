@@ -1,0 +1,33 @@
+{
+  "name": "i12-fmt-expand-equivalence",
+  "description": "Expanding the formatted document yields the same html + dependency set as expanding the original (I12 stronger invariant).",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-002",
+    "C2-N-049",
+    "C2-N-081"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"Chapter\">\n  <h1>Chapter</h1>\n  <p>Body.</p>\n  <p>See and here:</p>\n  <section id=\"Quoted-path\">\n    <h2>Quoted path</h2>\n  </section>\n</section>",
+    "fmt": "{{ a.crv }}\n\nSee and here:\n\n{{ \"c d.crv\" @shift:auto }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      },
+      {
+        "id": "c d.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "the inline directive `See {{ b.crv }}` is text (C2-N-002); restate without it",
+  "entry": "{{ a.crv }}\n\nSee and here:\n\n{{ \"c d.crv\" @shift:auto }}",
+  "files": {
+    "a.crv": "# Chapter\n\nBody.",
+    "c d.crv": "## Quoted path"
+  },
+  "checkFmtExpandEquivalence": true
+}

@@ -1,0 +1,27 @@
+{
+  "name": "i01-lines-end-past-the-end-clamps",
+  "description": "A line range starting inside the file and ending past it stops at the last line.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code>two\n</code></pre>",
+    "fmt": "{{ two.txt @lines:2-9 @code }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "two.txt",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ two.txt @lines:2-9 @code }}",
+  "files": {
+    "two.txt": "one\ntwo\n"
+  }
+}

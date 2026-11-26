@@ -1,0 +1,33 @@
+{
+  "name": "i01b-region-bare-marker-is-text-in-carve",
+  "description": "A bare `#region` line is not a marker for a Carve include.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child @region:demo }}</p>",
+    "fmt": "{{ child @region:demo }}\n",
+    "warnings": [
+      {
+        "code": "include-region-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-H-133 writes the directive as text, the options in the order of C2-W-058",
+  "entry": "{{ child @region:demo }}",
+  "files": {
+    "child": "#region demo\nBody.\n#endregion demo"
+  }
+}

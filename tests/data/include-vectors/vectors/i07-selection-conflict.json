@@ -1,0 +1,34 @@
+{
+  "name": "i07-selection-conflict",
+  "description": "Both #section and a line range present: warn and stay literal.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-024",
+    "C2-H-133",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child #x @lines:1-1 }}</p>",
+    "fmt": "{{ child #x @lines:1-1 }}\n",
+    "warnings": [
+      {
+        "code": "include-selection-conflict"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "the conflicting directive is now a dependency that was not read (C2-N-083)",
+  "entry": "{{ child #x @lines:1-1 }}",
+  "files": {
+    "child": "# X"
+  }
+}

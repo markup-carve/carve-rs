@@ -1,0 +1,25 @@
+{
+  "name": "i11-same-file-twice-once",
+  "description": "The same file included twice is reported once.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-083",
+    "C2-N-084"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Body.</p>\n<p>Body.</p>",
+    "fmt": "{{ child }}\n\n{{ child }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child }}\n\n{{ child }}",
+  "files": {
+    "child": "Body."
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "i12-fmt-invalid-option-preserved",
+  "description": "A shape-well-formed directive with an invalid option is preserved (the typo stays fixable).",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-N-061",
+    "C2-H-133"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv @bogus:1 }}</p>",
+    "fmt": "{{ chapter.crv @bogus:1 }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` and no spans (C2-H-133); `fmt` unchanged",
+  "entry": "{{ chapter.crv @bogus:1 }}",
+  "files": {}
+}

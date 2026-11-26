@@ -1,0 +1,47 @@
+{
+  "name": "i10-fs-symlink-file-and-dotdot-denied",
+  "description": "A symlinked file whose real target escapes, and a ../ escape, are both denied.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-012"
+  ],
+  "resolver": "filesystem",
+  "expected": {
+    "html": "<p>{{ link.crv }}</p>\n<p>{{ ../secret.crv }}</p>",
+    "fmt": "{{ link.crv }}\n\n{{ ../secret.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-outside-root"
+      },
+      {
+        "code": "include-unresolved"
+      },
+      {
+        "code": "include-outside-root"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "link.crv",
+        "read": false
+      },
+      {
+        "id": "../secret.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-outside-root` twice (C2-N-012)",
+  "tree": {
+    "root/main.crv": "{{ link.crv }}\n\n{{ ../secret.crv }}\n",
+    "secret.crv": "TOP SECRET\n",
+    "root/link.crv": {
+      "symlink": "secret.crv"
+    }
+  },
+  "entryPath": "root/main.crv",
+  "root": "root"
+}

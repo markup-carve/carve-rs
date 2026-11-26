@@ -1,0 +1,31 @@
+{
+  "name": "i12-fmt-lines-preserved",
+  "description": "A line range survives formatting.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-H-133"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv @lines:2-40 }}</p>",
+    "fmt": "{{ chapter.crv @lines:2-40 }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver`, no spans (C2-H-133); `fmt` unchanged",
+  "entry": "{{ chapter.crv @lines:2-40 }}",
+  "files": {}
+}

@@ -1,0 +1,32 @@
+{
+  "name": "i12-fmt-malformed-section-preserved",
+  "description": "A shape-well-formed directive with a malformed section is preserved.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-203",
+    "C2-N-003",
+    "C2-H-133"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv #1bad }}</p>",
+    "fmt": "{{ chapter.crv #1bad }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "a section `#1bad` is inside the 0.2 name shape (C2-B-203), so this is an include: `include-no-resolver`, no spans; `fmt` unchanged",
+  "entry": "{{ chapter.crv #1bad }}",
+  "files": {}
+}

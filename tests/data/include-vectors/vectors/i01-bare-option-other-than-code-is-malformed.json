@@ -1,0 +1,34 @@
+{
+  "name": "i01-bare-option-other-than-code-is-malformed",
+  "description": "Only `@code` may omit its value; a bare `@shift` is a malformed option.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-H-133",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child @shift }}</p>",
+    "fmt": "{{ child @shift }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` replaces `include-unknown-option` (C2-N-025); the text has no mention span (C2-H-133)",
+  "entry": "{{ child @shift }}",
+  "files": {
+    "child": "# Title"
+  }
+}

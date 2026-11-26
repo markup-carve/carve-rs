@@ -1,0 +1,34 @@
+{
+  "name": "i01-repeated-option-code-language",
+  "description": "The carve#3351 example: two code languages are an error, not \"the last one wins\".",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-H-133",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ a.js @code:js @code:py }}</p>",
+    "fmt": "{{ a.js @code:js @code:py }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.js",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` (C2-N-025)",
+  "entry": "{{ a.js @code:js @code:py }}",
+  "files": {
+    "a.js": "one()\ntwo()\nthree()\n"
+  }
+}

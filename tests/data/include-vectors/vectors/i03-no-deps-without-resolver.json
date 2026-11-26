@@ -1,0 +1,31 @@
+{
+  "name": "i03-no-deps-without-resolver",
+  "description": "A directive with no resolver reports no dependencies at all.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-N-083"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ child }}</p>",
+    "fmt": "{{ child }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver` is reported, and the node is a dependency that was not read (C2-N-003, C2-N-083)",
+  "entry": "{{ child }}",
+  "files": {}
+}
