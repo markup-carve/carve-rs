@@ -64,6 +64,18 @@ const HELD: &[(&str, &str)] = &[
         "CC-2323",
         "carve#6813: a key the escape rounds cannot spell is no loss where the output reads back",
     ),
+    (
+        "CC-2468",
+        "carve#6860 (carve-rs line): a pipe-table head the header marks cannot end",
+    ),
+    (
+        "CC-2469",
+        "carve#6860 (carve-rs line): a pipe-table head the header marks cannot end",
+    ),
+    (
+        "CC-2470",
+        "carve#6860 (carve-rs line): a pipe-table head the header marks cannot end",
+    ),
 ];
 
 /// `(example id, reason)` of the `write` examples.

@@ -4,7 +4,7 @@
 use crate::ast::{Attrs, Node, owned};
 use bumpalo::Bump;
 use serde_json::Value;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 /// A bump whose chunk is larger than this is freed, not kept for the next arena.
 const KEEP: usize = 1 << 24;
@@ -31,6 +31,8 @@ pub struct Arena {
     /// JSON values own heap memory and the bump runs no destructors: they
     /// live here, where dropping the arena drops them.
     values: typed_arena::Arena<Value>,
+    /// The parser built a snippet use here; expansion reads this, not the tree (C2-N-091).
+    snippet_use: Cell<bool>,
 }
 
 impl Default for Arena {
@@ -60,6 +62,7 @@ impl Arena {
         Self {
             bump: spare().unwrap_or_default(),
             values: typed_arena::Arena::new(),
+            snippet_use: Cell::new(false),
         }
     }
 
@@ -72,6 +75,7 @@ impl Arena {
         Self {
             bump,
             values: typed_arena::Arena::new(),
+            snippet_use: Cell::new(false),
         }
     }
 
@@ -79,6 +83,15 @@ impl Arena {
     #[must_use]
     pub fn for_input(input: &str) -> Self {
         Self::with_capacity(input.len().saturating_mul(4).clamp(1 << 12, 1 << 26))
+    }
+
+    pub(crate) fn note_snippet_use(&self) {
+        self.snippet_use.set(true);
+    }
+
+    /// Whether the parser built a snippet use in this arena.
+    pub(crate) fn has_snippet_use(&self) -> bool {
+        self.snippet_use.get()
     }
 
     /// Bytes taken from the system so far.

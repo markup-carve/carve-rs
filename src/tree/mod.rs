@@ -602,6 +602,7 @@ impl<'a> Builder<'_, 'a> {
             }
             LeafKind::SnippetUse { name } => {
                 let _ = (attrs, lang);
+                self.arena.note_snippet_use();
                 Node::SnippetUse(self.arena.alloc(ast::SnippetUse {
                     name: self.s(&name),
                     mode: ast::SnippetUseMode::Block,

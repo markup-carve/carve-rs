@@ -68,18 +68,25 @@ pub(crate) fn marker(line: &str) -> Option<Marker> {
     if b.get(p) != Some(&b':') {
         return None;
     }
-    let has_id = block.attrs.id.is_some()
-        || block
-            .attrs
-            .key_values
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("id"));
+    let has_id = holds_id(&block);
     Some(Marker {
         name_end,
         end: p + 1,
         block,
         has_id,
     })
+}
+
+/// C2-B-236: whether `block` holds an id, which refuses a definition in its
+/// marker and in the attribute line above it alike.
+#[must_use]
+pub(crate) fn holds_id(block: &AttrBlock) -> bool {
+    block.attrs.id.is_some()
+        || block
+            .attrs
+            .key_values
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("id"))
 }
 
 /// C2-B-236: the start of the value of the definition `line`: a marker

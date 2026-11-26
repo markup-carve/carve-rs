@@ -338,6 +338,9 @@ pub(crate) struct Settings {
     pub roundtrip: bool,
     /// The source length the budget is drawn from (C2-N-094).
     pub source_len: usize,
+    /// The tree is as the parser built it in `arena`, includes expanded, so
+    /// the arena's fact stands for a walk of the tree.
+    pub parsed: bool,
 }
 
 struct Pass<'a, 'p> {
@@ -727,7 +730,12 @@ pub(crate) fn expand<'a>(
     settings: Settings,
     findings: &mut Vec<Finding>,
 ) -> Option<Guard> {
-    if !holds_use(doc.children) {
+    let uses = if settings.parsed {
+        arena.has_snippet_use()
+    } else {
+        holds_use(doc.children)
+    };
+    if !uses {
         // C2-H-216: a template still marks the definitions of an included file.
         return settings
             .roundtrip

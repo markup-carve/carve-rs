@@ -35,11 +35,31 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
     Some((start, pos.get("startColumn")?.as_u64()?))
 }
 
-/// C2-B-236: the end of the marker of a definition line that a marker with an id made text.
-fn id_marker(line: &str) -> Option<usize> {
+/// Whether an attribute line among `lines` holds an id.
+fn lines_hold_id(lines: &str) -> bool {
+    lines.split('\n').any(|line| {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        line.starts_with('{')
+            && crate::attr::parse_glued(line, 0).is_some_and(|(b, end)| {
+                !b.empty
+                    && line.get(end..).is_some_and(crate::chars::is_blank_line)
+                    && crate::snippet::holds_id(&b)
+            })
+    })
+}
+
+/// C2-B-236: the end of the marker at `start`, the first line of a paragraph
+/// that begins at `block`, when an id in the marker or in the attribute lines
+/// between made it text.
+fn id_marker(source: &str, block: usize, start: usize) -> Option<usize> {
+    let line = source.get(start..)?.split('\n').next()?;
+    if !line.starts_with("{$") {
+        return None;
+    }
     let m = crate::snippet::marker(line)?;
     let value = line.get(m.end..)?;
-    (m.has_id && value.starts_with(' ') && !value.trim().is_empty()).then_some(m.end)
+    let id = m.has_id || source.get(block..start).is_some_and(lines_hold_id);
+    (id && value.starts_with(' ') && !value.trim().is_empty()).then_some(start + m.end)
 }
 
 struct Scan<'s, 'v> {
@@ -68,12 +88,17 @@ impl<'v> Scan<'_, 'v> {
                 out.push(d);
             }
             Some("paragraph") if self.ids && column == 1 => {
-                let line = source.get(start..).unwrap_or("");
-                let line = line.split('\n').next().unwrap_or("");
-                let Some(end) = line.starts_with("{$").then(|| id_marker(line)).flatten() else {
+                // C2-A-148: the paragraph starts at the attribute lines it took; its text starts at the marker.
+                let first = child
+                    .get("children")
+                    .and_then(V::as_array)
+                    .and_then(|c| c.get(0))
+                    .and_then(start_of);
+                let Some((text, 1)) = first else { return };
+                let Some(end) = id_marker(source, start, text) else {
                     return;
                 };
-                let pos = self.positions.pos(start, start + end);
+                let pos = self.positions.pos(text, end);
                 let mut d = Diagnostic::nth("snippet-definition-id", 0, &[], None, Some(pos));
                 d.path = Some(format!("/children/{index}"));
                 out.push(d);
