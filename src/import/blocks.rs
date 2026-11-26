@@ -143,6 +143,9 @@ impl Cx {
         let children = self.normalize_breaks(coalesce(all), host);
         let children = self.trim_inline_edges(children, host);
         if !children.is_empty() {
+            if self.dom.is(host, "li") {
+                self.bare_items.insert(host);
+            }
             out.push(run_paragraph(children));
         }
     }
@@ -982,9 +985,27 @@ impl Cx {
                 .all(|&k| self.dom.is(k, "img") || self.dom.is_blank(k) || self.dom.is_comment(k))
     }
 
-    /// C2-H-138, C2-M-033: tight or loose.
+    /// C2-M-012, C2-M-013: an item holds a run that was read as a paragraph
+    /// without `<p>`.
+    fn has_bare_run(&self, id: Id) -> bool {
+        self.dom
+            .elements(id)
+            .into_iter()
+            .any(|item| self.bare_items.contains(&item))
+    }
+
+    /// C2-H-138, C2-H-185, C2-H-186, C2-M-033: tight or loose.
     fn list_spacing(&mut self, id: Id, items: &[Value]) -> &'static str {
-        if self.dom.has(id, "data-carve-tight") {
+        let tight = self.dom.has(id, "data-carve-tight");
+        let loose = self.dom.has(id, "data-carve-loose");
+        if tight && loose {
+            for (name, other) in [
+                ("data-carve-tight", "data-carve-loose"),
+                ("data-carve-loose", "data-carve-tight"),
+            ] {
+                self.ignored_carrier(id, name, &format!("the list also carries {other}"));
+            }
+        } else if tight {
             if !self.has_loose_item(id, true) {
                 return "tight";
             }
@@ -993,7 +1014,18 @@ impl Cx {
                 "data-carve-tight",
                 "an item writes its first paragraph as an element",
             );
-            return if items.len() > 1 { "loose" } else { "tight" };
+        } else if loose {
+            if items.len() <= 1 {
+                self.ignored_carrier(id, "data-carve-loose", "the list has one item");
+            } else if self.has_bare_run(id) {
+                self.ignored_carrier(
+                    id,
+                    "data-carve-loose",
+                    "an item writes a paragraph without an element",
+                );
+            } else {
+                return "loose";
+            }
         }
         if items.len() <= 1 {
             return "tight";

@@ -30,21 +30,10 @@ const CLAUSE_HELD: &[(&str, &str)] = &[
     ("CC-1284", "html"),
     ("CC-1286", "html"),
     ("CC-2228", "html"),
-    // carve#6844 (carve-rs line): `data-carve-loose` under `roundtrip`.
-    ("CC-2414", "html"),
-    ("CC-2440", "html"),
-    ("CC-2442", "html"),
-    ("CC-2444", "html"),
-    ("CC-2445", "html"),
-    ("CC-2447", "html"),
-    ("CC-2454", "html"),
 ];
 
 /// `(entry id, checked field)` of `c2_t_005_parse_and_render_clause_diagnostics` held.
-const DIAGNOSTICS_HELD: &[(&str, &str)] = &[
-    // carve#6844 (carve-rs line): an authored `data-carve-loose` is dropped.
-    ("CC-2454", "diagnostic:carrier-attribute-dropped"),
-];
+const DIAGNOSTICS_HELD: &[(&str, &str)] = &[];
 
 /// `(entry id, checked field)` of `c2_conformance_examples` held.
 const EXAMPLES_HELD: &[(&str, &str)] = &[];
