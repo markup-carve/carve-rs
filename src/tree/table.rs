@@ -754,21 +754,11 @@ fn columns<'a>(
     let Some(mut a) = attrs else {
         return (nodes(cols), None);
     };
-    let aligns = a.get("aligns").and_then(|v| {
-        v.split(',')
-            .map(|entry| ast::TableColumnAlign::from_name(entry.trim_matches(crate::chars::is_ws)))
-            .collect::<Option<Vec<_>>>()
-    });
-    let valigns = a.get("valigns").and_then(|v| {
-        v.split(',')
-            .map(|entry| ast::TableColumnValign::from_name(entry.trim_matches(crate::chars::is_ws)))
-            .collect::<Option<Vec<_>>>()
-    });
-    let widths = a.get("widths").and_then(|v| {
-        v.split(',')
-            .map(|entry| width(entry.trim_matches(crate::chars::is_ws)))
-            .collect::<Option<Vec<_>>>()
-    });
+    let aligns = a
+        .get("aligns")
+        .and_then(|v| column_list(v, ast::TableColumnAlign::from_name));
+    let valigns = a.get("valigns").and_then(|v| column_list(v, valigns_entry));
+    let widths = a.get("widths").and_then(|v| column_list(v, width));
     if let Some(values) = aligns.as_ref() {
         for (col, align) in cols.iter_mut().zip(values) {
             col.align = Some(*align);
@@ -820,7 +810,23 @@ fn consumed_column_key(key: &str, consumed: ConsumedKeys) -> bool {
 }
 
 /// C2-B-212, C2-B-220: a decimal number greater than 0 and at most 100.
-fn width(e: &str) -> Option<f64> {
+/// C2-B-211, C2-B-212: a column list, checked whole before any entry is applied.
+pub(crate) fn column_list<'v, T>(
+    value: &'v str,
+    entry: impl Fn(&'v str) -> Option<T>,
+) -> Option<Vec<T>> {
+    value
+        .split(',')
+        .map(|e| entry(e.trim_matches(crate::chars::is_ws)))
+        .collect()
+}
+
+/// C2-B-211: a `valigns` entry is `top`, `middle` or `bottom`; `baseline` has no source.
+pub(crate) fn valigns_entry(e: &str) -> Option<ast::TableColumnValign> {
+    ast::TableColumnValign::from_name(e).filter(|v| *v != ast::TableColumnValign::Baseline)
+}
+
+pub(crate) fn width(e: &str) -> Option<f64> {
     let (int, frac) = e.split_once('.').map_or((e, None), |(a, b)| (a, Some(b)));
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     if !digits(int) || frac.is_some_and(|f| !digits(f)) {

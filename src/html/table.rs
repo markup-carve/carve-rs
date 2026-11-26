@@ -304,6 +304,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
 }
 
 /// A width as a percentage without trailing zeros (C2-H-152).
-fn percent(w: f64) -> String {
+pub(crate) fn percent(w: f64) -> String {
     (w * 100.0).to_string()
 }

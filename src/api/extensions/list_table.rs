@@ -233,8 +233,11 @@ struct Table<'a> {
     width: usize,
 }
 
-fn alignment<'a>(value: Option<&str>, allowed: &[&'a str]) -> Option<&'a str> {
-    let folded = value?.trim().to_lowercase();
+/// A cell's own `align` or `valign`, read as C2-H-015 reads `align` (C2-X-078).
+fn own_alignment(value: Option<&str>, allowed: &[&'static str]) -> Option<&'static str> {
+    let folded = value?
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .to_ascii_lowercase();
     allowed.iter().copied().find(|a| *a == folded)
 }
 
@@ -303,21 +306,22 @@ fn source_line(node: Option<&Value>, cx: &RenderContext<'_>) -> String {
 
 impl Table<'_> {
     fn cell_style(&self, cell: &Cell, col: usize) -> Vec<String> {
-        let list = |key| {
-            attr_value(self.attrs, key)
-                .map(|v| v.split(',').collect::<Vec<_>>())
-                .unwrap_or_default()
-        };
-        let (aligns, valigns) = (list("aligns"), list("valigns"));
+        use crate::ast::TableColumnAlign;
+        use crate::tree::table::{column_list, valigns_entry};
+        let aligns = attr_value(self.attrs, "aligns")
+            .and_then(|v| column_list(v, TableColumnAlign::from_name))
+            .unwrap_or_default();
+        let valigns = attr_value(self.attrs, "valigns")
+            .and_then(|v| column_list(v, valigns_entry))
+            .unwrap_or_default();
         let own = cell.item.get("attrs");
-        let h = alignment(
-            attr_value(own, "align").or_else(|| aligns.get(col).copied()),
-            &["left", "right", "center"],
-        );
-        let v = alignment(
-            attr_value(own, "valign").or_else(|| valigns.get(col).copied()),
-            &["top", "middle", "bottom"],
-        );
+        let h = own_alignment(attr_value(own, "align"), &["left", "right", "center"])
+            .or_else(|| aligns.get(col).map(|a| a.as_str()));
+        let v = own_alignment(
+            attr_value(own, "valign"),
+            &["top", "middle", "bottom", "baseline"],
+        )
+        .or_else(|| valigns.get(col).map(|v| v.as_str()));
         h.map(|h| format!("text-align: {h};"))
             .into_iter()
             .chain(v.map(|v| format!("vertical-align: {v};")))
@@ -413,24 +417,21 @@ impl Table<'_> {
     }
 }
 
-fn columns(attrs: Option<&Value>, cx: &RenderContext<'_>) -> String {
-    let Some(widths) = attr_value(attrs, "widths") else {
+/// C2-H-152: one `<col>` per column once `widths` is valid (C2-B-212).
+fn columns(attrs: Option<&Value>, count: usize) -> String {
+    let Some(widths) = attr_value(attrs, "widths")
+        .and_then(|v| crate::tree::table::column_list(v, crate::tree::table::width))
+    else {
         return String::new();
     };
-    let values: Vec<&str> = widths.split(',').map(str::trim).collect();
-    let number = |v: &str| {
-        let (int, frac) = v.split_once('.').unwrap_or((v, "1"));
-        !int.is_empty()
-            && int.bytes().all(|b| b.is_ascii_digit())
-            && !frac.is_empty()
-            && frac.bytes().all(|b| b.is_ascii_digit())
-    };
-    if !values.iter().all(|v| number(v)) {
+    if count == 0 {
         return String::new();
     }
-    let cols = values
-        .iter()
-        .map(|v| format!(r#"    <col style="width: {}%;">"#, cx.escape_attribute(v)))
+    let cols = (0..count)
+        .map(|at| match widths.get(at) {
+            Some(&w) => format!(r#"    <col style="width: {}%;">"#, crate::html::percent(w)),
+            None => "    <col>".to_string(),
+        })
         .collect::<Vec<_>>()
         .join("\n");
     format!("  <colgroup>\n{cols}\n  </colgroup>\n")
@@ -524,7 +525,10 @@ impl ListTable {
         }
         let mut open = author_attrs(attrs, &consumed, cx);
         open.push_str(&source_line(Some(node), cx));
-        let mut html = format!("{label}<table{open}>\n{caption}{}", columns(attrs, cx));
+        let mut html = format!(
+            "{label}<table{open}>\n{caption}{}",
+            columns(attrs, table.width)
+        );
         html.push_str(&table.group(0, head, "thead", cx)?);
         for pair in boundaries.windows(2) {
             if let [start, end] = pair {
