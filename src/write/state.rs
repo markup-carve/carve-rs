@@ -192,6 +192,12 @@ pub struct Writer<'t> {
     pub written_chars: usize,
     /// The verbatim references written (C2-W-075): their backslashes are the author's.
     pub raw_refs: Vec<String>,
+    /// C2-W-088, C2-W-075: the rounds write every reference from the tree; the verbatim texts are taken after them.
+    pub tree_refs: bool,
+    /// C2-W-088: the rounds report the constructs behind a comparison's stop.
+    pub report_behind: bool,
+    /// The references a verbatim trial writes from the tree.
+    pub tree_ref_ids: HashSet<usize>,
     /// The last write of a group that keeps a loss: the bare pairs that cannot pair take their braced form.
     pub strict_pairs: bool,
     /// Emptied child lists, reused by the inline writes so a nested mark allocates none.
@@ -261,6 +267,9 @@ impl<'t> Writer<'t> {
             work_limit: usize::MAX,
             written_chars: 0,
             raw_refs: Vec::new(),
+            tree_refs: false,
+            tree_ref_ids: HashSet::new(),
+            report_behind: false,
             strict_pairs: false,
             kid_lists: Vec::new(),
             capped_runs: Vec::new(),
