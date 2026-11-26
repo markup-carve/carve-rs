@@ -997,14 +997,13 @@ impl RenderDetails {
             .chain(l.carriers.iter().map(|c| (&c.file, c.pos)))
             .chain(l.profiles.iter().map(|p| (&p.file, p.pos)))
             .chain(l.shift.iter().map(|s| (&s.1, s.0)))
-            .chain(self.places.iter().map(|p| (&p.0, p.2)));
-        for (file, pos) in places {
-            if let (Some(file), Some(pos)) = (file, pos) {
-                self.chains
-                    .entry((file.clone(), pos.start(), pos.end()))
-                    .or_insert_with(|| files.included_by(file, &pos));
-            }
-        }
+            .chain(self.places.iter().map(|p| (&p.0, p.2)))
+            .filter_map(|(file, pos)| Some((file.as_deref()?, pos?.start(), pos?.end())));
+        self.chains = files
+            .included_by(places)
+            .into_iter()
+            .map(|((f, s, e), chain)| ((f.to_string(), s, e), chain))
+            .collect();
     }
 
     fn chain(&self, file: Option<&str>, pos: Option<ast::Pos>) -> Vec<diagnostic::IncludeSite> {

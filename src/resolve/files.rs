@@ -43,8 +43,8 @@ pub struct Files<'a> {
     inside: crate::hash::AddrSet<usize>,
     of_pos: AddrMap<usize, usize>,
     sources: HashMap<&'a str, &'a str>,
-    /// C2-N-087: the first reach of each position of an included file, in document order.
-    first: HashMap<(&'a str, usize, usize), usize>,
+    /// C2-N-087: each position of an included file and the file that reached it, in document order.
+    reaches: Vec<(&'a str, usize, usize, usize)>,
 }
 
 impl<'a> Files<'a> {
@@ -99,7 +99,7 @@ impl<'a> Files<'a> {
         }
         let id = self.list.get(file).and_then(|f| f.id);
         if let Some((id, p)) = id.zip(n.pos()) {
-            self.first.entry((id, p.start(), p.end())).or_insert(file);
+            self.reaches.push((id, p.start(), p.end(), file));
         }
         if let Node::Include(i) = n {
             if let Some(children) = i.children.as_deref() {
@@ -165,10 +165,31 @@ impl<'a> Files<'a> {
             .id
     }
 
-    /// C2-N-087: the include sites of the first reach of `pos` in `file`, outermost first.
-    #[must_use]
-    pub fn included_by(&self, file: &str, pos: &crate::ast::Pos) -> Vec<IncludeSite> {
-        let mut at = self.first.get(&(file, pos.start(), pos.end())).copied();
+    /// C2-N-087: the include chain of the first reach of each wanted position, outermost first.
+    pub fn included_by<'k>(
+        &self,
+        wanted: impl Iterator<Item = (&'k str, usize, usize)>,
+    ) -> HashMap<(&'k str, usize, usize), Vec<IncludeSite>>
+    where
+        'a: 'k,
+    {
+        let mut first: HashMap<(&'k str, usize, usize), Option<usize>> =
+            wanted.map(|k| (k, None)).collect();
+        if first.is_empty() {
+            return HashMap::new();
+        }
+        for &(id, start, end, file) in &self.reaches {
+            if let Some(slot @ None) = first.get_mut(&(id, start, end)) {
+                *slot = Some(file);
+            }
+        }
+        first
+            .into_iter()
+            .map(|(k, at)| (k, self.chain_of(at)))
+            .collect()
+    }
+
+    fn chain_of(&self, mut at: Option<usize>) -> Vec<IncludeSite> {
         let mut chain = Vec::new();
         while let Some(i) = at.filter(|&i| i > 0) {
             let Some(f) = self.list.get(i) else { break };
