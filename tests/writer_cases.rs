@@ -45,10 +45,6 @@ const HELD: &[(&str, &str)] = &[
         "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
     ),
     (
-        "CC-501",
-        "carve#3598 (carve#6812 G3): metadata.fields beside leading frontmatter is a loss",
-    ),
-    (
         "CC-2265",
         "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
     ),

@@ -1601,9 +1601,7 @@ fn root_metadata_losses(doc: V<'_>, out: &mut Vec<Entry>) {
             ));
         }
     }
-    if metadata.and_then(|m| m.get("fields")).is_some()
-        && !children(doc).iter().any(|n| ty(n) == "frontmatter")
-    {
+    if metadata.and_then(|m| m.get("fields")).is_some() {
         out.push(loss_entry(
             "field-unspellable",
             "Carve source cannot spell root metadata.fields".into(),
