@@ -1257,11 +1257,13 @@ fn write_tree<'t>(
     budget: usize,
     facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
-    let (source, entries, verbatim) =
+    let (source, entries, (verbatim, _)) =
         write_tree_once(doc, pool, settings, budget, facts, (false, false));
     if !has_loss(&entries) {
         return (source, entries);
     }
+    // The fallback writes share one repair budget.
+    let mut left = budget;
     // C2-W-088, C2-W-075 (carve#6802): where those rounds keep a loss, rounds that report the constructs behind a
     // stop and write every reference from the tree, taking the verbatim texts after them, may give a form without one.
     let mut modes = vec![(verbatim, true)];
@@ -1269,7 +1271,12 @@ fn write_tree<'t>(
         modes.push((true, false));
     }
     for mode in modes {
-        let (again, again_entries, _) = write_tree_once(doc, pool, settings, budget, facts, mode);
+        if left == 0 {
+            break;
+        }
+        let (again, again_entries, (_, spent)) =
+            write_tree_once(doc, pool, settings, left, facts, mode);
+        left = left.saturating_sub(spent);
         if !has_loss(&again_entries) && formats_to_itself(&again, settings) {
             return (again, again_entries);
         }
@@ -1302,8 +1309,8 @@ fn formats_to_itself(source: &str, settings: &Settings) -> bool {
 }
 
 /// One write of `doc`. With `tree_refs` the rounds write each reference from the tree and each group takes the
-/// verbatim texts after them; with `report` they report the constructs behind a stop. The flag returned says whether
-/// the sidecar recorded any verbatim text.
+/// verbatim texts after them; with `report` they report the constructs behind a stop. Also returned: whether the
+/// sidecar recorded any verbatim text, and the repair work spent.
 fn write_tree_once<'t>(
     doc: V<'t>,
     pool: &'t Pool,
@@ -1311,7 +1318,7 @@ fn write_tree_once<'t>(
     budget: usize,
     facts: Option<&JsonFacts>,
     (tree_refs, report): (bool, bool),
-) -> (String, Vec<Entry>, bool) {
+) -> (String, Vec<Entry>, (bool, usize)) {
     let mut w = Writer::new(pool, settings.align_tables);
     w.work_limit = budget;
     w.no_mark_text = match facts {
@@ -1354,7 +1361,7 @@ fn write_tree_once<'t>(
     w.report_behind = report;
     let written = write_document(&mut w, doc);
     let source = controls::keep_above(&w, written, settings.source.as_deref());
-    (source, located(doc, &w), verbatim)
+    (source, located(doc, &w), (verbatim, w.work_chars))
 }
 
 /// Past this many references a group whose verbatim texts do not read back together keeps the rest from the tree.
@@ -1392,6 +1399,9 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     if !reads(w) {
         w.tree_ref_ids.extend(references.iter().map(|&n| id(n)));
         for &n in references.iter().take(MAX_VERBATIM_TRIALS) {
+            if exhausted(w) {
+                break;
+            }
             w.tree_ref_ids.remove(&id(n));
             if !reads(w) {
                 w.tree_ref_ids.insert(id(n));
