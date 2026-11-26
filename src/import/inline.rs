@@ -1106,8 +1106,7 @@ pub(crate) fn ranged_comments(cx: &mut Cx) -> std::collections::HashMap<Id, Rang
             Step::Exit(id, place, before) => walk.settle(cx, id, place, before),
         }
     }
-    cx.probe_skip = None;
-    walk.finish()
+    walk.finish(cx)
 }
 
 struct Walk {
@@ -1201,7 +1200,7 @@ impl Walk {
 
     fn settle(&mut self, cx: &mut Cx, id: Id, place: usize, before: usize) {
         let content = self.held > before;
-        if self.probe.keeps(cx, id, content) {
+        if Probe::keeps(cx, id, content) {
             if let Some(g) = self.own.get_mut(place) {
                 *g = true;
             }
@@ -1211,7 +1210,8 @@ impl Walk {
         }
     }
 
-    fn finish(mut self) -> std::collections::HashMap<Id, Ranged> {
+    fn finish(mut self, cx: &mut Cx) -> std::collections::HashMap<Id, Ranged> {
+        self.probe.restore(cx);
         let mut sums = Vec::with_capacity(self.own.len() + 1);
         let mut total = 0;
         sums.push(0);
@@ -1238,8 +1238,12 @@ fn skip(cx: &mut Cx, id: Id) {
     }
 }
 
-/// The importer state a probe read may change, so it can be taken back.
+/// The importer state the probe reads change. It is kept across the walk, which
+/// reads in document order as the import does, and taken back at its end.
 struct Probe {
+    diagnostics: usize,
+    definitions: usize,
+    footnotes: usize,
     anchor_keys: std::collections::HashSet<String>,
     snippet_ordinals: std::collections::HashSet<String>,
     bare_items: std::collections::HashSet<Id>,
@@ -1249,6 +1253,9 @@ impl Probe {
     fn new(cx: &mut Cx) -> Self {
         cx.probe_skip = Some(std::collections::HashSet::new());
         Self {
+            diagnostics: cx.diagnostics.len(),
+            definitions: cx.definitions.len(),
+            footnotes: cx.footnotes.len(),
             anchor_keys: cx.anchor_keys.clone(),
             snippet_ordinals: cx.snippet_ordinals.clone(),
             bare_items: cx.bare_items.clone(),
@@ -1257,7 +1264,7 @@ impl Probe {
 
     /// C2-M-069: whether the reader keeps a node for the inline element. When
     /// its content gave an inline, it is read without that content.
-    fn keeps(&self, cx: &mut Cx, id: Id, content: bool) -> bool {
+    fn keeps(cx: &mut Cx, id: Id, content: bool) -> bool {
         let hidden: Vec<Id> = if content {
             let skipped = cx.probe_skip.as_ref();
             cx.dom
@@ -1272,30 +1279,23 @@ impl Probe {
         for &c in &hidden {
             skip(cx, c);
         }
-        let marks = (
-            cx.diagnostics.len(),
-            cx.definitions.len(),
-            cx.footnotes.len(),
-        );
         let kept = !cx.inline(id).is_empty();
-        cx.diagnostics.truncate(marks.0);
-        cx.definitions.truncate(marks.1);
-        cx.footnotes.truncate(marks.2);
-        if cx.anchor_keys.len() != self.anchor_keys.len() {
-            cx.anchor_keys.clone_from(&self.anchor_keys);
-        }
-        if cx.snippet_ordinals.len() != self.snippet_ordinals.len() {
-            cx.snippet_ordinals.clone_from(&self.snippet_ordinals);
-        }
-        if cx.bare_items.len() != self.bare_items.len() {
-            cx.bare_items.clone_from(&self.bare_items);
-        }
         if let Some(s) = cx.probe_skip.as_mut() {
             for c in &hidden {
                 s.remove(c);
             }
         }
         kept
+    }
+
+    fn restore(self, cx: &mut Cx) {
+        cx.probe_skip = None;
+        cx.diagnostics.truncate(self.diagnostics);
+        cx.definitions.truncate(self.definitions);
+        cx.footnotes.truncate(self.footnotes);
+        cx.anchor_keys = self.anchor_keys;
+        cx.snippet_ordinals = self.snippet_ordinals;
+        cx.bare_items = self.bare_items;
     }
 }
 

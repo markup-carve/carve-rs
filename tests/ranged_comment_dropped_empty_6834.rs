@@ -128,3 +128,23 @@ fn dropped_empty_element_leaves_one_report() {
     let (_, _, messages) = import("<em title=\"x\"></em>");
     assert_eq!(messages, ["Empty HTML em with attributes dropped"]);
 }
+
+/// The probes read in document order, so a carrier that repeats an earlier
+/// ordinal is ignored there as in the import.
+#[test]
+fn repeated_snippet_ordinal_is_ignored_in_the_probe() {
+    for inside in [
+        "<em data-carve-snippet=\"1:inline:$v\"><i></i></em>",
+        "<span data-carve-snippet=\"1:inline:$v\"></span>",
+    ] {
+        let html = format!(
+            "<p>A <span data-carve-snippet=\"1:inline:$v\">X</span></p>{START}{inside}{END}"
+        );
+        let got = api::import_document(&html, &ImportOptions::default()).expect("import");
+        assert!(got.source.ends_with("{#n#}y\n"), "{}", got.source);
+        assert!(
+            got.diagnostics.iter().all(|d| d.message != LOST),
+            "{inside}"
+        );
+    }
+}
