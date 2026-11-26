@@ -188,7 +188,9 @@ fn c2_n_004_command_line_roots() {
             .spawn()
             .unwrap();
         if let Some(input) = stdin {
-            child.stdin.take().unwrap().write_all(input).unwrap();
+            if let Err(err) = child.stdin.take().unwrap().write_all(input) {
+                assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe, "{err}");
+            }
         }
         drop(child.stdin.take());
         String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()

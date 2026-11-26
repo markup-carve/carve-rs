@@ -10,12 +10,10 @@ fn fix(source: &str) -> (i32, String) {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(source.as_bytes())
-        .unwrap();
+    // The binary may exit before reading stdin (usage error), closing the pipe.
+    if let Err(err) = child.stdin.take().unwrap().write_all(source.as_bytes()) {
+        assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe, "{err}");
+    }
     let output = child.wait_with_output().unwrap();
     (
         output.status.code().unwrap(),

@@ -46,12 +46,15 @@ fn candidate18_cli_clause_cases() {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child
+        // The binary may exit before reading stdin (usage error), closing the pipe.
+        if let Err(err) = child
             .stdin
             .take()
             .unwrap()
             .write_all(case["stdin"].as_str().unwrap_or("").as_bytes())
-            .unwrap();
+        {
+            assert_eq!(err.kind(), std::io::ErrorKind::BrokenPipe, "{err}");
+        }
         let out = child.wait_with_output().unwrap();
         let want = &case["expected"];
         let status = want["status"].as_i64();
