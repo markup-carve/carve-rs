@@ -17,6 +17,10 @@ use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
+/// The only prefixed names written, each exactly in this spelling: prefixes
+/// are case-sensitive (carve#6783).
+const PREFIXED_NAMES: &[&str] = &["xlink:href", "xmlns:xlink", "xml:space"];
+
 /// A decoded lone surrogate, which a `str` cannot hold, reads as this.
 const SURROGATE_STANDIN: char = '\u{E000}';
 
@@ -471,17 +475,21 @@ impl State<'_> {
         external_href: bool,
         out: &mut String,
     ) {
-        if attribute_always_dropped(lower, value) {
+        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
+        let Some(value) = value else {
+            return;
+        };
+        if lower.starts_with("on") || namespace_unwritable(name, value) {
             return;
         }
         if lower == "href" || lower == "xlink:href" {
-            if let Some(value) = value.filter(|v| self.url_value_allowed(v, external_href)) {
+            if self.url_value_allowed(value, external_href) {
                 write_attr(out, name, value);
             }
             return;
         }
         if lower == "style" {
-            if let Some(value) = value.filter(|v| self.opts.allow_style && !style_is_dangerous(v)) {
+            if self.opts.allow_style && !style_is_dangerous(value) {
                 write_attr(out, name, value);
             }
             return;
@@ -492,10 +500,6 @@ impl State<'_> {
         {
             return;
         }
-        // carve#6774: XML has no valueless attribute and none allowed here is boolean.
-        let Some(value) = value else {
-            return;
-        };
         let unsafe_value = if REF_VALUE_ATTRS.contains(&lower) {
             ref_attr_unsafe(value)
         } else {
@@ -1019,8 +1023,19 @@ fn escape_attr(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// An event handler, or an empty prefixed namespace declaration, which
-/// Namespaces in XML forbids as undeclaring the prefix (carve#6779).
-fn attribute_always_dropped(lower: &str, value: Option<&str>) -> bool {
-    lower.starts_with("on") || (value == Some("") && lower.starts_with("xmlns:"))
+/// A prefixed name off [`PREFIXED_NAMES`], or an `xmlns:xlink` whose value,
+/// references read, is empty (Namespaces in XML forbids undeclaring a prefix,
+/// carve#6779) or holds XML whitespace or U+00A0, which is no URI reference
+/// (carve#6783, carve#6811).
+fn namespace_unwritable(name: &str, value: &str) -> bool {
+    if !name.contains(':') {
+        return false;
+    }
+    if !PREFIXED_NAMES.contains(&name) {
+        return true;
+    }
+    name == "xmlns:xlink" && {
+        let decoded = decode_entities(value);
+        decoded.is_empty() || decoded.contains([' ', '\t', '\n', '\r', '\u{A0}'])
+    }
 }

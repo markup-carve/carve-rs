@@ -313,6 +313,76 @@ fn an_empty_prefixed_namespace_declaration_is_dropped() {
     );
     assert_eq!(
         sanitize("<svg><g xmlns:xlink=\" \"/></svg>").svg,
-        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g xmlns:xlink=\" \"/></svg>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><g/></svg>"
+    );
+}
+
+const OPEN: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\"";
+const XLINK_DECL: &str = " xmlns:xlink=\"http://www.w3.org/1999/xlink\"";
+
+#[test]
+fn a_prefixed_name_in_another_spelling_is_dropped() {
+    // carve#6783: only lower-case xmlns: declares, and prefixes are case-sensitive.
+    assert_eq!(
+        sanitize("<svg XMLNS:XLINK=\"http://www.w3.org/1999/xlink\"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    assert_eq!(
+        sanitize(
+            "<svg Xmlns:xlink=\"urn:x\" XML:SPACE=\"preserve\" data-a:b=\"1\" aria-x:y=\"2\" xml:space=\"preserve\"/>"
+        )
+        .svg,
+        format!("{OPEN} xml:space=\"preserve\"/>")
+    );
+}
+
+#[test]
+fn a_namespace_declaration_with_whitespace_is_dropped() {
+    // carve#6783: whitespace only; carve#6811: whitespace or U+00A0 anywhere,
+    // literal or as a reference.
+    assert_eq!(
+        sanitize("<svg xmlns:xlink=\" \"><rect/></svg>"),
+        SanitizeResult {
+            svg: format!("{OPEN}><rect/></svg>"),
+            ok: true,
+        }
+    );
+    let values = [
+        "\t",
+        " \n ",
+        "\r",
+        "&#32;",
+        "&#x20;&#9;",
+        "&#xA;",
+        "&#13;",
+        "&#x0D;",
+        " urn:x",
+        "urn:x ",
+        "urn: x",
+        "urn:x\tb",
+        "\u{A0}",
+        "urn:\u{A0}x",
+        "&#160;",
+        "urn:&#xA0;x",
+        "&#32;urn:x",
+        "urn:&nbsp;x",
+        " urn:x ",
+    ];
+    for value in values {
+        assert_eq!(
+            sanitize(&format!("<svg><g xmlns:xlink=\"{value}\"/></svg>")),
+            SanitizeResult {
+                svg: format!("{OPEN}><g/></svg>"),
+                ok: true,
+            },
+            "{value:?}"
+        );
+    }
+    assert_eq!(
+        sanitize("<svg><g xmlns:xlink=\"urn:x\"/></svg>").svg,
+        format!("{OPEN}><g xmlns:xlink=\"urn:x\"/></svg>")
     );
 }
