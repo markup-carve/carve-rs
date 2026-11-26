@@ -65,6 +65,9 @@ pub struct Matcher {
     pub name: String,
 }
 
+/// A [`ProbeResult`] with its escapes by place in the shape of the probed inlines.
+pub type ShapeResult = (Option<bool>, Vec<(usize, usize)>);
+
 #[derive(Debug, Clone)]
 pub struct ProbeResult<'t> {
     pub found: Option<bool>,
@@ -158,6 +161,8 @@ pub struct Writer<'t> {
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
+    /// The results of `probes` by the shape of the probed inlines, their escapes by place in that shape.
+    pub probe_shapes: HashMap<String, ShapeResult>,
     /// C2-I-118: the inline constructs around the content of each inline node of the group in repair, the node
     /// itself included, so a probe of that content reads it as nesting no deeper than in place.
     pub open_above: AddrMap<usize, usize>,
@@ -238,6 +243,7 @@ impl<'t> Writer<'t> {
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
+            probe_shapes: HashMap::new(),
             open_above: AddrMap::default(),
             open_above_of: None,
             link_brackets: AddrMap::default(),
