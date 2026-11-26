@@ -249,6 +249,15 @@ impl Cx {
     }
 
     pub(crate) fn inline(&mut self, id: Id) -> Vec<Value> {
+        if let Some((parent, read)) = self.probe_reads.as_mut()
+            && *parent != id
+        {
+            read.push(id);
+            return Vec::new();
+        }
+        if self.probe_skip.as_ref().is_some_and(|s| s.contains(&id)) {
+            return Vec::new();
+        }
         if self.dom.is_text(id) {
             return soft_text(self.dom.text(id));
         }
@@ -1063,57 +1072,275 @@ pub(crate) enum Ranged {
     End,
 }
 
-/// A `comment-start` not yet ended: its span, its comment id, and whether an inline followed it.
-type OpenComment = (Id, Option<String>, bool);
+/// A `comment-start` not yet ended: its span, its comment id, and its place.
+type OpenComment = (Id, Option<String>, usize);
+
+enum Step {
+    Enter(Id),
+    /// An inline element, decided once its content is walked: its place, the
+    /// inlines found before its content, and the nodes the reader reads for it.
+    Exit(Id, usize, usize, Vec<Id>),
+}
+
+fn first_class(dom: &super::dom::Dom, id: Id) -> Option<String> {
+    dom.is(id, "span")
+        .then(|| dom.attr(id, "class"))
+        .flatten()
+        .and_then(|c| attrs::class_names(c).into_iter().next())
+}
 
 /// C2-M-113: pairs each `comment-start` span with the first later `comment-end`
-/// span of the same `data-comment-id`, in document order.
-pub(crate) fn ranged_comments(
-    dom: &super::dom::Dom,
-    raw_html: bool,
-) -> std::collections::HashMap<Id, Ranged> {
-    let mut out = std::collections::HashMap::new();
-    let first_class = |id: Id| {
-        dom.is(id, "span")
-            .then(|| dom.attr(id, "class"))
-            .flatten()
-            .and_then(|c| attrs::class_names(c).into_iter().next())
-    };
-    if !(0..dom.nodes.len()).any(|id| first_class(id).as_deref() == Some("comment-start")) {
-        return out;
+/// span of the same `data-comment-id`, in document order. A range is lost when
+/// a node the import keeps stands between the two.
+pub(crate) fn ranged_comments(cx: &mut Cx) -> std::collections::HashMap<Id, Ranged> {
+    let starts = (0..cx.dom.nodes.len())
+        .any(|id| first_class(&cx.dom, id).as_deref() == Some("comment-start"));
+    if !starts {
+        return std::collections::HashMap::new();
     }
-    let mut open: Vec<OpenComment> = Vec::new();
-    let mut stack: Vec<Id> = dom.children(dom.root).iter().rev().copied().collect();
-    while let Some(id) = stack.pop() {
-        let class = first_class(id);
+    let mut walk = Walk::new(cx);
+    let mut stack: Vec<Step> = cx
+        .dom
+        .children(cx.dom.root)
+        .iter()
+        .rev()
+        .map(|&id| Step::Enter(id))
+        .collect();
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Enter(id) => walk.enter(cx, id, &mut stack),
+            Step::Exit(id, place, before, read) => walk.settle(cx, id, place, before, &read),
+        }
+    }
+    walk.finish(cx)
+}
+
+struct Walk {
+    out: std::collections::HashMap<Id, Ranged>,
+    open: Vec<OpenComment>,
+    /// Each paired start with the places of its start and end.
+    ranges: Vec<(Id, usize, usize)>,
+    /// Whether each place, in document order, gives an inline.
+    own: Vec<bool>,
+    held: usize,
+    probe: Probe,
+}
+
+impl Walk {
+    fn new(cx: &mut Cx) -> Self {
+        Self {
+            out: std::collections::HashMap::new(),
+            open: Vec::new(),
+            ranges: Vec::new(),
+            own: Vec::new(),
+            held: 0,
+            probe: Probe::new(cx),
+        }
+    }
+
+    fn place(&mut self, gives: bool) {
+        self.own.push(gives);
+        self.held += usize::from(gives);
+    }
+
+    fn enter(&mut self, cx: &mut Cx, id: Id, stack: &mut Vec<Step>) {
+        let place = self.own.len();
+        let class = first_class(&cx.dom, id);
         if class.as_deref() == Some("comment-start") {
-            let kind = if dom.plain(id).is_empty() {
-                Ranged::Empty
-            } else {
-                follow(&mut open);
-                Ranged::Start { lost: false }
-            };
-            out.insert(id, kind);
-            open.push((
-                id,
-                dom.attr(id, "data-comment-id").map(str::to_string),
-                false,
-            ));
-            continue;
+            return self.start(cx, id, place);
         }
-        if class.as_deref() == Some("comment-end")
-            && end_comment(&mut open, &mut out, id, dom.attr(id, "data-comment-id"))
-        {
-            continue;
+        if class.as_deref() == Some("comment-end") && self.end(cx, id, place) {
+            return;
         }
-        if holds(dom, id, raw_html) {
-            follow(&mut open);
+        if self.carrier(cx, id) {
+            return;
         }
-        if dom.is_element(id) && !opaque(dom, id) {
-            stack.extend(dom.children(id).iter().rev().copied());
+        let dom = &cx.dom;
+        let descend = dom.is_element(id) && !opaque(dom, id);
+        if descend && !attrs::is_block_element(dom, id) {
+            // The walk goes where the reader goes: into the nodes it reads for the element.
+            let read = Probe::reads(cx, id);
+            self.own.push(false);
+            stack.push(Step::Exit(id, place, self.held, read.clone()));
+            stack.extend(read.into_iter().rev().map(Step::Enter));
+            return;
+        }
+        // A `<pre>` is always a code block, read from its text (`html_pre`),
+        // never from its children.
+        let pre = dom.is(id, "pre");
+        let descend = descend && !pre;
+        let gives = pre || holds(dom, id, cx.raw_html);
+        self.place(gives);
+        if !gives && !descend {
+            skip(cx, id);
+        }
+        if descend {
+            stack.extend(cx.dom.children(id).iter().rev().map(|&c| Step::Enter(c)));
         }
     }
-    out
+
+    fn start(&mut self, cx: &mut Cx, id: Id, place: usize) {
+        let gives = !cx.dom.plain(id).is_empty();
+        let kind = if gives {
+            Ranged::Start { lost: false }
+        } else {
+            Ranged::Empty
+        };
+        self.out.insert(id, kind);
+        self.open.push((
+            id,
+            cx.dom.attr(id, "data-comment-id").map(str::to_string),
+            place,
+        ));
+        self.place(gives);
+        if !gives {
+            skip(cx, id);
+        }
+    }
+
+    /// A snippet carrier is tried on entry, as the reader tries it before its
+    /// content; an accepted one takes its ordinal and its content is never read.
+    fn carrier(&mut self, cx: &mut Cx, id: Id) -> bool {
+        if !cx.dom.has(id, "data-carve-snippet") {
+            return false;
+        }
+        let block = attrs::is_block_element(&cx.dom, id);
+        let used = if block {
+            cx.block_snippet(id)
+        } else {
+            cx.inline_snippet(id)
+        };
+        if used.is_some() {
+            self.place(!block);
+        }
+        used.is_some()
+    }
+
+    /// Ends the open comment of the end span's id; a marker without an id ends none.
+    fn end(&mut self, cx: &mut Cx, id: Id, place: usize) -> bool {
+        let key = cx.dom.attr(id, "data-comment-id");
+        let Some(at) = self
+            .open
+            .iter()
+            .position(|o| key.is_some() && o.1.as_deref() == key)
+        else {
+            return false;
+        };
+        let (start, _, from) = self.open.remove(at);
+        self.ranges.push((start, from, place));
+        self.out.insert(id, Ranged::End);
+        self.place(false);
+        skip(cx, id);
+        true
+    }
+
+    fn settle(&mut self, cx: &mut Cx, id: Id, place: usize, before: usize, read: &[Id]) {
+        let content = self.held > before;
+        if Probe::keeps(cx, id, content, read) {
+            if let Some(g) = self.own.get_mut(place) {
+                *g = true;
+            }
+            self.held += 1;
+        } else if !content {
+            skip(cx, id);
+        }
+    }
+
+    fn finish(mut self, cx: &mut Cx) -> std::collections::HashMap<Id, Ranged> {
+        self.probe.restore(cx);
+        let mut sums = Vec::with_capacity(self.own.len() + 1);
+        let mut total = 0;
+        sums.push(0);
+        for &g in &self.own {
+            total += usize::from(g);
+            sums.push(total);
+        }
+        for (start, from, to) in self.ranges {
+            let between = sums.get(to).zip(sums.get(from + 1));
+            if let (Some(Ranged::Start { lost }), Some((end, after))) =
+                (self.out.get_mut(&start), between)
+            {
+                *lost = end > after;
+            }
+        }
+        self.out
+    }
+}
+
+/// Leaves `id` out of later probes: it gives nothing.
+fn skip(cx: &mut Cx, id: Id) {
+    if let Some(s) = cx.probe_skip.as_mut() {
+        s.insert(id);
+    }
+}
+
+/// The importer state the probe reads change. It is kept across the walk, which
+/// reads in document order as the import does, and taken back at its end.
+struct Probe {
+    diagnostics: usize,
+    definitions: usize,
+    footnotes: usize,
+    anchor_keys: std::collections::HashSet<String>,
+    snippet_ordinals: std::collections::HashSet<String>,
+    bare_items: std::collections::HashSet<Id>,
+}
+
+impl Probe {
+    fn new(cx: &mut Cx) -> Self {
+        cx.probe_skip = Some(std::collections::HashSet::new());
+        Self {
+            diagnostics: cx.diagnostics.len(),
+            definitions: cx.definitions.len(),
+            footnotes: cx.footnotes.len(),
+            anchor_keys: cx.anchor_keys.clone(),
+            snippet_ordinals: cx.snippet_ordinals.clone(),
+            bare_items: cx.bare_items.clone(),
+        }
+    }
+
+    /// The nodes the reader asks for when it reads the element, each read as nothing.
+    fn reads(cx: &mut Cx, id: Id) -> Vec<Id> {
+        cx.probe_reads = Some((id, Vec::new()));
+        cx.inline(id);
+        let mut read = cx.probe_reads.take().map(|r| r.1).unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        read.retain(|&n| seen.insert(n));
+        read
+    }
+
+    /// C2-M-069: whether the reader keeps a node for the inline element. When
+    /// its content gave an inline, it is read without that content.
+    fn keeps(cx: &mut Cx, id: Id, content: bool, read: &[Id]) -> bool {
+        let hidden: Vec<Id> = if content {
+            let skipped = cx.probe_skip.as_ref();
+            read.iter()
+                .copied()
+                .filter(|c| !skipped.is_some_and(|s| s.contains(c)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for &c in &hidden {
+            skip(cx, c);
+        }
+        let kept = !cx.inline(id).is_empty();
+        if let Some(s) = cx.probe_skip.as_mut() {
+            for c in &hidden {
+                s.remove(c);
+            }
+        }
+        kept
+    }
+
+    fn restore(self, cx: &mut Cx) {
+        cx.probe_skip = None;
+        cx.diagnostics.truncate(self.diagnostics);
+        cx.definitions.truncate(self.definitions);
+        cx.footnotes.truncate(self.footnotes);
+        cx.anchor_keys = self.anchor_keys;
+        cx.snippet_ordinals = self.snippet_ordinals;
+        cx.bare_items = self.bare_items;
+    }
 }
 
 /// An element whose content gives no inline of its own: it is dropped or kept whole as raw.
@@ -1123,7 +1350,7 @@ fn opaque(dom: &super::dom::Dom, id: Id) -> bool {
         || dom.is(id, "input")
 }
 
-/// Whether a node gives an inline by itself, so it stands in an open range.
+/// Whether a node other than an inline element gives an inline by itself.
 fn holds(dom: &super::dom::Dom, id: Id, raw_html: bool) -> bool {
     if dom.is_text(id) {
         return !dom.text(id).is_empty();
@@ -1140,37 +1367,9 @@ fn holds(dom: &super::dom::Dom, id: Id, raw_html: bool) -> bool {
     if !dom.children(id).is_empty() {
         return false;
     }
-    // C2-M-069: an empty inline container without attributes is dropped.
     let container =
         dom.is(id, "span") || dom.is(id, "a") || dom.tag(id).and_then(format_kind).is_some();
     !dom.attrs(id).is_empty() || !container
-}
-
-fn follow(open: &mut [OpenComment]) {
-    for o in open {
-        o.2 = true;
-    }
-}
-
-/// Ends the open comment of `key`, if one is open; a marker without an id ends none.
-fn end_comment(
-    open: &mut Vec<OpenComment>,
-    out: &mut std::collections::HashMap<Id, Ranged>,
-    id: Id,
-    key: Option<&str>,
-) -> bool {
-    let Some(at) = open
-        .iter()
-        .position(|o| key.is_some() && o.1.as_deref() == key)
-    else {
-        return false;
-    };
-    let (start, _, lost) = open.remove(at);
-    if let Some(Ranged::Start { lost: l }) = out.get_mut(&start) {
-        *l = lost;
-    }
-    out.insert(id, Ranged::End);
-    true
 }
 
 const NEEDS_CONTENT: &[&str] = &[
