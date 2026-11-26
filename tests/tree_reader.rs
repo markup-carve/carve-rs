@@ -94,7 +94,7 @@ fn c2_a_170_imported_corpus_trees_pass_the_reader() {
 }
 
 /// `(tree id, cause)` of the refused trees.
-const REFUSED_HELD: Holds = &[("snippet-use-mode-mismatch", "carve#6395: named snippets")];
+const REFUSED_HELD: Holds = &[];
 
 #[test]
 fn c2_a_188_every_refused_tree_is_refused_by_its_gate() {

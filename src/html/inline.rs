@@ -294,10 +294,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match n {
                 Node::Code(c) => {
                     out.push_str("<code");
-                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() {
-                        El::new(c.attrs, c.lang)
-                            .with_dir(c.dir)
-                            .write_into(self.filter(), out);
+                    let snippet = self.snippet_tail(n);
+                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() || snippet.is_some()
+                    {
+                        let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
+                        el.snippet = snippet;
+                        el.write_into(self.filter(), out);
                     }
                     out.push('>');
                     esc::text(c.value, out);
@@ -336,10 +338,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn wrapper_attrs(&self, n: &Node<'_>, out: &mut String) {
         let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
         let small = matches!(n, Node::SmallCaps(_));
-        if attrs.is_none() && lang.is_none() && dir.is_none() && !small {
+        let snippet = self.snippet_tail(n);
+        if attrs.is_none() && lang.is_none() && dir.is_none() && !small && snippet.is_none() {
             return;
         }
         let mut el = El::new(attrs, lang).with_dir(dir);
+        el.snippet = snippet;
         if small {
             el.base.push("smallcaps".into());
         }
@@ -431,6 +435,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-079, C2-H-081, C2-H-083, C2-H-085, C2-H-088, C2-H-141.
     fn link(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
+        // C2-H-215: a link that carries the carriers of its use but writes no `<a>` puts them on a span.
+        let Some(tail) = self.snippet_tail(n) else {
+            return self.link_html(n, l, out);
+        };
+        let mut html = String::new();
+        self.link_html(n, l, &mut html);
+        if html.starts_with("<a ") {
+            out.push_str(&html);
+        } else {
+            let _ = write!(out, "<span{tail}>{html}</span>");
+        }
+    }
+
+    fn link_html(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
         let href = l.href.filter(|href| {
             l.key.is_none_or(|key| self.links.contains_key(key)) || !self.hidden_heading(href)
         });
@@ -493,11 +511,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 _ => {}
             }
         }
+        el.snippet = self.snippet_tail(n);
         out.push_str("<a");
         el.write_into(self.filter(), out);
         out.push('>');
         self.in_link += 1;
+        let outer = self.snippets;
+        if outer.is_some() {
+            self.snippets = Some(self.snippet_mark(n));
+        }
         self.inlines(&*l.children, out);
+        self.snippets = outer;
         self.in_link -= 1;
         out.push_str("</a>");
         if self.in_link == 0 {
@@ -506,6 +530,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     fn autolink(&mut self, n: &'r Node<'a>, a: &ast::Autolink, out: &mut String) {
+        // C2-H-215: an autolink that carries the carriers of its use but writes no `<a>` puts them on a span.
+        let Some(tail) = self.snippet_tail(n) else {
+            return self.autolink_html(n, a, out);
+        };
+        let mut html = String::new();
+        self.autolink_html(n, a, &mut html);
+        if html.starts_with("<a ") {
+            out.push_str(&html);
+        } else {
+            let _ = write!(out, "<span{tail}>{html}</span>");
+        }
+    }
+
+    fn autolink_html(&mut self, n: &'r Node<'a>, a: &ast::Autolink, out: &mut String) {
         let text = a.text.unwrap_or(a.href);
         if self.opts.profile == Profile::Comment && !url::allowed(a.href, &self.opts.url_policy) {
             self.losses.push("destination-denied");
@@ -525,6 +563,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
+        el.snippet = self.snippet_tail(n);
         let file = self.file_of(a.pos.as_ref());
         el.structural.push((
             "href",
@@ -619,6 +658,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.carriers
                 .push(("data-carve-footnote-label", Some(r.key.into())));
         }
+        if self.in_link > 0
+            && let Some(mark) = self
+                .snippet_mark(n)
+                .filter(|m| self.snippets != Some(Some(*m)))
+        {
+            el.carriers
+                .push(("data-carve-snippet-mark", Some(mark.to_string().into())));
+        }
         let f = self.filter();
         let target = if self.in_link > 0 {
             &mut self.pending
@@ -679,6 +726,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .collect();
         let mut el = El::new(s.attrs, s.lang).with_dir(s.dir);
         el.skip_semantic_keys = keys;
+        el.snippet = self.snippet_tail_of(s);
         let Some(((outer, target, value), inner)) = found.split_last() else {
             out.push_str("<span");
             el.write_into(self.filter(), out);

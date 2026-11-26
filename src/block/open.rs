@@ -552,33 +552,11 @@ impl Parser<'_> {
             );
             return;
         }
-        if let Some(inc) = r
-            .starts_with("{{")
-            .then(|| super::include::parse(r))
-            .flatten()
-        {
-            let (s, attrs) = self.take_pending(start, None);
-            let end = start + r.len();
-            // C2-B-147: a code include, whose valid options hold `code`, takes a caption.
-            let target = inc.options.contains_key("code");
-            self.push_leaf_event(
-                LeafKind::Include {
-                    path: inc.path,
-                    section: inc.section,
-                    options: inc.options,
-                    invalid: inc.invalid,
-                },
-                s,
-                end,
-                attrs,
-            );
-            self.closed = Some(super::Closed {
-                depth: self.stack.len(),
-                target,
-            });
+        if r.starts_with("{{") && self.open_directive(r, start) {
             return;
         }
-        if self.open_fence(k, m, e)
+        if self.open_snippet_def(k, r, start, e)
+            || self.open_fence(k, m, e)
             || self.open_table(k, e)
             || self.open_attr_line(k, e)
             || self.open_caption(k, m, e)
@@ -834,6 +812,71 @@ impl Parser<'_> {
     }
 
     /// Link and abbreviation definitions at column 0 (C2-B-081 to C2-B-084).
+    /// A line that opens with `{{`: a block snippet use, tested first (C2-B-237), or an include.
+    fn open_directive(&mut self, r: &str, start: usize) -> bool {
+        if let Some(name) = crate::snippet::block_use(r) {
+            let (s, attrs) = self.take_pending(start, None);
+            let kind = LeafKind::SnippetUse {
+                name: name.to_string(),
+            };
+            self.push_leaf_event(kind, s, start + r.len(), attrs);
+            self.closed = None;
+            return true;
+        }
+        if let Some(inc) = super::include::parse(r) {
+            let (s, attrs) = self.take_pending(start, None);
+            let end = start + r.len();
+            // C2-B-147: a code include, whose valid options hold `code`, takes a caption.
+            let target = inc.options.contains_key("code");
+            self.push_leaf_event(
+                LeafKind::Include {
+                    path: inc.path,
+                    section: inc.section,
+                    options: inc.options,
+                    invalid: inc.invalid,
+                },
+                s,
+                end,
+                attrs,
+            );
+            self.closed = Some(super::Closed {
+                depth: self.stack.len(),
+                target,
+            });
+            return true;
+        }
+        false
+    }
+
+    /// C2-B-236: a snippet definition, one line at column 0 outside every container.
+    fn open_snippet_def(&mut self, k: &Cursor<'_>, r: &str, start: usize, e: usize) -> bool {
+        if self.stack.len() != 1 || k.col != 0 || !r.starts_with("{$") {
+            return false;
+        }
+        let Some(m) = crate::snippet::marker(r) else {
+            return false;
+        };
+        let Some(value) = crate::snippet::value_start(r, &m) else {
+            return false;
+        };
+        let name = r.get(2..m.name_end).unwrap_or("").to_string();
+        let own = (!m.block.attrs.is_empty() || m.block.lang.is_some()).then_some(m.block);
+        let (s, attrs) = self.take_pending(start, own);
+        let value = Piece {
+            start: start + value,
+            end: e,
+            join: Join::Line,
+        };
+        self.push_leaf_event(
+            LeafKind::SnippetDef { name, value },
+            s,
+            start + r.len(),
+            attrs,
+        );
+        self.closed = None;
+        true
+    }
+
     fn open_definition(&mut self, r: &str, start: usize, e: usize) -> bool {
         if let Some(d) = shapes::link_def(r) {
             // C2-B-083: a line-end attribute block leaves no tail to take.

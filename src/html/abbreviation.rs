@@ -106,3 +106,87 @@ fn escape_template(source: &str) -> String {
     }
     out
 }
+
+impl Renderer<'_, '_> {
+    /// C2-H-216: under `roundtrip` a run of snippet definitions is one template
+    /// that holds the run as the canonical writer spells it. A run with a
+    /// definition of an included file carries the scope. Returns its length.
+    pub(super) fn snippet_run(&mut self, nodes: &[Node], depth: usize) -> usize {
+        let run: Vec<&Node> = nodes
+            .iter()
+            .take_while(|n| matches!(n, Node::SnippetDefinition(_)))
+            .collect();
+        let included = crate::snippet::expand::with_side(|side| {
+            side.is_some_and(|s| {
+                run.iter()
+                    .any(|n| s.included_defs.contains(&n.payload_addr()))
+            })
+        });
+        let mut children: Vec<serde_json::Value> = run
+            .iter()
+            .filter_map(|n| serde_json::to_value(n).ok())
+            .collect();
+        plain_abbreviations(&mut children);
+        let doc =
+            serde_json::json!({"type": "document", "astVersion": "2.0", "children": children});
+        let (source, entries) = crate::write::write_value(&doc, &crate::write::Settings::default());
+        for entry in &entries {
+            if let Some(&(code, ..)) = crate::tables::MESSAGES
+                .iter()
+                .find(|(c, ..)| entry.code == *c)
+            {
+                self.losses.push(code);
+            }
+        }
+        let text = escape_template(source.strip_suffix('\n').unwrap_or(&source));
+        let scope = if included {
+            " data-carve-snippet-scope=\"include\""
+        } else {
+            ""
+        };
+        self.line(
+            depth,
+            &format!("<template data-carve-snippets{scope}>{text}</template>"),
+        );
+        run.len()
+    }
+}
+
+/// C2-I-098: an abbreviation in a definition is its term as text in the template.
+fn plain_abbreviations(nodes: &mut Vec<serde_json::Value>) {
+    use serde_json::Value;
+    for node in nodes.iter_mut() {
+        if node["type"] == "abbreviation" {
+            let key = node["key"].clone();
+            *node = serde_json::json!({"type": "text", "value": key});
+            continue;
+        }
+        if let Some(map) = node.as_object_mut() {
+            for value in map.values_mut() {
+                if let Value::Array(list) = value
+                    && list.iter().all(|v| v.get("type").is_some())
+                {
+                    plain_abbreviations(list);
+                }
+            }
+        }
+    }
+    let plain = |v: &Value| v["type"] == "text" && v.as_object().is_some_and(|m| m.len() == 2);
+    let mut joined: Vec<Value> = Vec::with_capacity(nodes.len());
+    for node in nodes.drain(..) {
+        if let Some(last) = joined.last_mut()
+            && plain(last)
+            && plain(&node)
+        {
+            let text = format!(
+                "{}{}",
+                last["value"].as_str().unwrap_or(""),
+                node.get("value").and_then(Value::as_str).unwrap_or("")
+            );
+            last["value"] = Value::String(text);
+            continue;
+        }
+        joined.push(node);
+    }
+    *nodes = joined;
+}

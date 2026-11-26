@@ -85,6 +85,7 @@ pub mod profile;
 pub mod reader;
 #[doc(hidden)]
 pub mod resolve;
+pub mod snippet;
 #[doc(hidden)]
 pub mod source;
 #[doc(hidden)]
@@ -197,6 +198,44 @@ pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Documen
     Ok(parse_resolved_in(input, opts, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
+/// C2-N-091: expands the snippet uses of a supplied tree in its render arena;
+/// each finding names the path of the text that stands in place of its use.
+pub(crate) fn expand_tree<'a>(
+    doc: &mut ast::Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Option<snippet::expand::Guard> {
+    let mut found = Vec::new();
+    let settings = snippet::expand::Settings {
+        roundtrip: opts.roundtrip,
+        source_len: usize::try_from(doc.src_byte_length.unwrap_or(0)).unwrap_or(0),
+    };
+    let guard = snippet::expand::expand(doc, arena, settings, &mut found);
+    diags.extend(snippet_diagnostics(doc, &found));
+    guard
+}
+
+/// The diagnostics of `found`, each with the path of the node in place of its use.
+pub(crate) fn snippet_diagnostics(
+    doc: &ast::Document<'_>,
+    found: &[snippet::expand::Finding],
+) -> Vec<diagnostic::Diagnostic> {
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let targets = found.iter().map(|f| f.addr).collect();
+    let paths = node_paths_by(doc.children, &targets, ast::Node::payload_addr);
+    found
+        .iter()
+        .map(|f| {
+            let mut d = f.diagnostic();
+            d.path = paths.get(&f.addr).cloned();
+            d
+        })
+        .collect()
+}
+
 #[doc(hidden)]
 /// Renders a supplied tree after running resolution anew (C2-A-135).
 ///
@@ -207,6 +246,7 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     heading_shift::apply(doc.children, opts.heading_shift);
+    let _snippets = expand_tree(&mut doc, opts, &arena, &mut Vec::new());
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses) = html::render_with_losses(&doc, opts);
@@ -226,12 +266,15 @@ pub fn render_tree_with_diagnostics(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     heading_shift::apply(doc.children, opts.heading_shift);
+    let mut expanded = Vec::new();
+    let _snippets = expand_tree(&mut doc, opts, &arena, &mut expanded);
     let files = resolve_tree(&mut doc, opts, &arena);
     let (html, losses, derived, extension_nodes, destinations) =
         html::render_tree_parts(&doc, opts, files.as_ref(), None, None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
-    let mut diagnostics = tree_loss_diagnostics(
+    let mut diagnostics = expanded;
+    diagnostics.extend(tree_loss_diagnostics(
         &doc,
         losses,
         derived,
@@ -239,7 +282,7 @@ pub fn render_tree_with_diagnostics(
         &destinations,
         opts,
         None,
-    );
+    ));
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
             diagnostic.severity = "error";
@@ -257,13 +300,29 @@ pub fn render_tree_with_diagnostics(
     })
 }
 
-/// The resolved view as an owned tree, for extension transforms that already
-/// consume typed nodes. Avoids a JSON round trip between resolution and them.
-pub(crate) fn resolved_owned(tree: &ast::owned::Document, opts: &Options) -> ast::owned::Document {
+/// The resolved view as an owned tree, for the document transforms: its
+/// snippet uses expanded (C2-N-091), with the findings of the expansion and
+/// the positions of its definitions.
+pub(crate) fn resolved_owned_expanded(
+    tree: &ast::owned::Document,
+    opts: &Options,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> (
+    ast::owned::Document,
+    std::collections::HashSet<String>,
+    snippet::expand::Kept,
+) {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
+    let snippets = expand_tree(&mut doc, opts, &arena, diags);
+    let marks = snippet::expand::definition_marks(doc.children);
     let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
-    doc.owned()
+    let kept = if snippets.is_some() {
+        snippet::expand::keep(doc.children)
+    } else {
+        snippet::expand::Kept::default()
+    };
+    (doc.owned(), marks, kept)
 }
 
 /// Resolves a supplied tree again (C2-A-135). The children of an expanded
@@ -483,6 +542,15 @@ fn node_paths(
     nodes: &[ast::Node<'_>],
     targets: &std::collections::HashSet<usize>,
 ) -> std::collections::HashMap<usize, String> {
+    node_paths_by(nodes, targets, resolve::order::addr)
+}
+
+/// [`node_paths`] with the targets named by `key`.
+fn node_paths_by<'a>(
+    nodes: &[ast::Node<'a>],
+    targets: &std::collections::HashSet<usize>,
+    key: impl Fn(&ast::Node<'a>) -> usize,
+) -> std::collections::HashMap<usize, String> {
     use PathItem::{Array, One};
     let mut found = std::collections::HashMap::new();
     let mut pending = if targets.is_empty() {
@@ -498,7 +566,7 @@ fn node_paths(
                 }
             }
             One(node, path) => {
-                let addr = resolve::order::addr(node);
+                let addr = key(node);
                 if targets.contains(&addr) {
                     found.entry(addr).or_insert_with(|| path.clone());
                     if found.len() == targets.len() {
@@ -691,6 +759,25 @@ pub(crate) fn prepare_with<'a>(
     diags: &mut Vec<diagnostic::Diagnostic>,
     before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    prepare_expanding(input, opts, arena, diags, before_resolve, None)
+}
+
+/// The snippet expansion of one render (C2-N-091): its findings, and the
+/// side tables, held while the render runs.
+pub(crate) type SnippetRun<'r> = (
+    &'r mut Vec<snippet::expand::Finding>,
+    &'r mut Option<snippet::expand::Guard>,
+);
+
+/// [`prepare_with`] that expands the snippet uses after the includes, when `snippets` is given.
+pub(crate) fn prepare_expanding<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+    before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
+    snippets: Option<SnippetRun<'_>>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
     #[cfg(test)]
     PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     check_source_length(input.len())?;
@@ -710,16 +797,29 @@ pub(crate) fn prepare_with<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let expanded = opts.includes.is_some();
+    // Includes and snippet uses both open with `{{`.
+    let braces = input.contains("{{");
     let mut included_sources = std::collections::HashMap::new();
     if let Some(cfg) = &opts.includes {
-        if input.contains("{{") {
+        if braces {
             included_sources = include::expand(&mut doc, &scope, cfg, opts, arena, diags);
         }
-    } else if input.contains("{{") {
+    } else if braces {
         include::no_resolver(doc.children, diags);
     }
-    let files = (expanded && input.contains("{{"))
-        .then(|| resolve::files::Files::build(&doc, included_sources));
+    if expanded && braces {
+        cross_file_snippet_duplicates(&doc, &src, &included_sources, diags);
+    }
+    if let Some((found, guard)) = snippets
+        && braces
+    {
+        let settings = snippet::expand::Settings {
+            roundtrip: opts.roundtrip,
+            source_len: input.len(),
+        };
+        *guard = snippet::expand::expand(&mut doc, arena, settings, found);
+    }
+    let files = (expanded && braces).then(|| resolve::files::Files::build(&doc, included_sources));
     before_resolve(&mut doc);
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
@@ -835,7 +935,25 @@ pub(crate) fn duplicate_definitions(
     let mut links = std::collections::HashSet::new();
     let mut abbreviations = std::collections::HashSet::new();
     let mut footnotes = std::collections::HashSet::new();
+    let mut snippets = std::collections::HashSet::new();
     for node in doc.children.iter() {
+        // C2-N-090: a later definition of a snippet name reports at its `$` and name.
+        if let ast::Node::SnippetDefinition(x) = node {
+            if !snippets.insert(x.name) {
+                let pos = x.pos.and_then(|p| {
+                    let marker = format!("{{${}", x.name);
+                    let at = p.start() + src.text().get(p.start()..)?.find(&marker)?;
+                    Some(src.pos(at + 1, at + 2 + x.name.len()))
+                });
+                diags.push(diagnostic::Diagnostic::new(
+                    "duplicate-snippet",
+                    &[("name", x.name)],
+                    file,
+                    pos,
+                ));
+            }
+            continue;
+        }
         let code = match node {
             ast::Node::LinkReferenceDefinition(x)
                 if !links.insert(crate::chars::fold_label(x.key)) =>
@@ -871,6 +989,42 @@ pub(crate) fn duplicate_definitions(
         });
         diags.push(diagnostic::Diagnostic::new(code, &[], file, pos));
     }
+}
+
+/// C2-N-090: a definition that loses to one of another file of the expansion;
+/// a later one of the same file is reported by [`duplicate_definitions`].
+fn cross_file_snippet_duplicates(
+    doc: &ast::Document<'_>,
+    src: &source::Source<'_>,
+    sources: &std::collections::HashMap<&str, &str>,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) {
+    // The include each name's winner stands in, 0 for the top: a file included twice repeats its definitions.
+    let mut first: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    snippet::expand::registry_walk(doc.children, 0, None, &mut |d, include, file| match first
+        .get(d.name)
+    {
+        None => {
+            first.insert(d.name, include);
+        }
+        Some(winner) if *winner != include => {
+            let text = file.and_then(|f| sources.get(f).copied());
+            let own = text.map(source::Source::new);
+            let at = own.as_ref().unwrap_or(src);
+            let pos = d.pos.and_then(|p| {
+                let marker = format!("{{${}", d.name);
+                let start = p.start() + at.text().get(p.start()..)?.find(&marker)?;
+                Some(at.pos(start + 1, start + 2 + d.name.len()))
+            });
+            diags.push(diagnostic::Diagnostic::new(
+                "duplicate-snippet",
+                &[("name", d.name)],
+                file,
+                pos,
+            ));
+        }
+        Some(_) => {}
+    });
 }
 
 /// C2-A-218: a metadata key is authored by its attribute line, so its range
@@ -1022,9 +1176,20 @@ fn render_parts(
     details: &mut RenderDetails,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     // C2-H-208: after includes, before the first transform; resolution reads no level.
-    let (mut doc, ordered, files) = prepare_with(input, opts, arena, diags, &mut |doc| {
-        heading_shift::apply(doc.children, opts.heading_shift);
-    })?;
+    let mut found = Vec::new();
+    let mut guard = None;
+    let prepared = prepare_expanding(
+        input,
+        opts,
+        arena,
+        diags,
+        &mut |doc| {
+            heading_shift::apply(doc.children, opts.heading_shift);
+        },
+        Some((&mut found, &mut guard)),
+    );
+    diags.extend(found.iter().map(snippet::expand::Finding::diagnostic));
+    let (mut doc, ordered, files) = prepared?;
     include::unexpanded(doc.children, None, &mut details.places);
     if let Some(files) = files {
         details.included_sources.extend(

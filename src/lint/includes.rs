@@ -238,6 +238,7 @@ fn selected_lines(node: &Value) -> Option<(u32, u32)> {
                     "link_reference_definition"
                         | "footnote"
                         | "abbreviation_def"
+                        | "snippet_definition"
                         | "citation_definition"
                 )
             )

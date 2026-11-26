@@ -344,6 +344,13 @@ pub mod owned {
     include!(concat!(env!("OUT_DIR"), "/ast_owned_gen.rs"));
 }
 
+/// One node-bearing slot of a node, for [`Node::for_each_slot_mut`].
+#[allow(clippy::mut_mut)] // a list slot is replaced by a rebuilt slice, so its reference is lent mutably
+pub enum SlotMut<'s, 'a> {
+    List(&'s mut &'a mut [Node<'a>]),
+    One(&'s mut Node<'a>),
+}
+
 include!(concat!(env!("OUT_DIR"), "/ast_gen.rs"));
 include!(concat!(env!("OUT_DIR"), "/ast_conv_gen.rs"));
 

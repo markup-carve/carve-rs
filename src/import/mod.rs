@@ -9,6 +9,7 @@ pub(crate) mod dom;
 mod inline;
 mod notes;
 pub(crate) mod parse;
+mod snippets;
 mod template;
 
 use crate::api::{Entry, Range};
@@ -46,6 +47,8 @@ pub(crate) struct Cx {
     definitions: Vec<(String, Value)>,
     anchor_keys: HashSet<String>,
     templates: HashMap<Id, Vec<Value>>,
+    /// C2-H-217: the ordinals of the accepted snippet carriers.
+    snippet_ordinals: HashSet<String>,
     /// C2-M-113: the spans of the ranged comments.
     ranged: HashMap<Id, inline::Ranged>,
 }
@@ -60,6 +63,7 @@ pub(crate) enum Code {
     ElementMapped,
     StructureRepaired,
     WhitespaceNormalized,
+    SnippetScopeLoss,
 }
 
 impl Code {
@@ -72,6 +76,7 @@ impl Code {
             Self::ElementMapped => "import-element-mapped",
             Self::StructureRepaired => "import-structure-repaired",
             Self::WhitespaceNormalized => "import-whitespace-normalized",
+            Self::SnippetScopeLoss => "snippet-scope-loss",
         }
     }
 }
@@ -90,6 +95,7 @@ impl Cx {
             definitions: Vec::new(),
             anchor_keys: HashSet::new(),
             templates: HashMap::new(),
+            snippet_ordinals: HashSet::new(),
             ranged: HashMap::new(),
         }
     }

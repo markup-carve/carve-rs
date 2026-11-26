@@ -427,6 +427,7 @@ fn select<'a>(
                 | Node::Footnote(_)
                 | Node::AbbreviationDef(_)
                 | Node::CitationDefinition(_)
+                | Node::SnippetDefinition(_)
         ) {
             continue;
         }

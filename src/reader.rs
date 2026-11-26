@@ -627,6 +627,7 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
     registered::validate(root)?;
     let resources = resource_ids(root)?;
     let header_ids = header_ids(root);
+    check_snippet_modes(root)?;
     let mut pending = vec![(root, String::new())];
     while let Some((value, path)) = pending.pop() {
         match value {
@@ -648,6 +649,91 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+/// Whether the list `key` of a node of type `ty` holds inline nodes, by its schema row.
+fn inline_slot(ty: &str, key: &str) -> bool {
+    let at = format!("/$defs/{ty}/properties/{key}/items/oneOf");
+    definitions().is_ok_and(|d| {
+        d.pointer(&at)
+            .and_then(Value::as_array)
+            .is_some_and(|refs| {
+                refs.iter()
+                    .any(|r| r.get("$ref") == Some(&Value::from("#/$defs/text")))
+            })
+    })
+}
+
+/// C2-A-221: the mode of a snippet use matches the slot it stands in.
+fn check_snippet_modes(root: &Value) -> Result<(), TreeError> {
+    let mut pending = vec![(root, String::new())];
+    while let Some((value, path)) = pending.pop() {
+        let Value::Object(map) = value else { continue };
+        let ty = value["type"].as_str().unwrap_or("");
+        for (key, child) in map {
+            if matches!(key.as_str(), "data" | "props" | "pos" | "attrs") {
+                continue;
+            }
+            // The slots of an inline extension hold inline nodes; those of a block extension
+            // hold what its declaration says, which this check does not read.
+            let lists: Vec<(String, &Value, Option<bool>)> = match child {
+                Value::Object(slots) if key == "slots" => slots
+                    .iter()
+                    .map(|(name, list)| {
+                        (
+                            format!("{path}/slots/{name}"),
+                            list,
+                            (ty == "inline_extension").then_some(true),
+                        )
+                    })
+                    .collect(),
+                Value::Array(items) => {
+                    let uses = items.iter().any(|item| item["type"] == "snippet_use");
+                    // A list of a value without a node type (metadata) has no schema slot to read.
+                    let inline = (!ty.is_empty()).then(|| uses && inline_slot(ty, key));
+                    vec![(format!("{path}/{key}"), child, inline)]
+                }
+                Value::Object(_) => {
+                    pending.push((child, format!("{path}/{key}")));
+                    continue;
+                }
+                _ => continue,
+            };
+            for (at, list, inline) in lists {
+                check_use_modes(list, &at, inline, &mut pending)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// C2-A-221: each use of `list` has the mode of the slot; its nodes are walked on.
+fn check_use_modes<'v>(
+    list: &'v Value,
+    path: &str,
+    inline: Option<bool>,
+    pending: &mut Vec<(&'v Value, String)>,
+) -> Result<(), TreeError> {
+    for (i, item) in list.as_array().into_iter().flatten().enumerate() {
+        let at = format!("{path}/{i}");
+        let Some(inline) = inline else {
+            pending.push((item, at));
+            continue;
+        };
+        let want = if inline { "inline" } else { "block" };
+        if item["type"] == "snippet_use" && item["mode"] != want {
+            let slot = if inline { "inline nodes" } else { "blocks" };
+            return Err(reader(
+                &format!("{at}/mode"),
+                &format!(
+                    "a snippet use in a list of {slot} has the mode {}",
+                    item["mode"]
+                ),
+            ));
+        }
+        pending.push((item, at));
     }
     Ok(())
 }
@@ -785,6 +871,15 @@ fn check_object(
     check_position(value, path)?;
     check_resources(value, path, resources)?;
     check_header_refs(value, path, header_ids)?;
+    check_type(value, path, declarations)
+}
+
+/// The checks one node type adds beyond its schema row.
+fn check_type(
+    value: &Value,
+    path: &str,
+    declarations: &HashMap<String, Value>,
+) -> Result<(), TreeError> {
     match value["type"].as_str() {
         Some("table") => check_groups(value, path),
         Some("table_cell") => check_cell(value, path),

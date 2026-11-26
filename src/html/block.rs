@@ -17,6 +17,7 @@ pub(super) fn visible(n: &Node) -> bool {
         | Node::LinkReferenceDefinition(_)
         | Node::AbbreviationDef(_)
         | Node::Footnote(_)
+        | Node::SnippetDefinition(_)
         | Node::CitationDefinition(_) => false,
         Node::Paragraph(p) => !comments_only(p.children),
         _ => true,
@@ -73,6 +74,10 @@ fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
 impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
+        // C2-N-090: a snippet definition renders nothing, whatever the profile.
+        if matches!(n, Node::SnippetDefinition(_)) {
+            return;
+        }
         if matches!(
             n,
             Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_)
@@ -295,7 +300,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return true;
         }
-        if self.bare_el(p.attrs, p.lang, n) {
+        let snippet = self.snippet_tail(n);
+        if self.bare_p(p, n, snippet.as_ref()) {
             if !bare {
                 out.push_str("<p>");
             }
@@ -306,10 +312,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return true;
         }
         let mut el = self.el(p.attrs, p.lang, n);
-        if bare && !has_attrs(p.attrs, p.lang) {
+        if bare && Self::plain_leaf(p, snippet.as_ref()) {
             self.leaf_into(p.children, out);
             return true;
         }
+        el.snippet = snippet;
         el.align_style = true;
         out.push_str("<p");
         el.write_into(self.filter(), out);
@@ -317,6 +324,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.leaf_into(&*p.children, out);
         out.push_str("</p>");
         true
+    }
+
+    /// A `<p>` with no attribute, no source line and no snippet carriers.
+    fn bare_p(&self, p: &ast::Paragraph, n: &Node, snippet: Option<&String>) -> bool {
+        snippet.is_none() && self.bare_el(p.attrs, p.lang, n)
+    }
+
+    /// A paragraph whose content stands bare: no attributes and no snippet carriers.
+    fn plain_leaf(p: &ast::Paragraph, snippet: Option<&String>) -> bool {
+        !has_attrs(p.attrs, p.lang) && snippet.is_none()
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).

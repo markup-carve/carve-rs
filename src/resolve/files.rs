@@ -32,6 +32,9 @@ struct File<'a> {
     site: Option<IncludeSite>,
 }
 
+/// A snippet copy whose include the walk has not reached: the copy, the include and the depth.
+type Later<'r, 'a> = (&'r Node<'a>, usize, usize);
+
 /// File 0 is the top-level document.
 #[derive(Default)]
 pub struct Files<'a> {
@@ -45,6 +48,8 @@ pub struct Files<'a> {
     sources: HashMap<&'a str, &'a str>,
     /// C2-N-087: each position of an included file and the file that reached it, in document order.
     reaches: Vec<(&'a str, usize, usize, usize)>,
+    /// The file of each expanded include, by [`Node::payload_addr`].
+    includes: AddrMap<usize, usize>,
 }
 
 impl<'a> Files<'a> {
@@ -55,16 +60,23 @@ impl<'a> Files<'a> {
             sources,
             ..Files::default()
         };
-        f.add(&*doc.children, None, None, None);
+        let mut later = Vec::new();
+        f.add(&*doc.children, None, None, None, &mut later);
+        // C2-N-092: a snippet copy that stands before the include of its definition.
+        while let Some((n, include, depth)) = later.pop() {
+            let file = f.includes.get(&include).copied().unwrap_or(0);
+            f.walk_in(n, file, depth, &mut Vec::new());
+        }
         f
     }
 
-    fn add(
+    fn add<'r>(
         &mut self,
-        top: &[Node<'a>],
+        top: &'r [Node<'a>],
         parent: Option<usize>,
         id: Option<&'a str>,
         site: Option<IncludeSite>,
+        later: &mut Vec<Later<'r, 'a>>,
     ) {
         let mut file = File {
             id,
@@ -89,14 +101,41 @@ impl<'a> Files<'a> {
         let at = self.list.len();
         self.list.push(file);
         for c in top {
-            self.walk(c, at, 1);
+            self.walk(c, at, 1, later);
         }
     }
 
-    fn walk(&mut self, n: &Node<'a>, file: usize, depth: usize) {
+    fn walk<'r>(
+        &mut self,
+        n: &'r Node<'a>,
+        file: usize,
+        depth: usize,
+        later: &mut Vec<Later<'r, 'a>>,
+    ) {
         if depth > super::WALK_CAP {
             return;
         }
+        // C2-N-092: a snippet copy resolves against the file of its definition.
+        if let Some(include) = crate::snippet::expand::copy_scope(n) {
+            if include == 0 {
+                return self.walk_in(n, 0, depth, later);
+            }
+            if let Some(&at) = self.includes.get(&include) {
+                return self.walk_in(n, at, depth, later);
+            }
+            later.push((n, include, depth));
+            return;
+        }
+        self.walk_in(n, file, depth, later);
+    }
+
+    fn walk_in<'r>(
+        &mut self,
+        n: &'r Node<'a>,
+        file: usize,
+        depth: usize,
+        later: &mut Vec<Later<'r, 'a>>,
+    ) {
         let id = self.list.get(file).and_then(|f| f.id);
         if let Some((id, p)) = id.zip(n.pos()) {
             self.reaches.push((id, p.start(), p.end(), file));
@@ -110,7 +149,8 @@ impl<'a> Files<'a> {
                     start_offset: pos.start(),
                     end_offset: pos.end(),
                 });
-                self.add(children, Some(file), i.file, site);
+                self.includes.insert(n.payload_addr(), self.list.len());
+                self.add(children, Some(file), i.file, site, later);
             }
             return;
         }
@@ -131,7 +171,7 @@ impl<'a> Files<'a> {
             self.of.insert(inner(n), file);
         }
         for c in super::order::slots(n) {
-            self.walk(c, file, depth + 1);
+            self.walk(c, file, depth + 1, later);
         }
     }
 

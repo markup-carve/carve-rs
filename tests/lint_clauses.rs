@@ -111,13 +111,6 @@ fn included_by_agrees(chain: &[Value], actual: &Diagnostic) -> bool {
 #[rustfmt::skip]
 const HELD: Holds = &[
     ("CC-2241", "carve#6838: the lint-model row exempts a pipe table from the header-rows clamp"),
-    ("CC-2359", "carve#6395: named snippets"),
-    ("CC-2361", "carve#6395: named snippets"),
-    ("CC-2362", "carve#6395: named snippets"),
-    ("CC-2364", "carve#6395: named snippets"),
-    ("CC-2385", "carve#6395: named snippets"),
-    ("CC-2386", "carve#6395: named snippets"),
-    ("CC-2387", "carve#6395: named snippets"),
 ];
 
 #[test]

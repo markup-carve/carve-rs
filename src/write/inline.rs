@@ -1299,6 +1299,7 @@ fn own<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> Option<String> {
         "symbol" => format!(":{}:", s(node, "name").unwrap_or("")),
         "mention" => mention_node(w, node),
         "tag" => format!("#{}", s(node, "name").unwrap_or("")),
+        "snippet_use" => crate::snippet::spelling(s(node, "name").unwrap_or("")),
         "autolink" => autolink_node(w, node),
         "xref" => format!("</#{}>", s(node, "key").unwrap_or("")),
         "non_breaking_space" => "\\ ".into(),
