@@ -22,14 +22,6 @@ const HELD: &[(&str, &str)] = &[
         "carve#6804: an image whose alt is unknown is reported as image-alt-unknown",
     ),
     (
-        "CC-2242",
-        "carve#6663 (carve#6812 G1): fmt drops header-rows the header marks make",
-    ),
-    (
-        "CC-2249",
-        "carve#6664 (carve#6812 G1): fmt keeps an empty body-rows on a table of only a foot",
-    ),
-    (
         "CC-2265",
         "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
     ),

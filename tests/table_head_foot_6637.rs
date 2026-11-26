@@ -37,7 +37,7 @@ fn empty_body_rows_ends_the_head_above_the_foot() {
 fn head_of_c2_b_178_stays_without_an_empty_body_rows() {
     for src in [
         "{footer-rows=1}\n|= A |\n|= F |\n",
-        "{footer-rows=2 body-rows}\n|= A |\n|= F |\n",
+        "{footer-rows=3 body-rows}\n|= A |\n|= F |\n",
         "{footer-rows=1 body-rows=0}\n|= A |\n|= F |\n",
         "{footer-rows=1 body-rows body-header-rows=1}\n|= A |\n|= F |\n",
     ] {

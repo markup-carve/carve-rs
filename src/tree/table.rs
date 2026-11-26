@@ -830,10 +830,10 @@ fn width(e: &str) -> Option<f64> {
     (v > 0.0 && v <= 100.0).then_some(v / 100.0)
 }
 
-/// C2-B-187: an empty `body-rows` ends the head above a footer count smaller than the rows.
+/// C2-B-187: an empty `body-rows` ends the head above a footer count up to the rows.
 fn end_head(head: usize, rows: usize, attrs: Option<&Attrs>) -> usize {
     let foot = footer_count(attrs);
-    if foot < rows
+    if foot <= rows
         && head > rows - foot
         && body_plan(attrs, 0).is_some_and(|plan| plan.data_rows.is_empty())
     {
