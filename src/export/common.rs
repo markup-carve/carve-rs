@@ -3,7 +3,7 @@
 //! not depend on the target.
 
 use super::{ExportOptions, Target};
-use crate::api::{Entry, Error, Range};
+use crate::api::{Entry, Error, IncludedBy, Range};
 use crate::options::UrlPolicy;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -240,8 +240,15 @@ impl<'v> Exporter<'v> {
             return Vec::new();
         }
         let wanted: HashSet<*const Value> = self.losses.iter().map(|l| l.node).collect();
-        let mut found: HashMap<*const Value, (String, Option<String>)> = HashMap::new();
-        locate(self.document, &mut String::new(), None, &wanted, &mut found);
+        let mut found: HashMap<*const Value, Place> = HashMap::new();
+        let mut around = Around::default();
+        locate(
+            self.document,
+            &mut String::new(),
+            &mut around,
+            &wanted,
+            &mut found,
+        );
         self.losses
             .iter()
             .map(|l| {
@@ -256,27 +263,68 @@ impl<'v> Exporter<'v> {
                     range,
                     file: place.and_then(|p| p.1.clone()),
                     foreign_type: None,
+                    included_by: place.map(|p| p.2.clone()).unwrap_or_default(),
                 }
             })
             .collect()
     }
 }
 
+/// The pointer of a node, the file an include around it read and the include chain (C2-N-087).
+type Place = (String, Option<String>, Vec<IncludedBy>);
+
+/// The files the include nodes around a node read, and their sites, innermost last.
+#[derive(Default)]
+struct Around {
+    files: Vec<String>,
+    chain: Vec<IncludedBy>,
+}
+
+impl Around {
+    /// Enters the children of an include that read `file`; `true` when its site was known.
+    fn enter(&mut self, include: &Value, file: &str) -> bool {
+        let site = include.get("pos").and_then(|pos| {
+            Some(IncludedBy {
+                file: self.files.last().cloned(),
+                range: Range {
+                    start_offset: usize::try_from(pos.get("startOffset")?.as_u64()?).ok()?,
+                    end_offset: usize::try_from(pos.get("endOffset")?.as_u64()?).ok()?,
+                },
+            })
+        });
+        let sited = site.is_some();
+        self.chain.extend(site);
+        self.files.push(file.to_string());
+        sited
+    }
+
+    fn leave(&mut self, sited: bool) {
+        self.files.pop();
+        if sited {
+            self.chain.pop();
+        }
+    }
+}
+
 fn locate(
     node: &Value,
     pointer: &mut String,
-    file: Option<&str>,
+    around: &mut Around,
     wanted: &HashSet<*const Value>,
-    found: &mut HashMap<*const Value, (String, Option<String>)>,
+    found: &mut HashMap<*const Value, Place>,
 ) {
     if found.len() == wanted.len() {
         return;
     }
     let address = std::ptr::from_ref(node);
     if wanted.contains(&address) {
-        found
-            .entry(address)
-            .or_insert_with(|| (pointer.clone(), file.map(str::to_string)));
+        found.entry(address).or_insert_with(|| {
+            (
+                pointer.clone(),
+                around.files.last().cloned(),
+                around.chain.clone(),
+            )
+        });
     }
     let Some(map) = node.as_object() else {
         if let Some(items) = node.as_array() {
@@ -284,17 +332,15 @@ fn locate(
                 let len = pointer.len();
                 pointer.push('/');
                 pointer.push_str(&at.to_string());
-                locate(item, pointer, file, wanted, found);
+                locate(item, pointer, around, wanted, found);
                 pointer.truncate(len);
             }
         }
         return;
     };
-    let inner = if ty(node) == "include" && node.get("children").is_some() {
-        sv(node, "file").or(file)
-    } else {
-        file
-    };
+    let read = (ty(node) == "include" && node.get("children").is_some())
+        .then(|| sv(node, "file"))
+        .flatten();
     for (key, value) in map {
         if key == "pos" || key == "attrs" || !(value.is_object() || value.is_array()) {
             continue;
@@ -302,13 +348,14 @@ fn locate(
         let len = pointer.len();
         pointer.push('/');
         pointer.push_str(key);
-        locate(
-            value,
-            pointer,
-            if key == "children" { inner } else { file },
-            wanted,
-            found,
-        );
+        match read.filter(|_| key == "children") {
+            Some(file) => {
+                let sited = around.enter(node, file);
+                locate(value, pointer, around, wanted, found);
+                around.leave(sited);
+            }
+            None => locate(value, pointer, around, wanted, found),
+        }
         pointer.truncate(len);
     }
 }

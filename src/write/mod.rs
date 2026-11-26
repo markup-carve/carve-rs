@@ -1422,6 +1422,7 @@ fn loss_entry(code: &str, message: String, path: String, range: Option<Range>) -
         range,
         file: None,
         foreign_type: None,
+        included_by: Vec::new(),
     }
 }
 

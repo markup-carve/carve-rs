@@ -84,7 +84,7 @@ pub use info::{
 };
 pub use migrate::{MigrateOptions, Migrated, migrate_tree_with};
 pub use patch::{apply_patch, diff_tree, source_fingerprint, tree_fingerprint};
-pub use record::{Entry, Range};
+pub use record::{Entry, IncludedBy, Range};
 pub use stream::{StreamOutcome, try_render_html_streaming};
 pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 
@@ -736,6 +736,7 @@ impl Carve {
                 range: None,
                 file: None,
                 foreign_type: None,
+                included_by: Vec::new(),
             });
         }
         Ok(parsed)

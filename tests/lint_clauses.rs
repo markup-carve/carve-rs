@@ -89,6 +89,19 @@ fn agrees(expected: &Value, actual: &Diagnostic) -> bool {
         && expected["endColumn"]
             .as_u64()
             .is_none_or(|v| actual.pos.is_some_and(|pos| u64::from(pos.end_column) == v))
+        && expected["includedBy"]
+            .as_array()
+            .is_none_or(|chain| included_by_agrees(chain, actual))
+}
+
+// C2-T-020: the include chain of an entry with `file`, from its first reach.
+fn included_by_agrees(chain: &[Value], actual: &Diagnostic) -> bool {
+    chain.len() == actual.included_by.len()
+        && chain.iter().zip(&actual.included_by).all(|(site, got)| {
+            site["file"].as_str() == got.file.as_deref()
+                && site["line"].as_u64() == Some(u64::from(got.line))
+                && site["column"].as_u64() == Some(u64::from(got.column))
+        })
 }
 
 #[test]

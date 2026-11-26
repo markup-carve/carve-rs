@@ -6,7 +6,7 @@ use super::lines::{FileLines, LineRange, file_lines, line_range, region_range};
 use super::{Cause, Includes, Request, code, section, shift};
 use crate::Arena;
 use crate::ast::{self, Document, Node};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::options::Options;
 use crate::tables::{INCLUDE_CAUSES, INCLUDE_CONFLICTS, INCLUDE_OPTIONS};
 use crate::tree::Scope;
@@ -30,6 +30,8 @@ struct Frame<'f> {
     depth: usize,
     around: Vec<&'f str>,
     scope: &'f Scope,
+    /// C2-T-020: the include sites that lead to this file.
+    chain: Vec<IncludeSite>,
 }
 
 /// A failure: its cause in `data/includes.json` and the values its message names.
@@ -84,6 +86,7 @@ pub(crate) fn expand<'a>(
         depth: 0,
         around: Vec::new(),
         scope,
+        chain: Vec::new(),
     };
     walk(doc.children, &mut exp, &frame);
     if exp.shifts {
@@ -146,8 +149,11 @@ fn fail(exp: &mut Exp<'_, '_>, node: &ast::Include<'_>, frame: &Frame<'_>, f: &F
     values.extend(f.values.iter().map(|(k, v)| (*k, v.as_str())));
     // C2-N-063: a finding names an included file only; the top level has no file.
     let file = frame.file.filter(|_| frame.depth > 0);
-    exp.diags
-        .push(Diagnostic::new(code, &values, file, node.pos));
+    let mut diag = Diagnostic::new(code, &values, file, node.pos);
+    if file.is_some() {
+        diag.included_by.clone_from(&frame.chain);
+    }
+    exp.diags.push(diag);
 }
 
 fn expand_one<'a>(node: &mut ast::Include<'a>, exp: &mut Exp<'_, 'a>, frame: &Frame<'_>) {
@@ -175,10 +181,27 @@ fn expand_one<'a>(node: &mut ast::Include<'a>, exp: &mut Exp<'_, 'a>, frame: &Fr
     exp.spent += text.len();
     let text = exp.arena.str(&text);
     exp.sources.insert(id, text);
+    let mut chain = frame.chain.clone();
+    if let Some(pos) = node.pos {
+        chain.push(IncludeSite {
+            file: frame.file.filter(|_| frame.depth > 0).map(str::to_string),
+            line: pos.start_line,
+            column: pos.start_column,
+            start_offset: pos.start(),
+            end_offset: pos.end(),
+        });
+    }
+    let reached = exp.diags.len();
     let selected = match select(exp, node, text, frame.scope, id) {
         Ok(s) => s,
         Err(f) => return fail(exp, node, frame, &f),
     };
+    // The entries of this reach carry its own chain (C2-N-087).
+    for d in exp.diags.iter_mut().skip(reached) {
+        if d.file.as_deref() == Some(id) && d.included_by.is_empty() {
+            d.included_by.clone_from(&chain);
+        }
+    }
     exp.shifts |= option(node, "shift").is_some();
     let Selected { children, scope } = selected;
     let mut around = frame.around.clone();
@@ -189,6 +212,7 @@ fn expand_one<'a>(node: &mut ast::Include<'a>, exp: &mut Exp<'_, 'a>, frame: &Fr
             depth: frame.depth + 1,
             around,
             scope: &scope,
+            chain,
         };
         walk(children, exp, &inner);
     }

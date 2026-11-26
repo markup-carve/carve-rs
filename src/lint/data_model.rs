@@ -482,6 +482,8 @@ pub(super) struct Records<'a> {
     /// The tagged indexes, apart from the shared ones: rules compile lazily, so sites still appear
     /// after a tagged index exists.
     tagged_lookups: RefCell<Vec<Option<LookupIndex>>>,
+    /// The records a guarded lookup found, by index site, key and the values its test reads.
+    guarded: RefCell<HashMap<GuardedKey, Vec<(usize, u32)>>>,
     /// The attribute records of this call (C2-W-148).
     pub attributes: super::data_attrs::Table,
     tree: TreeFacts<'a>,
@@ -982,6 +984,7 @@ impl<'a> Records<'a> {
             lookups: RefCell::new(Vec::new()),
             tagged: RefCell::new(HashMap::new()),
             tagged_lookups: RefCell::new(Vec::new()),
+            guarded: RefCell::new(HashMap::new()),
             attributes: super::data_attrs::Table::default(),
             tree,
             extensions,
@@ -1768,15 +1771,25 @@ impl<'a> Records<'a> {
     pub fn lookup_at(&self, id: usize, key: &LookupKey, start: usize, side: i8) -> Option<u32> {
         let (table, id) = self.lookup_table(id);
         let lookups = table.borrow();
-        let found = lookups[id].as_ref()?.keys.get(key)?;
-        let at = match side {
-            0 => 0,
-            -1 => found
-                .partition_point(|(from, _)| *from < start)
-                .checked_sub(1)?,
-            _ => found.partition_point(|(from, _)| *from <= start),
-        };
-        found.get(at).map(|(_, record)| *record)
+        pick(lookups[id].as_ref()?.keys.get(key)?, start, side)
+    }
+
+    pub fn guarded_found(&self, key: &GuardedKey) -> Option<Vec<(usize, u32)>> {
+        self.guarded.borrow().get(key).cloned()
+    }
+
+    pub fn store_guarded(&self, key: GuardedKey, found: Vec<(usize, u32)>) {
+        self.guarded.borrow_mut().insert(key, found);
+    }
+
+    /// The starts and records of a key, in document order.
+    pub fn lookup_list(&self, id: usize, key: &LookupKey) -> Vec<(usize, u32)> {
+        let (table, id) = self.lookup_table(id);
+        table.borrow()[id]
+            .as_ref()
+            .and_then(|index| index.keys.get(key))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// The records a lookup reads in document order, with their starts; a block or inline lookup that
@@ -2588,3 +2601,19 @@ fn attribute_fact(
         _ => Val::Null,
     }
 }
+
+/// Of the records of a key in document order, the first; with `side` -1 the last that starts before
+/// `start`, with 1 the first that starts after it (C2-W-141).
+pub(super) fn pick(found: &[(usize, u32)], start: usize, side: i8) -> Option<u32> {
+    let at = match side {
+        0 => 0,
+        -1 => found
+            .partition_point(|(from, _)| *from < start)
+            .checked_sub(1)?,
+        _ => found.partition_point(|(from, _)| *from <= start),
+    };
+    found.get(at).map(|(_, record)| *record)
+}
+
+/// A guarded lookup's index site, looked-up key and the values its test reads.
+pub(super) type GuardedKey = (usize, LookupKey, Vec<LookupKey>);
