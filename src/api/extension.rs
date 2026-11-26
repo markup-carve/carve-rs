@@ -93,6 +93,14 @@ impl RenderContext<'_> {
         self.host.render_list(nodes)
     }
 
+    /// [`RenderContext::render_blocks`] as the body of a container at
+    /// `depth`: every line indented by it, no top-level sections.
+    pub(crate) fn render_blocks_at(&self, nodes: &Value, depth: usize) -> Result<String, Error> {
+        let children: Vec<crate::ast::owned::Node> = serde::Deserialize::deserialize(nodes)
+            .map_err(|e: serde_json::Error| Error::option("nodes", e.to_string()))?;
+        Ok(self.host.render_nodes_at(&children, Some(depth)))
+    }
+
     /// [`RenderContext::render_blocks`] of one block node.
     pub(crate) fn render_block(&self, node: &Value) -> Result<String, Error> {
         let node: crate::ast::owned::Node = serde::Deserialize::deserialize(node)
@@ -575,6 +583,14 @@ impl<'a> Host<'a> {
     }
 
     fn render_nodes(&self, children: &[crate::ast::owned::Node]) -> String {
+        self.render_nodes_at(children, None)
+    }
+
+    fn render_nodes_at(
+        &self,
+        children: &[crate::ast::owned::Node],
+        depth: Option<usize>,
+    ) -> String {
         let arena = crate::Arena::new();
         let mut doc = crate::ast::Document {
             ast_version: "2.0",
@@ -586,7 +602,7 @@ impl<'a> Host<'a> {
         // unchanged, so the nodes it renders need no reader checks either.
         // Only the HTML is kept, so the loss record is not built.
         let files = crate::resolve_tree(&mut doc, self.opts, &arena);
-        crate::html::render_tree_parts(&doc, self.opts, files.as_ref(), Some(self), None).0
+        crate::html::render_body_parts(&doc, self.opts, files.as_ref(), Some(self), None, depth).0
     }
 }
 

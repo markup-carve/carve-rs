@@ -61,9 +61,23 @@ pub(crate) fn render_tree_parts<'a>(
     hook: Option<&dyn ExtensionHook>,
     shift_override: Option<crate::heading_shift::Found>,
 ) -> TreeParts {
+    render_body_parts(doc, opts, files, hook, shift_override, None)
+}
+
+/// [`render_tree_parts`] of a block body nested at `body_depth`, as the
+/// body of a container renders it (C2-H-042).
+pub(crate) fn render_body_parts<'a>(
+    doc: &Document<'a>,
+    opts: &Options,
+    files: Option<&crate::resolve::files::Files<'a>>,
+    hook: Option<&dyn ExtensionHook>,
+    shift_override: Option<crate::heading_shift::Found>,
+    body_depth: Option<usize>,
+) -> TreeParts {
     let mut r = Renderer::build(doc, opts, true, files);
     r.hook = hook;
     r.shift_override = shift_override;
+    r.body_depth = body_depth;
     r.document();
     (
         r.out,
@@ -310,6 +324,8 @@ pub(crate) struct Renderer<'r, 'a> {
     profile: Option<&'static crate::tables::ProfileRow>,
     hook: Option<&'r dyn ExtensionHook>,
     shift_override: Option<crate::heading_shift::Found>,
+    /// The block depth of a nested body: no sections, every line at it.
+    body_depth: Option<usize>,
     /// Spare node lists, reused across list items.
     node_lists: Vec<Vec<&'r Node<'a>>>,
 }
@@ -413,6 +429,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             profile,
             hook: None,
             shift_override: None,
+            body_depth: None,
             node_lists: Vec::new(),
         };
         r.index();
@@ -671,21 +688,22 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 1,
             );
         }
-        if self.opts.sections {
+        let depth = self.body_depth.unwrap_or(0);
+        if self.opts.sections && self.body_depth.is_none() {
             self.sectioned(doc.children);
         } else {
             let mut i = 0;
             while let Some(c) = doc.children.get(i) {
                 if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
-                    i += self.abbreviation_run(doc.children.get(i..).unwrap_or(&[]), 0);
+                    i += self.abbreviation_run(doc.children.get(i..).unwrap_or(&[]), depth);
                 } else {
-                    self.block(c, 0);
+                    self.block(c, depth);
                     i += 1;
                 }
             }
         }
         if self.placing.is_none() && self.shown.contains(&true) {
-            self.footnote_section(0, None);
+            self.footnote_section(depth, None);
         }
     }
 

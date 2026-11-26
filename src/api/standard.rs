@@ -3,6 +3,8 @@
 //! claim runs as a separate pass over the parsed tree (C2-X-005).
 
 use super::Error;
+use crate::ast::owned;
+use serde::Deserialize as _;
 use serde_json::{Map, Value, json};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -501,9 +503,13 @@ fn at<'v>(v: &'v Value, pointer: &str) -> &'v Value {
     v.pointer(pointer).unwrap_or(&Value::Null)
 }
 
-/// The plain text of inline nodes, as an accessible name reads it.
+/// The plain text of inline nodes (C2-H-143), as an accessible name reads it.
 pub(crate) fn plain_text(nodes: &[Value]) -> String {
     let mut out = String::new();
+    if let Ok(typed) = Vec::<owned::Node>::deserialize(Value::Array(nodes.to_vec())) {
+        owned_plain_text(&typed, &mut out, 0);
+        return out;
+    }
     let mut pending: Vec<&Value> = nodes.iter().rev().collect();
     while let Some(n) = pending.pop() {
         if let Some(v) = at(n, "/value").as_str() {
@@ -514,6 +520,76 @@ pub(crate) fn plain_text(nodes: &[Value]) -> String {
         }
     }
     out
+}
+
+/// The plain text of owned inline nodes (C2-H-143), as [`crate::resolve::plain`]
+/// reads borrowed ones.
+pub(crate) fn owned_plain_text(nodes: &[owned::Node], out: &mut String, depth: usize) {
+    if depth > crate::resolve::WALK_CAP {
+        return;
+    }
+    for node in nodes {
+        if leaf_text(node, out) {
+            continue;
+        }
+        match node {
+            owned::Node::Ruby(r) => {
+                for pair in &r.pairs {
+                    if let owned::Node::RubyPair(p) = pair {
+                        owned_plain_text(&p.base, out, depth + 1);
+                        out.push('(');
+                        owned_plain_text(&p.annotation, out, depth + 1);
+                        out.push(')');
+                    }
+                }
+            }
+            owned::Node::InlineExtension(e) if e.name.as_str() == "index" => {}
+            owned::Node::FootnoteRef(_)
+            | owned::Node::InlineFootnote(_)
+            | owned::Node::Xref(_)
+            | owned::Node::RawInline(_)
+            | owned::Node::CriticComment(_)
+            | owned::Node::Comment(_)
+            | owned::Node::CitationGroup(_)
+            | owned::Node::Symbol(_) => {}
+            other => {
+                if let Some(children) = other.children() {
+                    owned_plain_text(children, out, depth + 1);
+                }
+            }
+        }
+    }
+}
+
+/// The nodes that give a fixed text; true when `node` was one of them.
+fn leaf_text(node: &owned::Node, out: &mut String) -> bool {
+    match node {
+        owned::Node::Text(t) => out.push_str(&t.value),
+        owned::Node::Code(t) => out.push_str(&t.value),
+        owned::Node::LiteralInline(t) => out.push_str(&t.value),
+        owned::Node::Math(t) => out.push_str(&t.value),
+        owned::Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+        owned::Node::SoftBreak(_) | owned::Node::HardBreak(_) => out.push(' '),
+        owned::Node::SmartPunctuation(s) => out.push_str(&s.glyph),
+        owned::Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
+        owned::Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
+        owned::Node::Abbreviation(a) => out.push_str(&a.key),
+        owned::Node::Mention(m) => {
+            out.push('@');
+            out.push_str(&m.target);
+        }
+        owned::Node::Tag(t) => {
+            out.push('#');
+            out.push_str(&t.name);
+        }
+        owned::Node::CaptionNumber(c) => {
+            if let Some(n) = c.n {
+                out.push_str(&n.to_string());
+            }
+        }
+        _ => return false,
+    }
+    true
 }
 
 pub(crate) fn is_attribute_line(line: &str) -> bool {

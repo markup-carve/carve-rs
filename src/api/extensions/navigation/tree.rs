@@ -6,6 +6,7 @@ use super::{
     CrossrefStyle, HeadingNumbersOptions, count_heading, freeze_heading_link, heading_link_targets,
     heading_title, nest, number_xrefs_json, place_toc, rewrite, title_xref_key, visit, visit_read,
 };
+use crate::api::standard::owned_plain_text as plain_text;
 use crate::ast::owned::{self, Attrs, Node};
 use crate::ast::{DirectiveKind, XrefDisplay, XrefNamespace};
 use serde_json::{Map, Value, json};
@@ -409,76 +410,6 @@ impl Titles {
         }
         self.frozen_json.get(key).map(Vec::as_slice)
     }
-}
-
-/// The plain text of owned inline nodes (C2-H-143), as [`crate::resolve::plain`]
-/// reads borrowed ones.
-fn plain_text(nodes: &[Node], out: &mut String, depth: usize) {
-    if depth > crate::resolve::WALK_CAP {
-        return;
-    }
-    for node in nodes {
-        if leaf_text(node, out) {
-            continue;
-        }
-        match node {
-            Node::Ruby(r) => {
-                for pair in &r.pairs {
-                    if let Node::RubyPair(p) = pair {
-                        plain_text(&p.base, out, depth + 1);
-                        out.push('(');
-                        plain_text(&p.annotation, out, depth + 1);
-                        out.push(')');
-                    }
-                }
-            }
-            Node::InlineExtension(e) if e.name.as_str() == "index" => {}
-            Node::FootnoteRef(_)
-            | Node::InlineFootnote(_)
-            | Node::Xref(_)
-            | Node::RawInline(_)
-            | Node::CriticComment(_)
-            | Node::Comment(_)
-            | Node::CitationGroup(_)
-            | Node::Symbol(_) => {}
-            other => {
-                if let Some(children) = other.children() {
-                    plain_text(children, out, depth + 1);
-                }
-            }
-        }
-    }
-}
-
-/// The nodes that give a fixed text; true when `node` was one of them.
-fn leaf_text(node: &Node, out: &mut String) -> bool {
-    match node {
-        Node::Text(t) => out.push_str(&t.value),
-        Node::Code(t) => out.push_str(&t.value),
-        Node::LiteralInline(t) => out.push_str(&t.value),
-        Node::Math(t) => out.push_str(&t.value),
-        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
-        Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(&s.glyph),
-        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
-        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
-        Node::Abbreviation(a) => out.push_str(&a.key),
-        Node::Mention(m) => {
-            out.push('@');
-            out.push_str(&m.target);
-        }
-        Node::Tag(t) => {
-            out.push('#');
-            out.push_str(&t.name);
-        }
-        Node::CaptionNumber(c) => {
-            if let Some(n) = c.n {
-                out.push_str(&n.to_string());
-            }
-        }
-        _ => return false,
-    }
-    true
 }
 
 pub(super) fn freeze_xrefs(doc: &mut owned::Document, titles: &mut Titles) {
