@@ -1,8 +1,9 @@
-//! C2-H-195 row 18 (carve#6786, Ruled A): the hard break of a line-block line
-//! on import. The expected sources and trees are CC-2167 to CC-2171 of carve
-//! next2 307e80eb.
+//! C2-H-195 row 18 (carve#6786, Ruled A) and C2-H-043 (carve#6785): the hard
+//! break of a line-block line on import. The expected sources and trees are
+//! CC-2167 to CC-2171 of carve next2 307e80eb and the Expected of carve#6785.
 mod common;
 
+use carve::Options;
 use carve::api::{self, ImportOptions};
 use common::parse_json;
 use serde_json::{Value, json};
@@ -83,5 +84,40 @@ fn hard_break_kept_where_the_line_needs_it() {
         let (source, children) = import(&block(html));
         assert_eq!(source, carve, "{html}");
         assert_eq!(children, tree, "{html}");
+    }
+}
+
+#[test]
+fn final_br_ends_the_last_line_of_its_stanza() {
+    // CC-160
+    let (source, children) = import(&block("<p>a<br>\n</p>\n  <p>b</p>"));
+    assert_eq!(source, "::: |\na\\\n\nb\n:::\n");
+    assert_eq!(
+        children,
+        lines(&[line(&[text("a"), hard()]), line(&[]), line(&[text("b")])])
+    );
+    let (source, children) = import(&block("<p>a<br>\n</p>"));
+    assert_eq!(source, "::: |\na\\\n:::\n");
+    assert_eq!(children, lines(&[line(&[text("a"), hard()])]));
+}
+
+#[test]
+fn line_block_breaks_round_trip_through_import() {
+    let options = Options {
+        roundtrip: true,
+        ..Options::default()
+    };
+    for src in [
+        "::: |\na \\\nb\n:::\n",
+        "::: |\na\n\\\nb\n:::\n",
+        "::: |\na\\\n\nb\n:::\n",
+        "::: |\na\\\n:::\n",
+        "::: |\na\n\\\n:::\n",
+        "::: |\na\t\\\nb `c` \\\n\\\n:::\n",
+    ] {
+        let html = api::render(src, &options).expect("render");
+        let (source, _) = import(&html);
+        let again = api::render(source.as_str(), &options).expect("render");
+        assert_eq!(again, html, "{src:?} imported as {source:?}");
     }
 }
