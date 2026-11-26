@@ -1392,18 +1392,10 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     if !w.tree_refs || w.lines.is_empty() {
         return;
     }
-    let mut references = Vec::new();
-    let mut pending: Vec<N<'t>> = group.iter().collect();
-    while let Some(n) = pending.pop() {
-        if has(n, "key") && w.fact(n).is_some_and(|f| f.raw_ref.is_some()) {
-            references.push(n);
-        }
-        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
-    }
+    let references = verbatim_references(w, group);
     if references.is_empty() {
         return;
     }
-    references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
     let tree = w.lines.clone();
     // With `known`, the lines of the rounds read back, so the same lines need no parse.
     let reads = |w: &mut Writer<'t>, known: bool| {
@@ -1446,6 +1438,20 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     }
     w.tree_ref_ids.clear();
     w.tree_refs = true;
+}
+
+/// The references of `group` whose sidecar records their verbatim text, in document order.
+fn verbatim_references<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<N<'t>> {
+    let mut references = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(n) = pending.pop() {
+        if has(n, "key") && w.fact(n).is_some_and(|f| f.raw_ref.is_some()) {
+            references.push(n);
+        }
+        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+    }
+    references.sort_by_key(|&n| span(n).map_or(usize::MAX, |(s, _)| s));
+    references
 }
 
 /// C2-B-085: the first definition of a term wins.
