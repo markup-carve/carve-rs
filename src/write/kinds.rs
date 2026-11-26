@@ -2,7 +2,9 @@
 //! kind in the leaf block that holds it. Adjacent text nodes are read as one
 //! run of text, as the parser reads them.
 
+use super::blocks::uses_hard_break_opener;
 use super::node::{N, children, id, is_break, is_inline_parent, s, text, ty};
+use super::state::Writer;
 use crate::hash::AddrMap;
 use crate::view::Arr;
 
@@ -13,6 +15,8 @@ enum Edge {
     Line,
     /// The markup of another inline node.
     Markup,
+    /// A hard break written with its backslash (C2-I-047: no whitespace).
+    Backslash,
 }
 
 /// Adjacent text nodes of one block, as one string.
@@ -57,18 +61,22 @@ pub struct KindBlocks<'t> {
 
 impl<'t> KindBlocks<'t> {
     /// The text runs of each leaf block of `group`.
-    pub fn new(group: Arr<'t>) -> Self {
+    pub fn new(w: &Writer<'_>, group: Arr<'t>) -> Self {
         let mut blocks = Vec::new();
         let mut owners = AddrMap::default();
-        let mut pending: Vec<N<'t>> = group.iter().collect();
-        while let Some(node) = pending.pop() {
+        let mut pending: Vec<(N<'t>, bool)> = group.iter().map(|n| (n, false)).collect();
+        while let Some((node, bare)) = pending.pop() {
             if !is_inline_parent(node) {
-                pending.extend(children(node).iter());
+                // C2-W-080: below a hard-break opener and in a line block a hard break is the bare line ending.
+                let bare = bare
+                    || ty(node) == "line_block"
+                    || (ty(node) == "div" && uses_hard_break_opener(w, node));
+                pending.extend(children(node).iter().map(|n| (n, bare)));
                 continue;
             }
             let mut runs = Vec::new();
             let (mut edge, mut joined) = (Edge::Line, false);
-            collect(children(node), &mut runs, &mut edge, &mut joined);
+            collect(children(node), &mut runs, &mut edge, &mut joined, bare);
             if joined && let Some(last) = runs.last_mut() {
                 last.after = Edge::Line;
             }
@@ -87,7 +95,13 @@ impl<'t> KindBlocks<'t> {
     pub fn content(nodes: &[N<'t>]) -> Self {
         let mut runs = Vec::new();
         let (mut edge, mut joined) = (Edge::Line, false);
-        collect(nodes.iter().copied(), &mut runs, &mut edge, &mut joined);
+        collect(
+            nodes.iter().copied(),
+            &mut runs,
+            &mut edge,
+            &mut joined,
+            false,
+        );
         if joined && let Some(last) = runs.last_mut() {
             last.after = Edge::Line;
         }
@@ -153,6 +167,7 @@ fn collect<'t>(
     runs: &mut Vec<Run<'t>>,
     edge: &mut Edge,
     joined: &mut bool,
+    bare_breaks: bool,
 ) {
     let mut prev: Option<N<'t>> = None;
     for node in nodes {
@@ -183,14 +198,18 @@ fn collect<'t>(
             Edge::Markup
         };
         if *joined && let Some(run) = runs.last_mut() {
-            run.after = at;
+            run.after = if ty(node) == "hard_break" && !bare_breaks {
+                Edge::Backslash
+            } else {
+                at
+            };
             run.before_dash = is_dash(node);
             run.follow = opening_char(node);
         }
         *joined = false;
         *edge = at;
         if at == Edge::Markup {
-            collect(children(node), runs, edge, joined);
+            collect(children(node), runs, edge, joined, bare_breaks);
             if *joined && let Some(run) = runs.last_mut() {
                 run.after = Edge::Markup;
                 run.follow = closing_char(node);
@@ -339,7 +358,11 @@ fn can_open(run: &Run<'_>, at: usize) -> bool {
         return false;
     };
     let ch = char::from(byte);
-    let side = |edge: Edge| (edge == Edge::Markup).then_some('!');
+    let side = |edge: Edge| match edge {
+        Edge::Line => None,
+        Edge::Markup => Some('!'),
+        Edge::Backslash => Some('\\'),
+    };
     let before = value
         .get(..at)
         .and_then(|r| r.chars().next_back())

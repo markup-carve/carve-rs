@@ -3171,7 +3171,7 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
     if reported.is_empty() {
         return;
     }
-    let blocks = kinds::KindBlocks::new(group);
+    let blocks = kinds::KindBlocks::new(w, group);
     // A comment closer may be reported while the same round repairs its
     // opener. Once the opening brace is escaped, the closer is ordinary text;
     // it does not report an independent `#` or `%` kind (C2-W-088).
