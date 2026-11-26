@@ -1270,11 +1270,35 @@ fn write_tree<'t>(
     }
     for mode in modes {
         let (again, again_entries, _) = write_tree_once(doc, pool, settings, budget, facts, mode);
-        if !has_loss(&again_entries) {
+        if !has_loss(&again_entries) && formats_to_itself(&again, settings) {
             return (again, again_entries);
         }
     }
     (source, entries)
+}
+
+thread_local! {
+    static CHECKING_FIXED_POINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// C2-W-003: a form the fallback rounds give is kept only where `fmt` of it gives the same bytes. A write inside
+/// that check, and one with extensions the plain parse does not read, are not checked again.
+fn formats_to_itself(source: &str, settings: &Settings) -> bool {
+    if !settings.extensions.is_empty() || CHECKING_FIXED_POINT.with(std::cell::Cell::get) {
+        return true;
+    }
+    let Some(doc) = parse_plain(source) else {
+        return false;
+    };
+    let check = Settings {
+        layout: None,
+        source: Some(source.to_string()),
+        ..settings.clone()
+    };
+    CHECKING_FIXED_POINT.with(|c| c.set(true));
+    let (again, losses) = format_tree(&doc, Some(source), &check);
+    CHECKING_FIXED_POINT.with(|c| c.set(false));
+    !has_loss(&losses) && again == source
 }
 
 /// One write of `doc`. With `tree_refs` the rounds write each reference from the tree and each group takes the
