@@ -2,9 +2,9 @@ name: engine
 
 on:
   push:
-    branches: [main, next2]
+    branches: [main]
   pull_request:
-    branches: [main, next2]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: markup-carve/carve
-          ref: next2
+          ref: main
           fetch-depth: 0
           path: carve-spec
       - name: Compare spec-data with the pinned spec tables

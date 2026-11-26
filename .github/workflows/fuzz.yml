@@ -2,7 +2,7 @@ name: fuzz
 
 on:
   pull_request:
-    branches: [main, next2]
+    branches: [main]
   workflow_dispatch:
 
 env:
