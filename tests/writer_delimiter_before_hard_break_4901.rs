@@ -99,10 +99,11 @@ fn delimiter_before_hard_break_variants() {
             for next in nexts {
                 let mut inputs = Vec::new();
                 for (first, rest) in containers {
-                    let mut input = format!("{first}{head}{tail}\\\n");
-                    if !next.is_empty() {
-                        input.push_str(&format!("{rest}{next}\n"));
-                    }
+                    let input = if next.is_empty() {
+                        format!("{first}{head}{tail}\\\n")
+                    } else {
+                        format!("{first}{head}{tail}\\\n{rest}{next}\n")
+                    };
                     inputs.push((input, true));
                 }
                 let body = if next.is_empty() {
