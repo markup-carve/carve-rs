@@ -11,8 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 serde_json = { version = "1", features = ["unbounded_depth"] }
 carve-lang = { path = ".." }
-html5ever = "0.39"
-markup5ever_rcdom = "0.39"
+html5ever = "0.40"
+markup5ever_rcdom = "0.40"
 
 # Not a member of the engine's (absent) workspace: `cargo fuzz` builds it alone.
 [workspace]
