@@ -259,12 +259,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             Node::Comment(_) => {}
             Node::CriticComment(c) => {
-                out.push_str("<span");
-                let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
-                el.base.push("critic-comment".into());
-                el.rename = COMMENT_REVISION_KEYS;
-                el.write_into(self.filter(), out);
-                out.push('>');
+                if c.attrs.is_none() && c.lang.is_none() && c.dir.is_none() {
+                    out.push_str("<span class=\"critic-comment\">");
+                } else {
+                    out.push_str("<span");
+                    let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
+                    el.base.push("critic-comment".into());
+                    el.rename = COMMENT_REVISION_KEYS;
+                    el.write_into(self.filter(), out);
+                    out.push('>');
+                }
                 esc::text(c.value, out);
                 out.push_str("</span>");
             }
