@@ -35,27 +35,32 @@ fn start_of(node: V<'_>) -> Option<(usize, u64)> {
     Some((start, pos.get("startColumn")?.as_u64()?))
 }
 
-/// C2-B-236: the start and end of the marker of a definition line that an id
-/// made text, an id in the marker or in the attribute lines above it.
-fn id_marker(text: &str) -> Option<(usize, usize)> {
-    let mut at = 0;
-    let mut line_id = false;
-    loop {
-        let line = text.get(at..)?.split('\n').next()?;
+/// The offset behind the attribute lines at the start of `text`, and whether one holds an id.
+fn attribute_lines(text: &str) -> (usize, bool) {
+    let (mut at, mut id) = (0, false);
+    while let Some(rest) = text.get(at..) {
+        let line = rest.split('\n').next().unwrap_or("");
         let line = line.strip_suffix('\r').unwrap_or(line);
-        let Some((block, end)) = line
+        let block = line
             .starts_with('{')
             .then(|| crate::attr::parse_glued(line, 0))
             .flatten()
-        else {
+            .filter(|(b, end)| {
+                !b.empty && line.get(*end..).is_some_and(crate::chars::is_blank_line)
+            });
+        let (Some((block, _)), Some(next)) = (block, rest.find('\n')) else {
             break;
         };
-        if block.empty || !line.get(end..).is_some_and(crate::chars::is_blank_line) {
-            break;
-        }
-        line_id |= crate::snippet::holds_id(&block);
-        at += text.get(at..)?.find('\n')? + 1;
+        id |= crate::snippet::holds_id(&block);
+        at += next + 1;
     }
+    (at, id)
+}
+
+/// C2-B-236: the start and end of the marker of a definition line that an id
+/// made text, an id in the marker or in the attribute lines above it.
+fn id_marker(text: &str) -> Option<(usize, usize)> {
+    let (at, line_id) = attribute_lines(text);
     let line = text.get(at..)?.split('\n').next()?;
     if !line.starts_with("{$") {
         return None;
