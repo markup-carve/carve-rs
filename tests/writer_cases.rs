@@ -14,6 +14,9 @@ use serde_json::Value;
 
 /// `(entry id, reason)` of the `write` and `format` clause cases.
 const HELD: &[(&str, &str)] = &[
+    // carve#6874 (carve-rs line): a body header list kept in attrs makes no body keys beside it.
+    ("CC-2472", "carve#6874"),
+    ("CC-2473", "carve#6874"),
     // carve#6772 (carve-rs line): the escape rounds read references from the tree.
     ("CC-2166", "carve#6772"),
     (

@@ -126,6 +126,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     fn inline(&mut self, n: &'r Node<'a>, out: &mut String) {
         if !self.hidden.is_empty() && self.hidden.contains(&addr(n)) {
+            if matches!(n, Node::Comment(_)) && !self.profile_allows(n, false) {
+                self.profile_loss(n, false);
+            }
             return;
         }
         if !self.profile_allows(n, false) {
