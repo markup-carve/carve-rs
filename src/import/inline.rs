@@ -1094,7 +1094,10 @@ pub(crate) fn ranged_comments(dom: &super::dom::Dom) -> std::collections::HashMa
         }
         if class.as_deref() == Some("comment-end") {
             let key = dom.attr(id, "data-comment-id");
-            if let Some(at) = open.iter().position(|o| o.1.as_deref() == key) {
+            if let Some(at) = open
+                .iter()
+                .position(|o| key.is_some() && o.1.as_deref() == key)
+            {
                 let (start, _, lost) = open.remove(at);
                 if let Some(Ranged::Start { lost: l }) = out.get_mut(&start) {
                     *l = lost;

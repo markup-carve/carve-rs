@@ -61,3 +61,12 @@ fn ranged_comment_pairs_by_id_across_paragraphs() {
     assert_eq!(src, "a{#n#}\n\nb[e]{.comment-end data-comment-id=2}\n");
     assert_eq!(codes, ["import-structure-repaired"]);
 }
+
+#[test]
+fn ranged_comment_without_ids_keeps_the_end_span() {
+    let (src, codes) = import(
+        "<p>a <span class=\"comment-start\">n</span>b<span class=\"comment-end\">e</span></p>",
+    );
+    assert_eq!(src, "a {#n#}b[e]{.comment-end}\n");
+    assert!(codes.is_empty(), "{codes:?}");
+}
