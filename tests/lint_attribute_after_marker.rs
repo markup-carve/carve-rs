@@ -58,8 +58,9 @@ fn every_unattached_run_of_a_text_is_reported() {
 }
 
 #[test]
-fn a_line_block_line_is_no_host_of_the_rule() {
+fn a_line_block_line_is_a_host_of_the_rule() {
     let code = "unattached-inline-attribute";
-    assert_eq!(found("::: |\na {.c} b\n:::\n", code), []);
-    assert_eq!(found("::: |\n{~x~} {.c}\n:::\n", code), []);
+    // CC-2329 (carve#6176): the lines of a line block are inline content.
+    assert_eq!(found("::: |\na {.c} b\n:::\n", code), [(8, 12)]);
+    assert_eq!(found("::: |\n{~x~} {.c}\n:::\n", code), [(12, 16)]);
 }
