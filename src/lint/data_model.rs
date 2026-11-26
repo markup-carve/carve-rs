@@ -1574,6 +1574,30 @@ impl<'a> Records<'a> {
         )
     }
 
+    /// C2-X-079: the registered extensions that generate ids; one outside the catalog counts.
+    pub fn id_extensions(&self) -> Val<'a> {
+        static NO_IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+        let no_ids = NO_IDS.get_or_init(|| {
+            let catalog: serde_json::Value =
+                serde_json::from_str(include_str!("../../spec-data/extensions.json"))
+                    .unwrap_or_default();
+            catalog["extensions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|row| row["ids"] != true)
+                .filter_map(|row| row["name"].as_str().map(str::to_string))
+                .collect()
+        });
+        Val::List(
+            self.extensions
+                .iter()
+                .filter(|name| !no_ids.contains(name))
+                .map(|name| Val::Str(Cow::Owned(name.clone())))
+                .collect(),
+        )
+    }
+
     /// One step of a dotted path from a value.
     pub fn step(&self, found: &Val<'a>, seg: &Seg) -> Val<'a> {
         match seg {

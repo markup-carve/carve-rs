@@ -39,7 +39,7 @@ fn c2_t_010_standard_extension_cli_clause_cases() {
             })
             .cloned()
             .collect();
-    assert_eq!(cases.len(), 13);
+    assert_eq!(cases.len(), 19);
     let mut failures = Vec::new();
     for case in cases {
         let id = case["id"].as_str().unwrap();
@@ -55,7 +55,20 @@ fn c2_t_010_standard_extension_cli_clause_cases() {
 }
 
 /// Cases of a ruling this engine has not ported yet; a held case that passes fails the run.
-const HELD: &[(&str, &str)] = &[];
+const HELD: &[(&str, &str)] = &[
+    (
+        "CC-2148",
+        "carve-rs#4838 (carve#6812 G8): a smart quotes locale outside the row falls back",
+    ),
+    (
+        "CC-2298",
+        "carve-rs#4838 (carve#6812 G8): a region locale falls back to its language",
+    ),
+    (
+        "CC-2299",
+        "carve-rs#4838 (carve#6812 G8): the locale matches ignoring case, with _ read as -",
+    ),
+];
 
 fn run_case(case: &Value) -> Option<String> {
     let id = case["id"].as_str().unwrap();

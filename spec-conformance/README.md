@@ -47,6 +47,8 @@ An unverified example is still the expected result: where an engine differs, the
 
 Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expected` and `from`, the engine case files it was merged from (`js:ID`, `php:ID`, `rs:ID`; empty for a case written from the clauses). `why` quotes the sentence that decides the case, as `C2-B-130: ...`; several quotes follow one another, and ` ... ` joins two pieces of one clause. A catalog trigger may be quoted as `Catalog rule-id: reports fragment`; the gate checks it against that row. `corrected`, where present, says what the engine files expected before the clause corrected it. `engineLocal`, where present, names an implementation choice that a clause leaves open and on which `expected` depends, as C2-W-133 leaves open which groups need a repair parse: the expectation holds for an engine that made that choice, and another engine may differ without failing the case. The readiness gate still replays such a case and counts an outcome other than a pass as engine-local, never as a gap or a regression (`scripts/next2-readiness.md`).
 
+Two branches that both append cases usually claim the same next ids. When a rebase or merge stops on `clause-cases.json`, run `node scripts/cc-merge.mjs`: the target branch keeps its ids, each colliding new case from the other side takes the next free id, and its references are rewritten in files only that side changed. It never re-serializes the file and stops on a case both sides edited.
+
 `kind` names the call the case runs (`tooling.md`, C2-T-005). An entry without `kind` is a render whose `expected` states both `html` and `children`, the children of the document without positions; that is the shape of every case up to CC-359.
 
 | `kind` | Input | Call | What `expected` may state |
@@ -64,7 +66,7 @@ Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expecte
 | `position` | `input` or `inputBytes`, `offset` | `positionOf` | `line`, `column`, `refusal` |
 | `diff` | `input` and `inputAfter`, both parsed with positions off | `diffTree`, then `applyPatch` | `applies`: the patch applied to the first tree gives the second; `patch` only where C2-T-043 fixes it, the empty list for two equal trees |
 | `patch` | `input`, parsed with positions off, `patch`, and `fingerprintOf`, a source whose tree gives the `fingerprint` | `applyPatch` | `children`, `refusal` |
-| `fingerprint` | `input` or `inputBytes`; `of: "tree"` hashes its tree parsed with positions off | `sourceFingerprint`, or `treeFingerprint` | `fingerprint` |
+| `fingerprint` | `input` or `inputBytes`; `of: "tree"` hashes its tree parsed with positions off; or `json`, JSON text whose tree from `decodeTree` it hashes | `sourceFingerprint`, or `treeFingerprint` | `fingerprint` |
 | `export` | `input`, and `to`: `markdown`, `plain` or `ansi` | the export of `to` (C2-T-003) on the tree of `parse(input)` | `output`, the exported text; diagnostics, `refusal` |
 
 `inputBytes` is the input as bytes in hex, for a source that is not well-formed UTF-8 (C2-B-218). `files` holds the files a resolver serves, as for an include example; a case with `files` is parsed with that resolver and one without `files` with none (see "Options"). A file entry with `{"error":"outside_root"}` or `{"error":"unreadable"}` makes the resolver return that cause for the path, so include failure cases do not depend on filesystem permissions or the runner's directory.
@@ -73,7 +75,7 @@ Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expecte
 
 ### Diagnostics
 
-`expected.diagnostics` lists entries of the record the call returns. An entry is a code, or an object with `code` and any of `line`, `column`, `endLine`, `endColumn`, `severity`, `channel`, `path` and `file`. `line` and `column` are the start of the entry's `range`, counted as `pos` counts them (C2-A-141): lines from 1 at each line feed, columns in code points from 1. They are counted in the file the entry names (`file`, C2-N-063) and in the input otherwise; the end is exclusive, as in `pos`. A field the object does not state is not compared. `messageWhen`, when present, is the exact `when` text of the selected message variant in `data/lint-rules.json`; the runner compares that variant, and the corpus check verifies that the row lists it.
+`expected.diagnostics` lists entries of the record the call returns. An entry is a code, or an object with `code` and any of `line`, `column`, `endLine`, `endColumn`, `severity`, `channel`, `path`, `file` and `includedBy`. `line` and `column` are the start of the entry's `range`, counted as `pos` counts them (C2-A-141): lines from 1 at each line feed, columns in code points from 1. They are counted in the file the entry names (`file`, C2-N-063) and in the input otherwise; the end is exclusive, as in `pos`. `includedBy` is the include chain of the entry (C2-T-020), one object per include node from the input inward, each with `file`, absent for the input, and the `line` and `column` of the start of the node's range in that file; it is compared as a whole. A field the object does not state is not compared. `messageWhen`, when present, is the exact `when` text of the selected message variant in `data/lint-rules.json`; the runner compares that variant, and the corpus check verifies that the row lists it.
 
 `expected.diagnosticsComplete` set to `true` says the record holds the listed entries and no others; otherwise it holds at least them, in any order. `expected.diagnosticsOrdered` set to `true`, beside `diagnosticsComplete`, says the record holds them in the listed order: its first entry matches the first listed one, and so on (C2-W-158). `expected.notReported` lists codes the record must not hold: the near miss of a rule. `expected.suppressed` is the `suppressedDiagnostics` of the result (C2-T-024).
 
@@ -175,6 +177,8 @@ The check fails an error that no category of `data/cli.json` names or that the c
 ```json
 { "rules": { "djot-plus-bullet": "on", "bare-html-tag": "off" }, "platforms": ["github"], "extensions": ["carve.tabs"], "renderers": { "carve.tabs": "standard" } }
 ```
+
+A case may carry `host`, registrations of the conformance harness that are no Carve option and that an engine offers through its test harness, not its public interface. `documentTransforms` lists document transforms (C2-X-053) in registration order, each with a `name` and a pointer `after` into the view it receives: `insert` puts a copy of the given node directly after the node at `after`, `setLevel` sets the `level` of that node, and `setValue` sets its `value`. `limits` lowers limits for the one case: `snippetDepth` and `snippetNodes` replace `snippet_depth` and `snippet_nodes` of `data/limits.json` (C2-N-093), and `derivedTextBytes` replaces the whole derived-text budget of C2-H-201, the floor of `derived_text_bytes` included, so a case can reach the budget with a short input (C2-N-094).
 
 ## Extensions
 

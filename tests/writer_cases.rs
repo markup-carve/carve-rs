@@ -13,6 +13,44 @@ use serde_json::Value;
 const HELD: &[(&str, &str)] = &[
     // carve#6772 (carve-rs line): the escape rounds read references from the tree.
     ("CC-2166", "carve#6772"),
+    (
+        "CC-501",
+        "carve#3598 (carve#6812 G3): metadata.fields beside leading frontmatter is a loss",
+    ),
+    (
+        "CC-2213",
+        "carve#6804: an image whose alt is unknown is reported as image-alt-unknown",
+    ),
+    (
+        "CC-2242",
+        "carve#6663 (carve#6812 G1): fmt drops header-rows the header marks make",
+    ),
+    (
+        "CC-2249",
+        "carve#6664 (carve#6812 G1): fmt keeps an empty body-rows on a table of only a foot",
+    ),
+    (
+        "CC-2265",
+        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
+    ),
+    (
+        "CC-2266",
+        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
+    ),
+    (
+        "CC-2267",
+        "carve#6727 (carve#6812 G3): a region marker keeps the closer of the fence above it",
+    ),
+    (
+        "CC-2293",
+        "carve#6804 option A: a decorative image is written with empty brackets, no report",
+    ),
+    (
+        "CC-2323",
+        "carve#6813: a key the escape rounds cannot spell is no loss where the output reads back",
+    ),
+    ("CC-2388", "carve#6395: named snippets"),
+    ("CC-2389", "carve#6395: named snippets"),
 ];
 
 fn load(path: &str) -> Value {

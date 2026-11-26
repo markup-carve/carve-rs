@@ -3,8 +3,8 @@ use std::process::{Command, Stdio};
 
 fn fix(source: &str) -> (i32, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_carve"))
-        // C2-T-049: the caret fix is a migration notice, on under `--upgrade`.
-        .args(["fix", "--upgrade", "-"])
+        // C2-T-049: djot- rules are off even under `--upgrade` (CC-1943); `rules` turns one on.
+        .args(["fix", "--rules", r#"{"djot-superscript-caret":"on"}"#, "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

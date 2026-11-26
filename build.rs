@@ -986,7 +986,7 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     let (head, node) = (s.head, s.node);
     let _ = write!(
         out,
-        "#[allow(unreachable_patterns)]
+        "#[allow(unreachable_patterns, clippy::match_wildcard_for_single_variants)]
 {head} {{
     /// The source position, when the node carries one.
     #[must_use]

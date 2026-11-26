@@ -27,14 +27,34 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2184", "children"),
     ("CC-2161", "diagnostic:import-structure-repaired"),
     ("CC-2163", "diagnostic:import-attribute-dropped"),
-    // carve#6804 (carve-rs line): an img without alt imports with an unknown alt.
-    ("CC-2207", "children"),
-    ("CC-2207", "diagnostic:field-unspellable"),
-    ("CC-2208", "children"),
-    ("CC-2208", "diagnostic:field-unspellable"),
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
+    // carve#6395: named snippets on import.
+    ("CC-2393", "children"),
+    ("CC-2394", "children"),
+    ("CC-2395", "children"),
+    ("CC-2395", "diagnostic:import-carrier-ignored"),
+    ("CC-2396", "children"),
+    ("CC-2396", "diagnostic:snippet-scope-loss"),
+    // carve#6804: an imported image whose alt is unknown.
+    ("CC-2207", "children"),
+    ("CC-2207", "diagnostic:image-alt-unknown"),
+    ("CC-2208", "children"),
+    // carve#6605, carve#6235 (carve#6812 G2): HTML import.
+    ("CC-2230", "children"),
+    ("CC-2230", "notReported:import-attribute-dropped"),
+    ("CC-2231", "children"),
+    ("CC-2231", "notReported:import-attribute-dropped"),
+    ("CC-2232", "children"),
+    ("CC-2232", "notReported:import-attribute-dropped"),
+    ("CC-2233", "children"),
+    ("CC-2234", "children"),
+    ("CC-2235", "diagnostic:import-element-dropped"),
+    ("CC-2236", "children"),
+    // carve#6623 (carve#6812 G1): th rows next to a scope row th row.
+    ("CC-2063", "diagnostic:field-unspellable"),
+    ("CC-2250", "diagnostic:field-unspellable"),
 ];
 
 /// The import entries that carry an expected `carve` source (not compared).
@@ -52,7 +72,9 @@ const WITH_CARVE_CLAUSE: &[&str] = &[
     "CC-2168", "CC-2169", "CC-2170", "CC-2171", "CC-2177", "CC-2178", "CC-2179", "CC-2180",
     "CC-2181", "CC-2182", "CC-2183", "CC-2184", "CC-2197", "CC-2198", "CC-2199", "CC-2200",
     "CC-2201", "CC-2202", "CC-2203", "CC-2204", "CC-2207", "CC-2208", "CC-2209", "CC-2220",
-    "CC-2229",
+    "CC-2229", "CC-2230", "CC-2231", "CC-2232", "CC-2233", "CC-2234", "CC-2235", "CC-2236",
+    "CC-2244", "CC-2245", "CC-2250", "CC-2252", "CC-2253", "CC-2254", "CC-2255", "CC-2256",
+    "CC-2257", "CC-2394",
 ];
 
 fn load(name: &str) -> Value {

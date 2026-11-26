@@ -1,5 +1,5 @@
 //! A comment block inside a line block: the lazy comment below it (carve#6464) and
-//! the strip of its lines (carve#6465).
+//! the strip of its lines by the opener's indent (carve#6465, re-ruled).
 
 use carve::api::{self, Carve, EncodeOptions, Options, WriteOptions};
 use serde_json::{Value, json};
@@ -65,22 +65,25 @@ fn c2_b_123_lazy_comments_after_comment_blocks_in_other_containers() {
 }
 
 #[test]
-fn c2_b_007_a_straddling_tab_in_a_comment_block_line_is_kept() {
+fn c2_b_029_a_comment_block_line_loses_the_straddling_tab_of_its_opener() {
     let source = "- ::: |\n\t%%%\n\tc\td\n\t%%%\n";
     assert_eq!(
         line_block(source),
-        json!([{"type": "comment", "form": "block", "value": "\tc\td"}])
+        json!([{"type": "comment", "form": "block", "value": "c\td"}])
     );
     let written = fmt(source);
-    assert_eq!(written, "- ::: |\n  %%%\n  \tc\td\n  %%%\n  :::\n");
+    assert_eq!(written, "- ::: |\n  %%%\n  c\td\n  %%%\n  :::\n");
     assert_eq!(tree(&written), tree(source));
 }
 
 #[test]
-fn c2_b_130_comment_block_lines_are_stripped_by_the_container_only() {
+fn c2_b_029_comment_block_lines_are_stripped_by_the_opener_indent() {
     for (source, value) in [
-        ("- ::: |\n    %%%\n    c\n      d\n    %%%\n", "  c\n    d"),
-        ("1. ::: |\n\t%%%\n\t\tc\n\t%%%\n", "\t\tc"),
+        ("- ::: |\n    %%%\n    c\n      d\n    %%%\n", "c\n  d"),
+        ("1. ::: |\n\t%%%\n\t\tc\n\t%%%\n", "\tc"),
+        ("::: |\n  %%%\n  c\n  %%%\n:::\n", "c"),
+        ("> ::: |\n>   %%%\n>   c\n>    d\n>   %%%\n", "c\n d"),
+        ("- ::: |\n    %%%\n   c\n    %%%\n", "c"),
         ("- ::: |\n  %%%\n\tc\n  %%%\n", "\tc"),
         ("- - ::: |\n\t%%%\n\tc\n\t%%%\n", "c"),
     ] {

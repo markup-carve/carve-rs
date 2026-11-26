@@ -10,7 +10,7 @@
       "messages": ["image has empty alternative text and is not marked decorative"],
       "message_origin": "engine_0_1",
       "change": "accessibility extension; severity warning, where the 0.1 source sets error",
-      "reports": "an image that is not decorative and whose alt text is empty or unknown, as `![](a.png)`, once per image; an image with any alt text is not reported; a parse of Carve source never marks an image decorative and never leaves its alt unknown, so in source the rule reports exactly the empty alt (C2-I-074, C2-A-115)",
+      "reports": "an image that is neither decorative nor carries alt text, once per image: its alt is empty, as `![](a.png)`, or unknown (C2-A-115 names the three states); an image with alt text or `decorative: true` is not reported; a parse of Carve source never marks an image decorative and never leaves its alt unknown, so in source the rule reports exactly the empty alt (C2-I-074, C2-A-115)",
       "clauses": ["C2-I-074", "C2-A-115"]
     },
     {
@@ -153,8 +153,8 @@
       "messages": [{"when": "a rendered id differs only in case from the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id; the id \"${caseOnly}\" differs only in case, and fragment links are case-sensitive, so the link goes nowhere."}, {"when": "no rendered id differs only in case from either the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id in this document, so the link goes nowhere."}],
       "message_origin": "engine_0_1",
       "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id X differs only in case` for one candidate, `the ids X and Y differ only in case` for two, and `the ids X, Y, and Z differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id.", "For case-only comparison, test both the source fragment and its percent-decoded spelling. `${caseOnly}` names the first qualifying rendered id in source order; if both spellings find candidates, use the same order across their union."],
-      "reports": "a link whose destination starts with `#` and whose fragment, the part before any `:~:` and tested both as written and percent-decoded, is not empty, is not `top` in any letter case, and is no `id` (and no `name` of an `a` element) in the rendered HTML of the document under the `headingIds` of the run (C2-T-042), heading, footnote, note mark and raw HTML ids included; once per link; not reported at all while an extension that generates ids is registered for the run, whether or not the document contains a node of that extension (C2-I-066, C2-H-022, C2-H-088, C2-H-089)",
-      "clauses": ["C2-I-066", "C2-H-022", "C2-H-088", "C2-H-089"]
+      "reports": "a link whose destination starts with `#` and whose fragment, the part before any `:~:` and tested both as written and percent-decoded, is not empty, is not `top` in any letter case, and is no `id` (and no `name` of an `a` element) in the rendered HTML of the document under the `headingIds` of the run (C2-T-042), heading, footnote, note mark and raw HTML ids included; once per link; not reported at all while an extension that generates ids (C2-X-079) is registered for the run, whether or not the document contains a node of that extension; an extension that generates no ids changes nothing (C2-I-066, C2-H-022, C2-H-088, C2-H-089, C2-X-079)",
+      "clauses": ["C2-I-066", "C2-H-022", "C2-H-088", "C2-H-089", "C2-X-079"]
     },
     {
       "id": "caption-looking-paragraph",
@@ -354,8 +354,8 @@
         "A definition is recognized only at column 0 outside every container, so this line is text. Put it at column 0 outside every container."
       ],
       "message_origin": "design",
-      "reports": "each definition-shaped line inside a container or indented at the top level; once per candidate line, the range is the bracketed label and colon (C2-B-081)",
-      "clauses": ["C2-B-081"]
+      "reports": "each definition-shaped line inside a container or indented at the top level; once per candidate line, the range is the bracketed label and colon, or the snippet marker and colon (C2-B-081, C2-B-236)",
+      "clauses": ["C2-B-081", "C2-B-236"]
     },
     {
       "id": "definition-term-block-folded",
@@ -529,10 +529,10 @@
       "status": "new",
       "default": "upgrade",
       "messages": [
-        "`header-rows` does not apply to a pipe table in 0.2. Mark header cells with the header mark and write alignment on the cells."
+        "`header-rows` on a pipe table no longer makes the cells of its rows header cells in 0.2: they keep the kind they are written with. Mark header cells with the header mark."
       ],
       "message_origin": "design",
-      "reports": "`header-rows` on a pipe table",
+      "reports": "`header-rows` on a pipe table, whose head cells 0.1 made header cells",
       "change": "only `header-rows`; `aligns`, `valigns`, `widths` and `footer-rows` stay as in 0.1, and `header-cols` has no effect in 0.2.0",
       "clauses": ["C2-B-186"]
     },
@@ -585,7 +585,7 @@
       "severity": "hint",
       "channel": "lint",
       "status": "new",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot reads a line that starts with `: ` as the term of a definition list; Carve reads it as paragraph text. Write the term as `:: term` and the definition as `: definition` on the line below it."],
       "message_origin": "design",
       "change": "added with the ruling on #6522 (24 November): a Djot reading that Carve 0.2 changes with no other finding",
@@ -597,7 +597,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "fix": {"before": "a _i_ b\n", "after": "a /i/ b\n"},
       "messages": ["Djot emphasis `_x_` is literal text in Carve. Carve emphasis is `/x/`."],
       "message_origin": "data_file",
@@ -610,7 +610,7 @@
       "severity": "hint",
       "channel": "lint",
       "status": "new",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot emphasis `{_x_}` is underline in Carve. Carve emphasis is `/x/` or the braced `{/x/}`."],
       "message_origin": "design",
       "change": "added with the ruling on #6522 (24 November): a Djot reading that Carve 0.2 changes with no other finding",
@@ -622,7 +622,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot folds the line(s) below a heading INTO it (a plain line, or one with the same number of `#`); Carve takes only lines indented past the heading marker into the heading (C2-B-154), so a line at the marker column starts a separate block. A generated heading id is computed from the shorter Carve heading, so it can differ from Djot's id."],
       "message_origin": "data_file",
       "change": "opt-in Djot check",
@@ -646,7 +646,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "fix": {"before": "snake_case_name\n", "after": "snake{/case/}name\n"},
       "messages": [
         "Djot emphasizes this intraword `_x_`; the migration leaves it literal, so the emphasis is lost. Brace it as `{/x/}` if it was meant."
@@ -661,7 +661,7 @@
       "severity": "hint",
       "channel": "lint",
       "status": "new",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot reads this line as an ordered list item; Carve reads it as paragraph text. Carve has no marker in parentheses such as `(1)`, and an uppercase marker with a dot needs two spaces before its text."],
       "message_origin": "design",
       "change": "added with the ruling on #6522 (24 November): a Djot reading that Carve 0.2 changes with no other finding",
@@ -673,7 +673,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "fix": {"before": "+ item\n", "after": "- item\n"},
       "messages": ["Djot/Markdown `+` bullet is not a Carve bullet, so this line is a paragraph. Write `-` or `*`."],
       "message_origin": "data_file",
@@ -686,7 +686,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "fix": {"before": "H~2~O\n", "after": "H{,2,}O\n"},
       "messages": ["Djot subscript `~x~` is literal text in Carve. Carve subscript is the braced `{,x,}`."],
       "message_origin": "data_file",
@@ -699,7 +699,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot subscript `{~x~}` renders as *strikethrough* in Carve."],
       "message_origin": "engine_0_1",
       "change": "opt-in Djot check",
@@ -711,7 +711,7 @@
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
-      "default": "upgrade",
+      "default": "off",
       "fix": {"before": "x^2^\n", "after": "x{^2^}\n"},
       "messages": ["Djot superscript `^x^` is literal text in Carve — Carve superscript is the braced `{^x^}` only."],
       "message_origin": "engine_0_1",
@@ -724,7 +724,7 @@
       "severity": "hint",
       "channel": "lint",
       "status": "new",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot reads `#word` and `@word` as text; Carve reads them as a tag or a mention. Escape the sigil as `\\#` or `\\@` to keep it as text."],
       "message_origin": "design",
       "change": "added with the ruling on #6522 (24 November): a Djot reading that Carve 0.2 changes with no other finding",
@@ -736,7 +736,7 @@
       "severity": "hint",
       "channel": "lint",
       "status": "new",
-      "default": "upgrade",
+      "default": "off",
       "messages": ["Djot keeps this run as typed; Carve smart typography writes it as a sign. Escape its punctuation characters to keep it as typed."],
       "message_origin": "design",
       "change": "added with the ruling on #6522 (24 November): a Djot reading that Carve 0.2 changes with no other finding",
@@ -799,6 +799,16 @@
       "message_origin": "engine_0_1",
       "reports": "each link definition whose destination is the same string as that of an earlier link definition in source order with a different label key; a repeated definition of the same label is not reported, and only parsed link definitions count; once per later definition (C2-B-083, C2-I-079)",
       "clauses": ["C2-B-083", "C2-I-079"]
+    },
+    {
+      "id": "duplicate-snippet",
+      "severity": "warning",
+      "channel": "parse",
+      "status": "new",
+      "messages": ["Duplicate snippet \"$${name}\": the first definition of the name wins. Rename or remove this one."],
+      "message_origin": "design",
+      "reports": "a snippet definition whose name an earlier snippet definition of the expanded tree holds, once per later definition; the range is the `$` and the name in its marker (C2-N-090)",
+      "clauses": ["C2-N-090"]
     },
     {
       "id": "emphasis-as-heading",
@@ -1105,7 +1115,7 @@
       "default": "on",
       "messages": ["This document mixes the two heading markers. carve fmt rewrites the hash to the equals sign."],
       "message_origin": "design",
-      "reports": "a document with `=` headings and `#` headings, once; the range is the first heading of the document",
+      "reports": "a document with `=` headings and `#` headings, once; the range is the first heading of the document, from its start to its end, so an attribute line above it is included; a heading counts by the marker that opens it, behind any attribute lines above it",
       "clauses": ["C2-B-155"]
     },
     {
@@ -1143,11 +1153,19 @@
       "clauses": ["C2-I-124"]
     },
     {
+      "id": "image-alt-unknown",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "reports": "an image with neither `alt` nor `decorative`, whose alt text is unknown, which the writer writes with empty brackets; no code of C2-W-134, so a write returns the source and `carve import` does not fail on it (C2-W-011, C2-T-034)",
+      "clauses": ["C2-W-011", "C2-W-104"]
+    },
+    {
       "id": "import-attribute-dropped",
       "severity": "warning",
       "channel": "render-loss",
       "status": "new",
-      "reports": "an attribute that the tree does not keep: an event handler, a name that is no key, an invalid `dir`, a wrapper or section attribute, an unread attribute of `code` or of a task box, an ordered start out of range, an `align` or `valign` beside a declaration of its axis, a `col` style that gives no width or holds another declaration, a cell `scope`, `align` or `valign` outside its set, an attribute of a `figure` that the captioned block replaces",
+      "reports": "an attribute that the tree does not keep: an event handler, a name that is no key, an invalid `dir`, a wrapper or section attribute, an unread attribute of `code` or of a task box, an ordered start out of range, an `align` or `valign` beside a declaration of its axis, a `col` style that gives no width, holds another declaration or marks its width important, a cell `scope`, `align` or `valign` outside its set, an attribute of a `figure` that the captioned block replaces",
       "clauses": ["C2-M-004", "C2-M-026", "C2-M-027", "C2-M-030", "C2-M-031", "C2-M-032", "C2-M-040", "C2-M-041", "C2-M-043", "C2-M-052", "C2-M-054", "C2-M-075"]
     },
     {
@@ -1187,7 +1205,7 @@
       "severity": "warning",
       "channel": "render-loss",
       "status": "new",
-      "reports": "content dropped or changed so that the tree is valid: a non-item child of a list, a foreign child of a table or a description list, a second head or foot of a table, a data cell of the table head, a clamped row span, an empty node that held attributes, a ruby base without annotation, a footnote item with no `id` or an empty key",
+      "reports": "content dropped or changed so that the tree is valid: a non-item child of a list, a foreign child of a table or a description list, a second head or foot of a table, a clamped row span, an empty node that held attributes, a ruby base without annotation, a footnote item with no `id` or an empty key",
       "clauses": ["C2-M-034", "C2-M-036", "C2-M-037", "C2-M-039", "C2-M-041", "C2-M-048", "C2-M-061", "C2-M-069", "C2-M-070"]
     },
     {
@@ -1772,16 +1790,12 @@
       "messages": [
         {
           "when": "a directive with a section and no path",
-          "text": "This \"${text}\" is reserved for an include from the same document in a later 0.2 release and renders as literal text. Write \\{{ to keep the text."
-        },
-        {
-          "when": "a line that starts with an id in braces, optional attributes and a colon",
-          "text": "A line that starts with \"${text}\" is reserved for a definition in a later 0.2 release and renders as literal text. Write \\{# to keep the text."
+          "text": "This \"${text}\" is reserved and renders as literal text. Write \\{{ to keep the text."
         }
       ],
       "message_origin": "design",
-      "reports": "each directive with a section and no path in a text leaf or a table row: `{{`, spaces, `#` and a section name, spaces and `}}`, with no option, whose braces are not escaped and stand in no code, math, raw or literal span, once per directive, the range is the directive (C2-N-089); and the first line of a top-level paragraph that starts at column 0 with a definition marker (`{#`, a section name, optional attributes without braces, `}`, glued brace groups, `:`), one or more spaces and content, once per line, the range is the marker (C2-B-236)",
-      "clauses": ["C2-N-089", "C2-B-236"]
+      "reports": "each directive with a section and no path in a text leaf or a table row: `{{`, spaces, `#` and a section name, spaces and `}}`, with no option, whose braces are not escaped and stand in no code, math, raw or literal span, once per directive, the range is the directive (C2-N-089)",
+      "clauses": ["C2-N-089"]
     },
     {
       "id": "semantic-attribute-outside-span",
@@ -1833,6 +1847,78 @@
       "message_origin": "design",
       "reports": "an at-sign or a `#` directly after a Unicode letter or number outside ASCII and followed by a mention or tag name (C2-I-092), which forms no mention or tag in 0.2 because the sigil follows a letter or number (C2-I-090) and which 0.1, testing only ASCII letters, digits and `_` before it, read as one; a sigil after an ASCII letter or digit, after a space or punctuation, behind a backslash or in an atom is not reported, nor `#1`, whose name holds no letter; once per sigil, the range is the sigil (C2-I-090, C2-I-092)",
       "clauses": ["C2-I-090", "C2-I-092"]
+    },
+    {
+      "id": "snippet-cycle",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["Snippet \"$${name}\" was not expanded: it would use itself. Wrote it as text."],
+      "message_origin": "design",
+      "reports": "a snippet use whose winning definition is already being expanded, once per use; the range is the use (C2-N-093)",
+      "clauses": ["C2-N-093"]
+    },
+    {
+      "id": "snippet-definition-id",
+      "severity": "warning",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["A snippet definition is no anchor and takes no id, so this line is text. Remove the id."],
+      "message_origin": "design",
+      "reports": "a line at column 0 outside every container that would be a snippet definition but whose marker or glued attribute blocks hold an id, once per line; the range is the marker and the colon (C2-B-236)",
+      "hand_written": "the test reads the attribute parts of a marker that formed no definition, and the line model keeps such a line only as paragraph text",
+      "clauses": ["C2-B-236"]
+    },
+    {
+      "id": "snippet-depth",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["Snippet \"$${name}\" was not expanded: snippets nest deeper than ${limit} here. Wrote it as text."],
+      "message_origin": "design",
+      "reports": "a snippet use that would put more than `snippet_depth` definitions on the stack of expanded snippets, once per use; the range is the use (C2-N-093)",
+      "clauses": ["C2-N-093"]
+    },
+    {
+      "id": "snippet-node-budget",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["Snippet \"$${name}\" was not expanded: the snippet copies of this render reached their budget of ${limit} nodes. Wrote it as text."],
+      "message_origin": "design",
+      "reports": "a snippet use whose copy would bring the nodes that all copies of the render add past `snippet_nodes`, once per use; the range is the use (C2-N-093)",
+      "clauses": ["C2-N-093"]
+    },
+    {
+      "id": "snippet-scope-loss",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["This snippet came from an included file. The include is gone from the HTML, so the imported snippet resolves in this document only."],
+      "message_origin": "design",
+      "reports": "an element whose `data-carve-snippet-scope` the importer reads, once per element (C2-H-217)",
+      "clauses": ["C2-H-217"]
+    },
+    {
+      "id": "snippet-unexpanded-transform",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["A document transform inserted a snippet node, which is not expanded after the snippet pass. Wrote it as text."],
+      "message_origin": "design",
+      "reports": "a `snippet_use` or `snippet_definition` that a document transform inserted or put in place of a node, once per node, at its path (C2-N-095)",
+      "clauses": ["C2-N-095"]
+    },
+    {
+      "id": "snippet-unresolved",
+      "severity": "warning",
+      "channel": "render-loss",
+      "status": "new",
+      "messages": ["No snippet is named \"$${name}\". Wrote the use as text."],
+      "message_origin": "design",
+      "reports": "a snippet use whose name no snippet definition of the expanded tree holds, once per use; the range is the use (C2-N-093)",
+      "clauses": ["C2-N-093"]
     },
     {
       "id": "structure-unspellable",
@@ -2073,7 +2159,7 @@
         "This attribute block is attached to nothing and renders as text. Glue it to a span, link or code span, or escape the brace."
       ],
       "message_origin": "design",
-      "reports": "a valid attribute block, or a run of glued ones, in an inline content (a paragraph, heading, term, description or table cell) that is glued to the end of no formed host (C2-I-036), so it is printed as written (C2-I-035); `{}`, an escaped brace, a line that holds nothing but blocks (an attribute line), a run at the start of a paragraph that `block-marker-as-text` reports and a table cell that `table-row-attribute-as-cell` reports are not reported; once per run, the range is the run (C2-I-028, C2-I-035, C2-I-036)",
+      "reports": "a valid attribute block, or a run of glued ones, in an inline content (a paragraph, heading, term, description or table cell) that is glued to the end of no formed host (C2-I-036), so it is printed as written (C2-I-035); a line of a line block is such an inline content too, and the text of a caption or a description is that of its paragraphs; `{}`, an escaped brace, a line that holds nothing but blocks (an attribute line), a run at the start of a paragraph or of a line of a line block that `block-marker-as-text` reports and a table cell that `table-row-attribute-as-cell` reports are not reported; once per run, the range is the run (C2-I-028, C2-I-035, C2-I-036)",
       "clauses": ["C2-I-028", "C2-I-035", "C2-I-036"]
     },
     {
@@ -2212,6 +2298,18 @@
       "message_origin": "engine_0_1",
       "reports": "a link reference definition whose key no link or image reference that resolves uses, where a reference inside a footnote definition that nothing references, and one inside an unresolved reference, does not count; once per definition, from its opening bracket (C2-B-083, C2-I-075, C2-H-193)",
       "clauses": ["C2-B-083", "C2-I-075", "C2-H-193"]
+    },
+    {
+      "id": "unused-snippet",
+      "severity": "hint",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["Snippet \"$${name}\" is defined but never used."],
+      "message_origin": "design",
+      "reports": "a winning snippet definition that no snippet use of the authored tree names, a use inside another definition counted; once per definition, the range is the `$` and the name in its marker (C2-N-096)",
+      "hand_written": "it needs the snippet registry of the expanded tree and the names that its uses resolve to, which no record of the model holds",
+      "clauses": ["C2-N-096"]
     },
     {
       "id": "writer-refused",

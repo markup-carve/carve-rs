@@ -160,6 +160,8 @@ enum Leaf {
 #[derive(Debug, Clone)]
 struct LineCommentFence {
     len: usize,
+    /// The opener's column past the quote base (C2-B-029).
+    indent: usize,
     start: usize,
     end: usize,
     /// The end of the blank lines behind `end`, kept when the parent fence closes the body.
@@ -169,7 +171,7 @@ struct LineCommentFence {
 
 impl LineCommentFence {
     /// C2-B-108: text behind the run is the first line of the value.
-    fn open(k: &Cursor<'_>, run: usize, end: usize) -> Self {
+    fn open(k: &Cursor<'_>, run: usize, end: usize, indent: usize) -> Self {
         let first = k
             .rest()
             .get(run..)
@@ -177,6 +179,7 @@ impl LineCommentFence {
             .trim_start_matches([' ', '\t']);
         Self {
             len: run,
+            indent,
             start: k.offset(),
             end,
             blank_end: end,
@@ -913,7 +916,7 @@ impl<'a> Parser<'a> {
                 },
                 comments: Vec::new(),
             }));
-            *comment = Some(LineCommentFence::open(&k, run, e));
+            *comment = Some(LineCommentFence::open(&k, run, e, k.col - walk.qbase));
             *end = e;
             return true;
         }
@@ -1425,8 +1428,10 @@ fn line_block_comment_line(
         }
         return parent_closes;
     }
-    // C2-B-123, C2-B-130: the body is stripped by the container only, and a straddling tab is kept (C2-B-007).
-    fence.lines.push(walk.cur.rest().to_string());
+    // C2-B-029: stripped by at most the opener's indent, also in a line block (carve#6465).
+    let mut body = walk.cur;
+    body.strip_to(walk.qbase + fence.indent);
+    fence.lines.push(body.rest().to_string());
     fence.end = end;
     fence.blank_end = end;
     false
