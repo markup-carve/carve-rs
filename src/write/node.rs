@@ -618,7 +618,7 @@ fn equal_json_node(
             None => false,
         };
     });
-    Some(same && left.next().is_none())
+    Some((same && left.next().is_none()) || unset_alt_equal(a, b))
 }
 
 fn equal_objects(
@@ -721,7 +721,7 @@ fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool, unmarked: bool) -> bool {
                 if let V::Node(_) = b
                     && let Some(same) = equal_json_node(a, b, (None, None), span_marks, unmarked)
                 {
-                    return same || unset_alt_equal(a, b);
+                    return same;
                 }
             }
             _ => {}
