@@ -16,9 +16,11 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
+const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
 
 /// The only prefixed names written, each exactly in this spelling: prefixes
-/// are case-sensitive (carve#6783).
+/// are case-sensitive and the root binds `xlink` when needed (carve#6782,
+/// carve#6783).
 const PREFIXED_NAMES: &[&str] = &["xlink:href", "xmlns:xlink", "xml:space"];
 
 /// A decoded lone surrogate, which a `str` cannot hold, reads as this.
@@ -283,6 +285,7 @@ pub fn sanitize_svg(source: &str, opts: &SanitizeSvgOptions) -> SanitizeResult {
         kept: Vec::new(),
         saw_root: false,
         root_self_closed: false,
+        bind_xlink: false,
     };
     state.run(source).map_or_else(
         || SanitizeResult {
@@ -297,10 +300,19 @@ struct State<'o> {
     opts: &'o SanitizeSvgOptions,
     out: Vec<String>,
     drop_stack: Vec<String>,
-    /// Name and the output index where its content starts.
-    kept: Vec<(String, usize)>,
+    /// Name, the output index where its content starts, and whether a written
+    /// `xmlns:xlink` is in scope.
+    kept: Vec<(String, usize, bool)>,
     saw_root: bool,
     root_self_closed: bool,
+    /// An `xlink:href` was written with no `xmlns:xlink` in scope (carve#6782).
+    bind_xlink: bool,
+}
+
+#[derive(Default)]
+struct XlinkUse {
+    declared: bool,
+    used: bool,
 }
 
 impl State<'_> {
@@ -321,6 +333,10 @@ impl State<'_> {
             || !self.drop_stack.is_empty()
         {
             return None;
+        }
+        if self.bind_xlink {
+            let at = "<svg xmlns=\"".len() + SVG_NS.len() + 1;
+            self.out[0].insert_str(at, &format!(" xmlns:xlink=\"{XLINK_NS}\""));
         }
         let svg = self.out.concat();
         let head = svg.as_bytes();
@@ -377,7 +393,7 @@ impl State<'_> {
         if !self.drop_stack.is_empty() {
             return self.drop_stack.pop().as_deref() == Some(name);
         }
-        let Some((open, at)) = self.kept.pop() else {
+        let Some((open, at, _)) = self.kept.pop() else {
             return false;
         };
         if open != name {
@@ -421,11 +437,17 @@ impl State<'_> {
             tag.push_str(SVG_NS);
             tag.push('"');
         }
-        self.sanitize_attrs(raw, name, is_root, &mut tag);
+        let mut xlink = XlinkUse::default();
+        self.sanitize_attrs(raw, name, is_root, &mut tag, &mut xlink);
+        let xlink_bound = xlink.declared || self.kept.last().is_some_and(|k| k.2);
+        if xlink.used && !xlink_bound {
+            self.bind_xlink = true;
+        }
         tag.push_str(if self_close { "/>" } else { ">" });
         self.out.push(tag);
         if !self_close {
-            self.kept.push((name.to_string(), self.out.len()));
+            self.kept
+                .push((name.to_string(), self.out.len(), xlink_bound));
         }
         true
     }
@@ -440,7 +462,14 @@ impl State<'_> {
             || (self.opts.allow_external_images && lower == "image")
     }
 
-    fn sanitize_attrs(&self, raw: &str, tag: &str, is_root: bool, out: &mut String) {
+    fn sanitize_attrs(
+        &self,
+        raw: &str,
+        tag: &str,
+        is_root: bool,
+        out: &mut String,
+        xlink: &mut XlinkUse,
+    ) {
         let lower_tag = tag.to_ascii_lowercase();
         let external_href = (self.opts.allow_links && lower_tag == "a")
             || (self.opts.allow_external_images && lower_tag == "image");
@@ -463,7 +492,12 @@ impl State<'_> {
             {
                 continue;
             }
+            let before = out.len();
             self.sanitize_attribute(name, &lower, value, external_href, out);
+            if out.len() > before {
+                xlink.used |= name == "xlink:href";
+                xlink.declared |= name == "xmlns:xlink";
+            }
         }
     }
 
