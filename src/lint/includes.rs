@@ -23,6 +23,35 @@ struct Context<'a> {
     defaults: crate::Options,
 }
 
+impl Context<'_> {
+    /// The path of every node of the file's own tree, built once per file.
+    fn places(&mut self, file: &str, text: &str) -> &HashMap<String, String> {
+        self.places
+            .entry(file.to_string())
+            .or_insert_with(|| file_places(text, &self.defaults))
+    }
+
+    /// The findings of `slice` of `file` in the slice's own positions, linted once per slice.
+    fn findings(&mut self, file: &str, slice: &str, start: usize) -> Vec<Diagnostic> {
+        self.linted
+            .entry((file.to_string(), start, slice.len()))
+            .or_insert_with(|| {
+                crate::with_lint_tree(
+                    slice,
+                    &self.defaults,
+                    &self.defaults,
+                    true,
+                    |tree, arena| {
+                        let child_options = included_options(self.options, start, tree);
+                        lint_core(slice, &child_options, tree, arena)
+                    },
+                )
+                .0
+            })
+            .clone()
+    }
+}
+
 /// The include findings of one expanded tree, before the entry findings dedupe them.
 pub(super) struct Scanned {
     findings: Vec<Diagnostic>,
@@ -318,33 +347,8 @@ fn lint_include(
         return;
     };
     let (slice, start, line_shift, selected) = selected_source(node, text);
-    let places = match selected {
-        Some(_) => Some(
-            &*context
-                .places
-                .entry(file.to_string())
-                .or_insert_with(|| file_places(text, &context.defaults)),
-        ),
-        None => None,
-    };
-    let places = places.map(|places| section_paths(node, places));
-    let findings = context
-        .linted
-        .entry((file.to_string(), start, slice.len()))
-        .or_insert_with(|| {
-            crate::with_lint_tree(
-                slice,
-                &context.defaults,
-                &context.defaults,
-                true,
-                |tree, arena| {
-                    let child_options = included_options(context.options, start, tree);
-                    lint_core(slice, &child_options, tree, arena)
-                },
-            )
-            .0
-        })
-        .clone();
+    let places = selected.map(|_| section_paths(node, context.places(file, text)));
+    let findings = context.findings(file, slice, start);
     for mut finding in findings {
         let Some(mut pos) = finding.pos else { continue };
         pos.start_offset = pos.start_offset.saturating_add(crate::ast::Pos::at(start));
