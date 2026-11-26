@@ -927,6 +927,21 @@ pub(crate) fn with_lint_tree<R>(
     (result, diagnostics)
 }
 
+/// [`parse_diagnostics`] under `opts`, with the expanded document handed to `f` as a view.
+pub(crate) fn with_expanded_tree<R>(
+    input: &str,
+    opts: &Options,
+    f: impl for<'t> FnOnce(Option<view::V<'t>>) -> R,
+) -> (R, Vec<diagnostic::Diagnostic>) {
+    let arena = Arena::for_input(input);
+    let mut diagnostics = Vec::new();
+    let result = match prepare(input, opts, &arena, &mut diagnostics) {
+        Ok((doc, _, _)) => f(Some(view::V::Doc(arena.alloc(doc)))),
+        Err(_) => f(None),
+    };
+    (result, diagnostics)
+}
+
 /// C2-B-083, C2-B-085: only the first definition of each label wins.
 pub(crate) fn duplicate_definitions(
     doc: &ast::Document<'_>,
@@ -1687,7 +1702,7 @@ pub(crate) fn tree_parts_with_sources(
     Some((Some(json), owned, sources))
 }
 
-fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
+pub(crate) fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
     let mut v = serde_json::to_value(doc).unwrap_or_default();
     if let Some(m) = v.as_object_mut() {
         m.insert("type".into(), "document".into());

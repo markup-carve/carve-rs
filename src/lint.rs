@@ -149,13 +149,16 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         raw_html: opts.raw_html,
         ..crate::Options::default()
     };
+    // The include walk reads the tree of the expansion that reports the parse findings, when
+    // that is the tree a default render expands; `raw_html` does not change it.
+    let walk = includes && opts.heading_ids == crate::options::HeadingIds::default();
     let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
     let declared = std::cell::OnceCell::new();
     let (mut out, diagnostics) = crate::with_lint_tree(
         source,
         &crate::Options::default(),
         &parse,
-        same,
+        same || walk,
         |tree, arena| {
             // The entry's declaration controls notices in the entry source.
             let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
@@ -169,6 +172,23 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             lint_core(source, opts, tree, arena)
         },
     );
+    let mut scanned = None;
+    let diagnostics = match parse.includes.as_ref().filter(|_| walk) {
+        Some(config) => {
+            let (config, stored) = includes::recorded(config);
+            let expand = crate::Options {
+                includes: Some(config),
+                ..parse.clone()
+            };
+            let (collected, diagnostics) = crate::with_expanded_tree(source, &expand, |tree| {
+                let unused = out.iter().any(|d| d.code == "unused-snippet");
+                tree.map(|tree| includes::collect(tree, opts, &stored, unused))
+            });
+            scanned = collected;
+            diagnostics
+        }
+        None => diagnostics,
+    };
     out.extend(
         diagnostics
             .into_iter()
@@ -187,7 +207,11 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             )),
             _ => true,
         });
-        includes::scan(source, opts, &mut out);
+        match scanned {
+            Some(scanned) => includes::finish(scanned, opts, &mut out),
+            None if walk => {}
+            None => includes::scan(source, opts, &mut out),
+        }
     }
     out
 }
@@ -697,6 +721,38 @@ mod tests {
         crate::PREPARE_COUNT.with(|count| count.set(0));
         let _ = super::lint("| a | b |\n", &options);
         crate::PREPARE_COUNT.with(|count| assert_eq!(count.get(), 1));
+    }
+
+    #[test]
+    fn a_file_included_at_many_sites_is_expanded_once_and_linted_once() {
+        let options = LintOptions {
+            includes: Some(Includes::new(Arc::new(|request| {
+                (request.path == "p.crv")
+                    .then(|| (b"Leaf [x](#nope).\n".to_vec(), "p.crv".to_string()))
+                    .ok_or(Cause::NotFound)
+            }))),
+            ..LintOptions::default()
+        };
+        let mut counts = Vec::new();
+        for sites in [1, 16] {
+            let source = "{{ p.crv }}\n\n".repeat(sites);
+            crate::PREPARE_COUNT.with(|count| count.set(0));
+            let found = super::lint(&source, &options);
+            counts.push(crate::PREPARE_COUNT.with(std::cell::Cell::get));
+            let links: Vec<_> = found
+                .iter()
+                .filter(|d| d.code == "broken-fragment-link")
+                .map(|d| {
+                    let sites: Vec<_> = d.included_by.iter().map(|s| s.start_offset).collect();
+                    (d.file.as_deref(), sites)
+                })
+                .collect();
+            assert_eq!(links, [(Some("p.crv"), vec![0])], "{sites} sites");
+        }
+        assert!(
+            counts.windows(2).all(|pair| pair.first() == pair.last()),
+            "prepare calls per site count: {counts:?}"
+        );
     }
 
     #[test]
