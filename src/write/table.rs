@@ -250,14 +250,98 @@ fn head_ends_above_foot(table: V<'_>) -> bool {
     head.iter().all(|r| is_head_row(*r)) && foot.first().is_some_and(|r| is_header_row(*r))
 }
 
-/// C2-W-066, C2-B-186: a pipe table spells its head with `header-rows` where a head row holds a
-/// data cell.
+const BODY_KEYS: [&str; 3] = ["body-rows", "body-header-rows", "body-header-cols"];
+
+fn is_body_key(key: &str) -> bool {
+    BODY_KEYS.iter().any(|k| key.eq_ignore_ascii_case(k))
+}
+
+fn kept_value<'t>(table: V<'t>, key: &str) -> Option<&'t str> {
+    super::node::key_values(table)
+        .into_iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| v)
+}
+
+fn keeps_body_key(table: V<'_>) -> bool {
+    super::node::key_values(table)
+        .iter()
+        .any(|(k, _)| is_body_key(k))
+}
+
+/// C2-W-136: beside a kept body key, more than one body, an empty body or a `rowHeadColumns` has
+/// no spelling.
+fn body_keys_unspellable(table: V<'_>) -> bool {
+    let bodies = bodies_of(table);
+    keeps_body_key(table)
+        && (bodies.len() > 1
+            || bodies.iter().any(|b| {
+                !children(b).iter().any(|r| ty(r) == "table_row") || has(b, "rowHeadColumns")
+            }))
+}
+
+/// C2-W-136: the writer makes body keys only where `attrs` keeps none, or where the tree has no
+/// spelling beside the kept one.
+fn makes_body_keys(table: V<'_>) -> bool {
+    !keeps_body_key(table) || body_keys_unspellable(table)
+}
+
+/// C2-B-187, C2-B-230: the written body keys hold an empty `body-rows` that takes effect.
+fn writes_no_body(table: V<'_>) -> bool {
+    if makes_body_keys(table) {
+        return bodies_of(table).is_empty() && head_ends_above_foot(table);
+    }
+    let empty = |v: &str| crate::tree::table::body_counts(v).is_some_and(|c| c.is_empty());
+    kept_value(table, "body-rows").is_some_and(empty)
+        && kept_value(table, "body-header-rows").is_none_or(empty)
+        && kept_value(table, "body-header-cols").is_none_or(str::is_empty)
+}
+
+/// C2-B-178, C2-B-187: the head that the written rows and keys give without `header-rows`.
+fn written_head(table: V<'_>) -> usize {
+    let strip = makes_body_keys(table) && partitioned(&bodies_of(table));
+    let (mut head, mut total, mut open) = (0, 0, true);
+    for group in children(table) {
+        let kind = ty(group);
+        if kind == "comment" {
+            continue;
+        }
+        let bare = if strip && kind == "table_body" {
+            leading_header_rows(group)
+        } else {
+            0
+        };
+        let rows = children(group).iter().filter(|r| ty(r) == "table_row");
+        for (at, row) in rows.enumerate() {
+            total += 1;
+            // A mark in the head is written with a header mark (C2-W-063).
+            let reads = if kind == "table_head" {
+                !children(row).is_empty() && is_head_row(row)
+            } else {
+                at >= bare && is_header_row(row)
+            };
+            open &= reads;
+            head += usize::from(open);
+        }
+    }
+    let foot = rows_of(table, "table_foot").len();
+    if foot > 0 && foot <= total && writes_no_body(table) {
+        head = head.min(total - foot);
+    }
+    head
+}
+
+/// C2-W-066: a pipe table writes `header-rows` wherever the written rows and keys give another
+/// head without it.
 fn pipe_header_rows(table: V<'_>) -> Option<usize> {
-    let head = rows_of(table, "table_head");
-    (!head.iter().all(|r| is_head_row(*r))).then_some(head.len())
+    let head = rows_of(table, "table_head").len();
+    (written_head(table) != head).then_some(head)
 }
 
 fn body_keys(table: V<'_>) -> Vec<(String, String)> {
+    if !makes_body_keys(table) {
+        return Vec::new();
+    }
     let bodies = bodies_of(table);
     // C2-W-136, C2-B-187: an empty `body-rows` ends the head above a foot that leads with a row of header cells.
     if bodies.is_empty() {
@@ -328,9 +412,11 @@ fn table_keys(
         keys.push(("footer-rows".into(), foot.to_string()));
     }
     keys.extend(body_keys(table));
+    let unspellable = body_keys_unspellable(table);
     let mut skip_keys = Vec::new();
     for (index, (key, _)) in super::node::key_values(table).into_iter().enumerate() {
-        if !keys.iter().any(|(k, _)| k == key) {
+        let replaced = keys.iter().any(|(k, _)| k == key) || (unspellable && is_body_key(key));
+        if !replaced {
             continue;
         }
         skip_keys.push(key.to_string());
@@ -656,7 +742,7 @@ enum Entry<'t> {
 
 fn table_entries<'t>(w: &mut Writer<'t>, table: N<'t>, flags: u32) -> Vec<Entry<'t>> {
     let mut entries = Vec::new();
-    let split = partitioned(&bodies_of(table));
+    let split = makes_body_keys(table) && partitioned(&bodies_of(table));
     for group in children(table) {
         if ty(group) == "comment" {
             entries.push(Entry::Comment(group));

@@ -663,7 +663,7 @@ pub(super) struct BodyPlan {
     pub(super) head_cols: Vec<Option<i64>>,
 }
 
-fn body_counts(value: &str) -> Option<Vec<usize>> {
+pub(crate) fn body_counts(value: &str) -> Option<Vec<usize>> {
     if value.is_empty() {
         return Some(Vec::new());
     }
