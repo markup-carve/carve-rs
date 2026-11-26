@@ -692,6 +692,25 @@ pub(crate) fn prepare_with<'a>(
     diags: &mut Vec<diagnostic::Diagnostic>,
     before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    prepare_expanding(input, opts, arena, diags, before_resolve, None)
+}
+
+/// The snippet expansion of one render (C2-N-091): its findings, and the
+/// side tables, held while the render runs.
+pub(crate) type SnippetRun<'r> = (
+    &'r mut Vec<snippet::expand::Finding>,
+    &'r mut Option<snippet::expand::Guard>,
+);
+
+/// [`prepare_with`] that expands the snippet uses after the includes, when `snippets` is given.
+pub(crate) fn prepare_expanding<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+    before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
+    snippets: Option<SnippetRun<'_>>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
     #[cfg(test)]
     PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     check_source_length(input.len())?;
@@ -718,6 +737,15 @@ pub(crate) fn prepare_with<'a>(
         }
     } else if input.contains("{{") {
         include::no_resolver(doc.children, diags);
+    }
+    if let Some((found, guard)) = snippets {
+        if input.contains("{{") {
+            let settings = snippet::expand::Settings {
+                roundtrip: opts.roundtrip,
+                source_len: input.len(),
+            };
+            *guard = snippet::expand::expand(&mut doc, arena, settings, found);
+        }
     }
     let files = (expanded && input.contains("{{"))
         .then(|| resolve::files::Files::build(&doc, included_sources));
@@ -836,7 +864,25 @@ pub(crate) fn duplicate_definitions(
     let mut links = std::collections::HashSet::new();
     let mut abbreviations = std::collections::HashSet::new();
     let mut footnotes = std::collections::HashSet::new();
+    let mut snippets = std::collections::HashSet::new();
     for node in doc.children.iter() {
+        // C2-N-090: a later definition of a snippet name reports at its `$` and name.
+        if let ast::Node::SnippetDefinition(x) = node {
+            if !snippets.insert(x.name) {
+                let pos = x.pos.and_then(|p| {
+                    let marker = format!("{{${}", x.name);
+                    let at = p.start() + src.text().get(p.start()..)?.find(&marker)?;
+                    Some(src.pos(at + 1, at + 2 + x.name.len()))
+                });
+                diags.push(diagnostic::Diagnostic::new(
+                    "duplicate-snippet",
+                    &[("name", x.name)],
+                    file,
+                    pos,
+                ));
+            }
+            continue;
+        }
         let code = match node {
             ast::Node::LinkReferenceDefinition(x)
                 if !links.insert(crate::chars::fold_label(x.key)) =>
@@ -1023,9 +1069,20 @@ fn render_parts(
     details: &mut RenderDetails,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     // C2-H-208: after includes, before the first transform; resolution reads no level.
-    let (mut doc, ordered, files) = prepare_with(input, opts, arena, diags, &mut |doc| {
-        heading_shift::apply(doc.children, opts.heading_shift);
-    })?;
+    let mut found = Vec::new();
+    let mut guard = None;
+    let prepared = prepare_expanding(
+        input,
+        opts,
+        arena,
+        diags,
+        &mut |doc| {
+            heading_shift::apply(doc.children, opts.heading_shift);
+        },
+        Some((&mut found, &mut guard)),
+    );
+    diags.extend(found.iter().map(snippet::expand::Finding::diagnostic));
+    let (mut doc, ordered, files) = prepared?;
     include::unexpanded(doc.children, None, &mut details.places);
     if let Some(files) = files {
         details.included_sources.extend(

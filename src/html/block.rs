@@ -295,7 +295,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return true;
         }
-        if self.bare_el(p.attrs, p.lang, n) {
+        let snippet = self.snippet_tail(n);
+        if snippet.is_none() && self.bare_el(p.attrs, p.lang, n) {
             if !bare {
                 out.push_str("<p>");
             }
@@ -306,10 +307,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return true;
         }
         let mut el = self.el(p.attrs, p.lang, n);
-        if bare && !has_attrs(p.attrs, p.lang) {
+        if bare && !has_attrs(p.attrs, p.lang) && snippet.is_none() {
             self.leaf_into(p.children, out);
             return true;
         }
+        el.snippet = snippet;
         el.align_style = true;
         out.push_str("<p");
         el.write_into(self.filter(), out);

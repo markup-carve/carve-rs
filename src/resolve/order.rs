@@ -46,6 +46,8 @@ pub struct Order<'r, 'a> {
     /// With [`Order::build_collecting`]: the nodes of `every_node`, gathered
     /// on the walk; dropped once the walk leaves document order.
     found: Option<Vec<&'r Node<'a>>>,
+    /// Inside a snippet definition, whose notes take no number (C2-N-090).
+    in_snippet: usize,
 }
 
 /// Where a footnote reference finds its definition.
@@ -199,6 +201,18 @@ impl<'r, 'a> Order<'r, 'a> {
             note: ctx.note,
         });
         match n {
+            Node::FootnoteRef(_) | Node::InlineFootnote(_) if self.in_snippet > 0 => {
+                self.visits.pop();
+                return;
+            }
+            Node::SnippetDefinition(d) => {
+                self.in_snippet += 1;
+                for c in d.children.iter() {
+                    self.walk(c, defs, ctx, depth + 1);
+                }
+                self.in_snippet -= 1;
+                return;
+            }
             Node::FootnoteRef(r) => {
                 if let Some(def) = defs.get(n, r.key) {
                     self.use_note(n, def, true);

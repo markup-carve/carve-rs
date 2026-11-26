@@ -509,6 +509,35 @@ impl<'r, 'a> Renderer<'r, 'a> {
         false
     }
 
+    /// C2-H-215: the carriers of the expanded snippet use `n` stands for, under `roundtrip`.
+    fn snippet_tail(&self, n: &Node<'_>) -> Option<String> {
+        self.snippet_tail_at(n.payload_addr())
+    }
+
+    /// [`Self::snippet_tail`] of a node's own struct.
+    fn snippet_tail_of<T>(&self, payload: &T) -> Option<String> {
+        self.snippet_tail_at(std::ptr::from_ref(payload).addr())
+    }
+
+    fn snippet_tail_at(&self, addr: usize) -> Option<String> {
+        if !self.opts.roundtrip {
+            return None;
+        }
+        crate::snippet::expand::with_side(|side| {
+            let c = side?.carriers.get(&addr)?;
+            let mode = if c.block { "block" } else { "inline" };
+            let scope = if c.include {
+                " data-carve-snippet-scope=\"include\""
+            } else {
+                ""
+            };
+            Some(format!(
+                " data-carve-snippet=\"{}:{mode}:${}\"{scope}",
+                c.n, c.name
+            ))
+        })
+    }
+
     fn filter(&self) -> Filter<'r> {
         Filter {
             roundtrip: self.opts.roundtrip,

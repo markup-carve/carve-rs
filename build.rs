@@ -865,7 +865,7 @@ fn walk_bodies(
     props: &Map<String, Value>,
     required: &BTreeSet<String>,
     fam: Fam,
-) -> (String, String) {
+) -> (String, String, String) {
     let arena = fam == Fam::Arena;
     let (r, m) = if arena {
         ("&*", "&mut *")
@@ -879,12 +879,14 @@ fn walk_bodies(
     };
     let mut body = String::new();
     let mut body_mut = String::new();
+    let mut lists = String::new();
     for slot in order {
         let Some(p) = props.get(slot) else { continue };
         let field = rust_ident(slot);
         let req = required.contains(slot);
         match field_kind(slot, p) {
             FieldKind::Nodes if req => {
+                let _ = writeln!(lists, "                f(crate::ast::SlotMut::List(&mut n.{field}));");
                 let _ = writeln!(body, "                for c in {r}n.{field} {{ f(c); }}");
                 let _ = writeln!(
                     body_mut,
@@ -892,6 +894,7 @@ fn walk_bodies(
                 );
             }
             FieldKind::Nodes => {
+                let _ = writeln!(lists, "                if let Some(cs) = &mut n.{field} {{ f(crate::ast::SlotMut::List(cs)); }}");
                 let _ = writeln!(
                     body,
                     "                if let Some(cs) = &n.{field} {{ for c in {cs} {{ f(c); }} }}"
@@ -902,6 +905,7 @@ fn walk_bodies(
                 );
             }
             FieldKind::NodeBox => {
+                let _ = writeln!(lists, "                if let Some(c) = &mut n.{field} {{ f(crate::ast::SlotMut::One(c)); }}");
                 let _ = writeln!(
                     body,
                     "                if let Some(c) = &n.{field} {{ f(c); }}"
@@ -914,7 +918,7 @@ fn walk_bodies(
             _ => {}
         }
     }
-    (body, body_mut)
+    (body, body_mut, lists)
 }
 
 /// The match arms gathered for the accessors of `Node`.
@@ -932,6 +936,8 @@ struct Arms {
     children_slot: String,
     walk: String,
     walk_mut: String,
+    lists: String,
+    addr: String,
 }
 
 /// The signatures of the accessors that differ between the families.
@@ -1094,8 +1100,24 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         }}
         true
     }}
+
+    /// The address of the node's own struct, which stays put when a list is rebuilt around it.
+    #[must_use]
+    pub fn payload_addr(&self) -> usize {{
+        match self {{
+{}        }}
+    }}
+
+    /// Visits every node-bearing slot, a list or a single node, mutable.
+    // generated from the schema
+    #[allow(clippy::cognitive_complexity)]
+    pub fn for_each_slot_mut(&mut self, f: &mut dyn FnMut(crate::ast::SlotMut<'_, 'a>)) {{
+        match self {{
+{}            _ => {{}}
+        }}
+    }}
 ",
-            a.children_slot
+            a.children_slot, a.addr, a.lists
         );
     }
     out.push_str("}\n");
@@ -1219,7 +1241,14 @@ fn write_slots(out: &mut String, defs: &Map<String, Value>, slots: &Value, fam: 
             .filter_map(|v| v.as_str().map(String::from))
             .collect();
         let required = string_set(def.get("required"));
-        let (body, body_mut) = walk_bodies(&order, &props, &required, fam);
+        let (body, body_mut, lists) = walk_bodies(&order, &props, &required, fam);
+        let _ = writeln!(
+            a.addr,
+            "            Self::{ty}(n) => std::ptr::from_ref(&**n).addr(),"
+        );
+        if !lists.is_empty() {
+            let _ = writeln!(a.lists, "            Self::{ty}(n) => {{\n{lists}            }}");
+        }
         if !body.is_empty() {
             let _ = writeln!(
                 a.walk,

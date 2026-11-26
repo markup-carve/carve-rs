@@ -6,8 +6,8 @@ use crate::ast::Attrs;
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-/// The 19 names a roundtrip render reserves (C2-H-115, gap HTML-001).
-pub const RESERVED: [&str; 19] = [
+/// The 23 names a roundtrip render reserves (C2-H-115, gap HTML-001).
+pub const RESERVED: [&str; 23] = [
     "data-marker",
     "data-carve-explicit-id",
     "data-carve-generated-id",
@@ -27,6 +27,10 @@ pub const RESERVED: [&str; 19] = [
     "data-carve-line-block",
     "data-carve-src",
     "data-carve-source-level",
+    "data-carve-snippet",
+    "data-carve-snippet-mark",
+    "data-carve-snippet-scope",
+    "data-carve-snippets",
 ];
 
 /// An attribute value; `None` is a bare name (C2-H-117).
@@ -68,6 +72,8 @@ pub struct El<'a> {
     /// Keys written under another name, in place; an authored key of that
     /// name wins and the renamed one is dropped (C2-H-210).
     pub rename: &'static [(&'static str, &'static str)],
+    /// C2-H-215: the carriers of an expanded snippet use, written last.
+    pub snippet: Option<String>,
 }
 
 /// The render switches the filter reads.
@@ -171,6 +177,9 @@ impl<'a> El<'a> {
             let _ = write!(out, "{n}");
             out.push('"');
         }
+        if let Some(tail) = &self.snippet {
+            out.push_str(tail);
+        }
     }
 
     fn write_class(&self, out: &mut String) {
@@ -200,6 +209,7 @@ impl<'a> El<'a> {
             && self.style_before.is_none()
             && self.style_after.is_empty()
             && self.source_line.is_none()
+            && self.snippet.is_none()
     }
 
     fn merge_style(&self, authored: Option<&str>) -> String {

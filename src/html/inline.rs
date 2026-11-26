@@ -294,10 +294,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match n {
                 Node::Code(c) => {
                     out.push_str("<code");
-                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() {
-                        El::new(c.attrs, c.lang)
-                            .with_dir(c.dir)
-                            .write_into(self.filter(), out);
+                    let snippet = self.snippet_tail(n);
+                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() || snippet.is_some() {
+                        let mut el = El::new(c.attrs, c.lang).with_dir(c.dir);
+                        el.snippet = snippet;
+                        el.write_into(self.filter(), out);
                     }
                     out.push('>');
                     esc::text(c.value, out);
@@ -336,10 +337,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn wrapper_attrs(&self, n: &Node<'_>, out: &mut String) {
         let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
         let small = matches!(n, Node::SmallCaps(_));
-        if attrs.is_none() && lang.is_none() && dir.is_none() && !small {
+        let snippet = self.snippet_tail(n);
+        if attrs.is_none() && lang.is_none() && dir.is_none() && !small && snippet.is_none() {
             return;
         }
         let mut el = El::new(attrs, lang).with_dir(dir);
+        el.snippet = snippet;
         if small {
             el.base.push("smallcaps".into());
         }
@@ -679,6 +682,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .collect();
         let mut el = El::new(s.attrs, s.lang).with_dir(s.dir);
         el.skip_semantic_keys = keys;
+        el.snippet = self.snippet_tail_of(s);
         let Some(((outer, target, value), inner)) = found.split_last() else {
             out.push_str("<span");
             el.write_into(self.filter(), out);
