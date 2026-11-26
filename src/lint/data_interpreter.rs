@@ -6,7 +6,7 @@
     clippy::cast_sign_loss
 )]
 
-use super::data_model::{Records, Subject};
+use super::data_model::{Records, Subject, pick};
 use caseless::Caseless;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
@@ -797,6 +797,20 @@ pub(super) struct Lookup {
     /// The parts of a key that read the record being tested instead of `item`; their values tag the
     /// index, which is built with them (C2-W-141). `None` when one of them cannot be told apart.
     pub context: Option<Vec<Expr>>,
+    pub guard: Option<Guard>,
+}
+
+/// A key `if(test, key, miss)` whose `key` reads only `item` and whose `miss` is a literal. A value
+/// other than `miss` finds exactly the records of `key` that pass `test`, so one index of `key` serves
+/// every record being tested, where the tagged index is built again for each tag.
+#[derive(Debug)]
+pub(super) struct Guard {
+    test: Expr,
+    key: Expr,
+    miss: Expr,
+    site: usize,
+    /// The parts of `test` that read the record being tested; their values key the found records.
+    context: Option<Vec<Expr>>,
 }
 
 impl Lookup {
@@ -836,6 +850,32 @@ fn literal(value: &'static Value) -> Val<'static> {
 }
 
 impl Scope<'_> {
+    fn guard(&self, arg: &'static Value, key: &'static Value) -> Option<Guard> {
+        let [test, item_key, miss] = key.get("if")?.as_array()?.as_slice() else {
+            return None;
+        };
+        let mut parts = Vec::new();
+        if miss.is_object()
+            || miss.is_array()
+            || !key_context(item_key, &mut parts)
+            || !parts.is_empty()
+        {
+            return None;
+        }
+        // A test that reads only `item` leaves the whole key item-only, and its one index serves already.
+        let taggable = key_context(test, &mut parts);
+        if taggable && parts.is_empty() {
+            return None;
+        }
+        Some(Guard {
+            test: self.compile(test),
+            key: self.compile(item_key),
+            miss: self.compile(miss),
+            site: index_site(format!("{} {} {}", arg["over"], arg["types"], item_key)),
+            context: taggable.then(|| parts.into_iter().map(|part| self.compile(part)).collect()),
+        })
+    }
+
     pub fn compile(&self, expr: &'static Value) -> Expr {
         let Some(object) = expr.as_object() else {
             return Expr::Lit(literal(expr));
@@ -1110,6 +1150,7 @@ impl Scope<'_> {
                     key_context(key, &mut parts)
                         .then(|| parts.into_iter().map(|part| self.compile(part)).collect())
                 }),
+                guard: arg.get("key").and_then(|key| self.guard(arg, key)),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
             "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
@@ -1943,10 +1984,13 @@ impl<'a> Eval<'_, 'a> {
     }
 
     fn lookup(&mut self, lookup: &Lookup) -> Val<'a> {
+        if let Some(found) = self.guarded_lookup(lookup) {
+            return found;
+        }
         let id = match &lookup.context {
             Some(parts) if parts.is_empty() => {
                 if !self.records.has_lookup(lookup.site) {
-                    let built = self.build_lookup(lookup, false);
+                    let built = self.build_lookup(lookup, lookup.key.as_ref(), false);
                     self.records.store_lookup(lookup.site, built);
                 }
                 lookup.site
@@ -1964,7 +2008,7 @@ impl<'a> Eval<'_, 'a> {
                 });
                 let (id, build) = self.records.tagged_lookup(lookup.site, tag);
                 if build {
-                    let built = self.build_lookup(lookup, true);
+                    let built = self.build_lookup(lookup, lookup.key.as_ref(), true);
                     self.records.store_lookup(id, built);
                 }
                 id
@@ -1984,6 +2028,18 @@ impl<'a> Eval<'_, 'a> {
                 .collect();
             return Val::List(found.into());
         }
+        let (start, side) = self.lookup_place(lookup);
+        self.records
+            .lookup_at(id, &key, start, side)
+            .map_or(Val::Null, |at| {
+                resolve_from(self.records, lookup.record(at), &lookup.field)
+            })
+    }
+
+    /// The records of a lookup in document order with their starts, by key (C2-W-141).
+    /// With `context` the key reads the record being tested too, so its groups stay in place.
+    /// The start a lookup reads from and its side: -1 before, 1 after, 0 the first.
+    fn lookup_place(&mut self, lookup: &Lookup) -> (usize, i8) {
         let start = match &lookup.from {
             Some(from) => self.value(from),
             None => self.records.subject_field(&self.subject, F::Start),
@@ -1994,16 +2050,68 @@ impl<'a> Eval<'_, 'a> {
         } else {
             i8::from(lookup.after)
         };
-        self.records
-            .lookup_at(id, &key, start, side)
-            .map_or(Val::Null, |at| {
-                resolve_from(self.records, lookup.record(at), &lookup.field)
-            })
+        (start, side)
     }
 
-    /// The records of a lookup in document order with their starts, by key (C2-W-141).
-    /// With `context` the key reads the record being tested too, so its groups stay in place.
-    fn build_lookup(&mut self, lookup: &Lookup, context: bool) -> LookupIndex {
+    /// A lookup through its `Guard`; `None` where the value is the guard's miss.
+    fn guarded_lookup(&mut self, lookup: &Lookup) -> Option<Val<'a>> {
+        let guard = lookup.guard.as_ref()?;
+        let value = lookup
+            .value
+            .as_ref()
+            .map_or(Val::Null, |value| self.value(value));
+        let key = LookupKey::of(&value);
+        let miss = self.value(&guard.miss);
+        if key == LookupKey::of(&miss) {
+            return None;
+        }
+        if !self.records.has_lookup(guard.site) {
+            let built = self.build_lookup(lookup, Some(&guard.key), false);
+            self.records.store_lookup(guard.site, built);
+        }
+        let tag = guard.context.as_ref().and_then(|parts| {
+            parts
+                .iter()
+                .map(|part| {
+                    let value = self.value(part);
+                    matches!(value, Val::Null | Val::Bool(_) | Val::Num(_) | Val::Str(_))
+                        .then(|| LookupKey::of(&value))
+                })
+                .collect::<Option<Vec<_>>>()
+        });
+        let memo = tag.map(|tag| (guard.site, key.clone(), tag));
+        let cached = memo
+            .as_ref()
+            .and_then(|memo| self.records.guarded_found(memo));
+        let found = if let Some(found) = cached {
+            found
+        } else {
+            let before = self.item.take();
+            let mut found = self.records.lookup_list(guard.site, &key);
+            found.retain(|&(_, at)| {
+                self.item = Some(lookup.record(at));
+                self.test(&guard.test)
+            });
+            self.item = before;
+            if let Some(memo) = memo {
+                self.records.store_guarded(memo, found.clone());
+            }
+            found
+        };
+        if lookup.all {
+            let all: Vec<Val<'a>> = found
+                .iter()
+                .map(|&(_, at)| resolve_from(self.records, lookup.record(at), &lookup.field))
+                .collect();
+            return Some(Val::List(all.into()));
+        }
+        let (start, side) = self.lookup_place(lookup);
+        Some(pick(&found, start, side).map_or(Val::Null, |at| {
+            resolve_from(self.records, lookup.record(at), &lookup.field)
+        }))
+    }
+
+    fn build_lookup(&mut self, lookup: &Lookup, key: Option<&Expr>, context: bool) -> LookupIndex {
         let spans = if context {
             self.spans.clone()
         } else {
@@ -2012,7 +2120,7 @@ impl<'a> Eval<'_, 'a> {
         let saved = (self.item.take(), spans);
         let mut index = LookupIndex::default();
         for (at, start) in self.records.lookup_records(lookup.over, &lookup.types) {
-            let key = match &lookup.key {
+            let key = match key {
                 Some(key) => {
                     self.item = Some(lookup.record(at));
                     self.value(key)
@@ -2367,13 +2475,17 @@ fn lookup_site(arg: &'static Value) -> usize {
             _ => true,
         }
     }
-    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let key = &arg["key"];
-    let signature = if item_only(key) {
+    index_site(if item_only(key) {
         format!("{} {} {}", arg["over"], arg["types"], key)
     } else {
         format!("{:p}", std::ptr::from_ref(arg))
-    };
+    })
+}
+
+/// The site number of an index signature, one per distinct signature.
+fn index_site(signature: String) -> usize {
+    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let mut sites = SITES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
