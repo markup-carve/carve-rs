@@ -199,10 +199,14 @@ fn resolve_spans(rows: &mut [Vec<Cell>], groups: &[usize]) {
         let same_group = row > 0 && groups[row] == groups[row - 1];
         let mut current: Vec<(usize, usize)> = Vec::with_capacity(rows[row].len());
         for col in 0..rows[row].len() {
-            let left = col.checked_sub(1).map(|c| current[c]);
+            // C2-X-076: a `<` whose left cell a row span covers from above joins nothing.
+            let left = col.checked_sub(1).and_then(|c| {
+                let covered = rows[row][c].mark == Some(Mark::Up) && current[c] != (row, c);
+                (!covered).then(|| current[c])
+            });
             let up = above.get(col).copied();
             let owner = match rows[row][col].mark {
-                Some(Mark::Left) if left.is_some_and(|l| Some(l) != up) => {
+                Some(Mark::Left) if left.is_some() => {
                     let (r, c) = left.unwrap_or((row, col));
                     rows[row][col].skip = true;
                     rows[r][c].colspan += 1;

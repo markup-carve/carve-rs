@@ -93,6 +93,8 @@ pub(crate) struct CallOptions {
     pub code_group_aria: bool,
     /// `adapter` of the HTML importer (C2-M-102).
     pub adapter: super::ImportAdapter,
+    /// `listTable` of the HTML importer (C2-M-112).
+    pub list_table: bool,
 }
 
 /// Reads the options of a call from a JSON object, refusing an unknown
@@ -313,6 +315,7 @@ fn boolean_slot<'o>(out: &'o mut CallOptions, name: &str) -> Option<&'o mut bool
         "alignTables" => &mut out.write.align_tables,
         "normalize" => &mut out.write.normalize,
         "upgrade" => &mut out.lint.upgrade,
+        "listTable" => &mut out.list_table,
         _ => return None,
     })
 }

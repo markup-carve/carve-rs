@@ -13,34 +13,9 @@ use serde_json::{Value, json};
 
 /// `(entry id, checked field)` of the import clause cases held, each with the clause or cause.
 const HELD: &[(&str, &str)] = &[
-    // carve#6771, #6794, #6795 (carve-rs lines): the listTable import option.
-    ("CC-2156", "children"),
-    ("CC-2159", "children"),
-    ("CC-2160", "children"),
-    ("CC-2161", "children"),
-    ("CC-2162", "children"),
-    ("CC-2163", "children"),
-    ("CC-2177", "children"),
-    ("CC-2178", "children"),
-    ("CC-2179", "children"),
-    ("CC-2180", "children"),
-    ("CC-2181", "children"),
-    ("CC-2182", "children"),
-    ("CC-2183", "children"),
-    ("CC-2184", "children"),
-    ("CC-2161", "diagnostic:import-structure-repaired"),
-    ("CC-2163", "diagnostic:import-attribute-dropped"),
     // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
     // a `Copy` type whose shape this round keeps.
     ("CC-1260", "imported"),
-    // carve#6853 (carve-rs line): the listTable import option skips an empty row.
-    ("CC-2433", "children"),
-    ("CC-2433", "diagnostic:import-structure-repaired"),
-    ("CC-2434", "children"),
-    ("CC-2434", "diagnostic:import-structure-repaired"),
-    ("CC-2435", "children"),
-    ("CC-2435", "diagnostic:import-structure-repaired"),
-    ("CC-2436", "children"),
     // carve#6844 (carve-rs line): the importer reads `data-carve-loose`.
     ("CC-2441", "children"),
     ("CC-2443", "children"),
@@ -95,6 +70,7 @@ fn options(v: &Value) -> Result<ImportOptions, Error> {
             .as_str()
             .and_then(api::ImportAdapter::from_name)
             .unwrap_or_default(),
+        list_table: v["listTable"].as_bool().unwrap_or(false),
     })
 }
 
