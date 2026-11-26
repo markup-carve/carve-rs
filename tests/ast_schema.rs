@@ -1,13 +1,23 @@
 //! C2-A-165: the generated node types read and write every oracle tree of the
 //! specification examples without losing a field.
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::ast::owned::Node;
+use holds::{Gate, Holds};
+
+/// `(example id, cause)` of the oracle trees.
+const ORACLE_HELD: Holds = &[];
+
+/// `(tree id, cause)` of the supplied trees.
+const SUPPLIED_HELD: Holds = &[];
 
 #[test]
 fn c2_a_165_generated_types_round_trip_oracle_trees() {
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("oracle trees", ORACLE_HELD);
     for ex in common::examples() {
+        let mut failures = Vec::new();
         match serde_json::from_value::<Node>(ex.oracle_tree.clone()) {
             Ok(node) => {
                 let back = serde_json::to_value(&node).unwrap_or_default();
@@ -24,8 +34,9 @@ fn c2_a_165_generated_types_round_trip_oracle_trees() {
             }
             Err(e) => failures.push(format!("{}: {e}", ex.id)),
         }
+        gate.problems(&ex.id, &failures);
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 /// The supplied trees of the tree gate (`spec-trees/nodes.json`) read into the
@@ -38,9 +49,10 @@ fn c2_a_165_generated_types_round_trip_supplied_trees() {
     ))
     .unwrap();
     let v = common::parse_json(&text);
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("supplied trees", SUPPLIED_HELD);
     for t in v["trees"].as_array().into_iter().flatten() {
         let id = t["id"].as_str().unwrap_or("");
+        let mut failures = Vec::new();
         match serde_json::from_value::<Node>(t["tree"].clone()) {
             Ok(node) => {
                 let back = serde_json::to_value(&node).unwrap_or_default();
@@ -50,6 +62,7 @@ fn c2_a_165_generated_types_round_trip_supplied_trees() {
             }
             Err(e) => failures.push(format!("{id}: {e}")),
         }
+        gate.problems(id, &failures);
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }

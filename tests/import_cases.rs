@@ -3,12 +3,15 @@
 //! trees and records. The `carve` source of an entry is not compared: the
 //! source comes from the `carve` writer, which this engine does not have yet.
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::api::{self, Entry, Error, ImportOptions, Imported};
 use common::{parse_json, sorted};
+use holds::Gate;
 use serde_json::{Value, json};
 
-/// `(entry id, checked field)` held, each with the clause or cause.
+/// `(entry id, checked field)` of the import clause cases held, each with the clause or cause.
 const HELD: &[(&str, &str)] = &[
     // carve#6771, #6794, #6795 (carve-rs lines): the listTable import option.
     ("CC-2156", "children"),
@@ -41,9 +44,10 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2207", "children"),
     ("CC-2207", "diagnostic:image-alt-unknown"),
     ("CC-2208", "children"),
-    // carve#6850: CC-1425 predates C2-M-109 moving a dropped wrapper's comments out.
-    ("CC-1425", "notReported:import-element-dropped"),
 ];
+
+/// `(entry id, checked field)` of the import examples held.
+const EXAMPLES_HELD: &[(&str, &str)] = &[];
 
 /// The import entries that carry an expected `carve` source (not compared).
 const WITH_CARVE_CLAUSE: &[&str] = &[
@@ -116,41 +120,8 @@ fn children(imported: &Imported) -> Value {
         .clone()
 }
 
-#[derive(Default)]
-struct Run {
-    pass: usize,
-    held: usize,
-    failures: Vec<String>,
-}
-
-impl Run {
-    fn check(&mut self, id: &str, field: &str, ok: bool, detail: impl FnOnce() -> String) {
-        let held = HELD.iter().any(|&(h, f)| h == id && f == field);
-        match (ok, held) {
-            (true, false) => self.pass += 1,
-            (false, true) => self.held += 1,
-            (true, true) => self
-                .failures
-                .push(format!("=== {id} {field}: held but passes; drop the hold")),
-            (false, false) => self
-                .failures
-                .push(format!("=== {id} {field}\n{}", detail())),
-        }
-    }
-
-    fn finish(self, name: &str) {
-        println!(
-            "{name}: {} checks pass, {} held, {} fail",
-            self.pass,
-            self.held,
-            self.failures.len()
-        );
-        assert!(self.failures.is_empty(), "{}", self.failures.join("\n"));
-    }
-}
-
 fn check_entry(
-    run: &mut Run,
+    run: &mut Gate,
     id: &str,
     html: &str,
     opts: Result<ImportOptions, Error>,
@@ -160,7 +131,7 @@ fn check_entry(
     if let Some(want) = expected.get("refusal") {
         let name = want["error"].as_str().unwrap_or("");
         let got = result.as_ref().err().map(Error::spec_name);
-        run.check(id, "refusal", got == Some(name), || {
+        run.check_field(id, "refusal", got == Some(name), || {
             format!("expected {name}; got {:?}", result.as_ref().err())
         });
         return;
@@ -168,20 +139,20 @@ fn check_entry(
     let imported = match result {
         Ok(i) => i,
         Err(e) => {
-            run.check(id, "imported", false, || format!("refused: {e}"));
+            run.check_field(id, "imported", false, || format!("refused: {e}"));
             return;
         }
     };
     if let Some(want) = expected.get("children") {
         let got = children(&imported);
         let (want, got) = (sorted(want), sorted(&got));
-        run.check(id, "children", want == got, || {
+        run.check_field(id, "children", want == got, || {
             format!("{html}\n--- expected\n{want}\n--- got\n{got}")
         });
     }
     for d in expected["diagnostics"].as_array().into_iter().flatten() {
         let code = d.as_str().or_else(|| d["code"].as_str()).unwrap_or("");
-        run.check(
+        run.check_field(
             id,
             &format!("diagnostic:{code}"),
             imported.diagnostics.iter().any(|g| agrees(d, g, html)),
@@ -194,7 +165,7 @@ fn check_entry(
         .flatten()
         .filter_map(Value::as_str)
     {
-        run.check(
+        run.check_field(
             id,
             &format!("notReported:{code}"),
             !imported.diagnostics.iter().any(|g| g.code == code),
@@ -206,7 +177,7 @@ fn check_entry(
 #[test]
 fn c2_m_import_clause_cases() {
     let corpus = load("clause-cases.json");
-    let mut run = Run::default();
+    let mut run = Gate::by_field("import-clause-cases", HELD);
     let mut with_carve = Vec::new();
     for c in corpus["cases"].as_array().into_iter().flatten() {
         if c["kind"] != "import" {
@@ -221,13 +192,13 @@ fn c2_m_import_clause_cases() {
     }
     println!("clause cases expecting carve source (not compared): {with_carve:?}");
     assert_eq!(with_carve, WITH_CARVE_CLAUSE);
-    run.finish("import-clause-cases");
+    run.finish();
 }
 
 #[test]
 fn c2_m_import_examples() {
     let corpus = load("examples.json");
-    let mut run = Run::default();
+    let mut run = Gate::by_field("import-examples", EXAMPLES_HELD);
     let mut with_carve = 0;
     for e in corpus["examples"].as_array().into_iter().flatten() {
         if e["kind"] != "import" {
@@ -241,7 +212,7 @@ fn c2_m_import_examples() {
         check_entry(&mut run, id, html, options(&e["options"]), &e["expected"]);
     }
     println!("examples expecting carve source (not compared): {with_carve}");
-    run.finish("import-examples");
+    run.finish();
 }
 
 #[test]

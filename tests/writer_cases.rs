@@ -2,14 +2,17 @@
 //! `carve::api`: the `write` and `format` clause cases, the `write` examples,
 //! the writer trees and the gates C2-W-002 and C2-W-003 on the render examples.
 //! A case this engine cannot pass is held below with its reason; a held case
-//! that passes fails the run, so the hold goes when the writer is fixed.
+//! that passes, or that its runner never sees, fails the run (`support/holds.rs`).
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::api::{
     self, Carve, EncodeOptions, Entry, Error, Options, Profile, WriteOptions, Written,
 };
+use holds::{Gate, Holds};
 use serde_json::Value;
 
-/// `(entry id, reason)`.
+/// `(entry id, reason)` of the `write` and `format` clause cases.
 const HELD: &[(&str, &str)] = &[
     // carve#6772 (carve-rs line): the escape rounds read references from the tree.
     ("CC-2166", "carve#6772"),
@@ -73,6 +76,15 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2389", "carve#6395: named snippets"),
 ];
 
+/// `(example id, reason)` of the `write` examples.
+const EXAMPLES_HELD: Holds = &[];
+
+/// `(tree id, reason)` of the writer trees.
+const TREES_HELD: Holds = &[];
+
+/// `(example id, reason)` of the C2-W-002 and C2-W-003 gates on the render examples.
+const ROUND_TRIP_HELD: Holds = &[];
+
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
         .unwrap_or_default();
@@ -101,49 +113,6 @@ fn options(v: &Value) -> WriteOptions {
         };
     }
     o
-}
-
-struct Group {
-    name: &'static str,
-    pass: usize,
-    held: usize,
-    failures: Vec<String>,
-}
-
-impl Group {
-    fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            pass: 0,
-            held: 0,
-            failures: Vec::new(),
-        }
-    }
-
-    fn check(&mut self, id: &str, problems: &[String]) {
-        let held = HELD.iter().any(|(h, _)| *h == id);
-        match (problems.is_empty(), held) {
-            (true, false) => self.pass += 1,
-            (false, true) => self.held += 1,
-            (true, true) => self
-                .failures
-                .push(format!("=== {id}: held but passes; drop the hold")),
-            (false, false) => self
-                .failures
-                .push(format!("=== {id}\n{}", problems.join("\n"))),
-        }
-    }
-
-    fn finish(self) -> Vec<String> {
-        println!(
-            "{}: {} pass, {} held, {} fail",
-            self.name,
-            self.pass,
-            self.held,
-            self.failures.len()
-        );
-        self.failures
-    }
 }
 
 fn entry_agrees(want: &Value, got: &Entry) -> bool {
@@ -314,11 +283,8 @@ fn include_code_mode_writes_before_selection_and_transform_options() {
 #[test]
 fn writer_clause_cases() {
     let carve = Carve::new();
-    let mut failures = Vec::new();
-
     let cases = load("spec-conformance/clause-cases.json");
-    let mut writes = Group::new("write cases");
-    let mut formats = Group::new("format cases");
+    let mut gate = Gate::new("write and format cases", HELD);
     for c in cases["cases"].as_array().into_iter().flatten() {
         let id = c["id"].as_str().unwrap_or("");
         let expected = &c["expected"];
@@ -346,7 +312,7 @@ fn writer_clause_cases() {
                         }
                     }
                 }
-                writes.check(id, &problems);
+                gate.problems(id, &problems);
             }
             Some("format") => {
                 let input = c["input"].as_str().unwrap_or("");
@@ -362,21 +328,19 @@ fn writer_clause_cases() {
                         &mut problems,
                     );
                 }
-                formats.check(id, &problems);
+                gate.problems(id, &problems);
             }
             _ => {}
         }
     }
-    failures.extend(writes.finish());
-    failures.extend(formats.finish());
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 #[test]
 fn writer_examples() {
     let carve = Carve::new();
     let examples = load("spec-conformance/examples.json");
-    let mut group = Group::new("write examples");
+    let mut gate = Gate::new("write examples", EXAMPLES_HELD);
     for e in examples["examples"]
         .as_array()
         .into_iter()
@@ -396,17 +360,16 @@ fn writer_examples() {
                 problems.push("the expected source does not read back as the input".into());
             }
         }
-        group.check(id, &problems);
+        gate.problems(id, &problems);
     }
-    let failures = group.finish();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 #[test]
 fn writer_trees() {
     let carve = Carve::new();
     let trees = load("spec-trees/examples-writer.json");
-    let mut group = Group::new("writer trees");
+    let mut gate = Gate::new("writer trees", TREES_HELD);
     for t in trees["trees"].as_array().into_iter().flatten() {
         let id = t["id"].as_str().unwrap_or("");
         let source = t["source"].as_str().unwrap_or("");
@@ -424,10 +387,9 @@ fn writer_trees() {
                 Ok(w) => problems.push(format!("losses {:?}", codes(&w.diagnostics))),
             },
         }
-        group.check(id, &problems);
+        gate.problems(id, &problems);
     }
-    let failures = group.finish();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 /// C2-W-002 and C2-W-003 on every render example: `parse(fmt(x)) == parse(x)`
@@ -437,7 +399,7 @@ fn writer_trees() {
 fn format_round_trips_render_examples() {
     let carve = Carve::new();
     let examples = load("spec-conformance/examples.json");
-    let mut group = Group::new("round-trip");
+    let mut gate = Gate::new("round-trip", ROUND_TRIP_HELD);
     let mut refused = 0;
     for e in examples["examples"]
         .as_array()
@@ -474,9 +436,8 @@ fn format_round_trips_render_examples() {
                 }
             }
         }
-        group.check(id, &problems);
+        gate.problems(id, &problems);
     }
     println!("round-trip: {refused} refused with a loss report");
-    let failures = group.finish();
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }

@@ -1,9 +1,17 @@
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::reader::{TreeError, read_tree_value};
+use holds::{Gate, Holds};
 use serde::Deserialize as _;
 use serde_json::Value;
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_x_031_038_046_registered_extension_refusals_name_the_node() {
+    let mut gate = Gate::new("registered extension refusals", HELD);
     let text = include_str!("../spec-conformance/clause-cases.json");
     let mut parser = serde_json::Deserializer::from_str(text);
     parser.disable_recursion_limit();
@@ -15,6 +23,7 @@ fn c2_x_031_038_046_registered_extension_refusals_name_the_node() {
             .iter()
             .find(|case| case["id"] == id)
             .expect("clause case");
+        gate.case(id, || {
         let expected = case["expected"]["refusal"]["path"]
             .as_str()
             .expect("refusal path");
@@ -23,7 +32,9 @@ fn c2_x_031_038_046_registered_extension_refusals_name_the_node() {
             matches!(&result, Err(TreeError::Reader { path, .. } | TreeError::Schema { path, .. }) if path.starts_with(expected)),
             "{id}: {result:?}"
         );
+        });
     }
+    gate.finish();
 }
 
 #[test]

@@ -2,18 +2,22 @@
 //! copy of `spec/0.2/conformance/` at `spec-data/SOURCE_COMMIT`) as the gate of
 //! this engine. Every entry of a kind the engine implements passes, or is held
 //! below with the clause that shows the corpus wrong; a held entry must keep
-//! failing, so the hold goes when the corpus is corrected.
+//! failing and be a case of its runner (`support/holds.rs`).
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::include::{Cause, Includes, Request};
 use carve::options::{HeadingIds, Options, Profile, SoftBreak, UrlPolicy};
 use common::{parse_json, sorted};
+use holds::Gate;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// C2-T-005: `(entry id, checked field)` held outside the core stage.
-const HELD: &[(&str, &str)] = &[
+/// C2-T-005: `(entry id, checked field)` of `c2_conformance_clause_cases` held outside the
+/// core stage.
+const CLAUSE_HELD: &[(&str, &str)] = &[
     // C2-H-206, C2-H-207: `codeBlockRenderer` is a host function this engine does not take yet.
     ("CC-1272", "html"),
     ("CC-1274", "html"),
@@ -53,28 +57,45 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2357", "html"),
     ("CC-2358", "html"),
     ("CC-2360", "html"),
-    ("CC-2365", "diagnostic:duplicate-snippet"),
     ("CC-2365", "html"),
-    ("CC-2366", "diagnostic:duplicate-snippet"),
     ("CC-2366", "html"),
-    ("CC-2367", "diagnostic:snippet-unresolved"),
     ("CC-2368", "html"),
-    ("CC-2369", "diagnostic:snippet-cycle"),
     ("CC-2369", "html"),
-    ("CC-2370", "diagnostic:snippet-cycle"),
     ("CC-2370", "html"),
     ("CC-2371", "html"),
     ("CC-2373", "html"),
     ("CC-2374", "html"),
     ("CC-2375", "html"),
-    ("CC-2376", "diagnostic:snippet-unresolved"),
     ("CC-2381", "html"),
-    ("CC-2382", "diagnostic:snippet-depth"),
     ("CC-2382", "html"),
     ("CC-2390", "html"),
     ("CC-2391", "html"),
     ("CC-2392", "html"),
 ];
+
+/// `(entry id, checked field)` of `c2_t_005_parse_and_render_clause_diagnostics` held.
+const DIAGNOSTICS_HELD: &[(&str, &str)] = &[
+    // carve#6395: named snippets, `{$name}:` definitions and `{{ $name }}` uses.
+    ("CC-2365", "diagnostic:duplicate-snippet"),
+    ("CC-2366", "diagnostic:duplicate-snippet"),
+    ("CC-2367", "diagnostic:snippet-unresolved"),
+    ("CC-2369", "diagnostic:snippet-cycle"),
+    ("CC-2370", "diagnostic:snippet-cycle"),
+    ("CC-2376", "diagnostic:snippet-unresolved"),
+    ("CC-2382", "diagnostic:snippet-depth"),
+];
+
+/// `(entry id, checked field)` of `c2_conformance_examples` held.
+const EXAMPLES_HELD: &[(&str, &str)] = &[];
+
+/// `(entry id, checked field)` of `c2_t_005_tree_clause_cases` held.
+const TREE_CASES_HELD: &[(&str, &str)] = &[];
+
+/// `(entry id, checked field)` of `c2_t_005_core_render_refusals` held.
+const REFUSALS_HELD: &[(&str, &str)] = &[];
+
+/// `(tree id, checked field)` of `c2_a_tree_gate_fixtures` held.
+const TREES_HELD: &[(&str, &str)] = &[];
 
 /// A case with extensions or a host runs through the JSON boundary in
 /// `api_standard.rs`, not through the core calls of this gate.
@@ -253,47 +274,25 @@ fn has_pos(v: &Value) -> bool {
     }
 }
 
-struct Run {
-    pass: usize,
-    failures: Vec<String>,
-    held_failing: Vec<(String, String)>,
-}
+/// One runner of this gate; `CORPUS_FAILURES` names a directory for its failure list.
+struct Run(Gate);
 
 impl Run {
     fn check(&mut self, id: &str, field: &str, ok: bool, detail: impl FnOnce() -> String) {
-        let held = HELD.iter().any(|&(h, f)| h == id && f == field);
-        match (ok, held) {
-            (true, false) => self.pass += 1,
-            (false, true) => self.held_failing.push((id.into(), field.into())),
-            (true, true) => self
-                .failures
-                .push(format!("=== {id} {field}: held but passes; drop the hold")),
-            (false, false) => self
-                .failures
-                .push(format!("=== {id} {field}\n{}", detail())),
-        }
+        self.0.check_field(id, field, ok, detail);
     }
 
     fn finish(self, name: &str) {
-        println!(
-            "{name}: {} checks pass, {} held, {} fail",
-            self.pass,
-            self.held_failing.len(),
-            self.failures.len()
-        );
+        let judged = self.0.judge();
         if let Ok(dir) = std::env::var("CORPUS_FAILURES") {
-            let _ = std::fs::write(format!("{dir}/{name}.txt"), self.failures.join("\n"));
+            let _ = std::fs::write(format!("{dir}/{name}.txt"), judged.lines().join("\n"));
         }
-        assert!(self.failures.is_empty(), "{} failures", self.failures.len());
+        judged.assert();
     }
 }
 
-fn run() -> Run {
-    Run {
-        pass: 0,
-        failures: Vec::new(),
-        held_failing: Vec::new(),
-    }
+fn run(name: &str, holds: &[(&str, &str)]) -> Run {
+    Run(Gate::by_field(name, holds))
 }
 
 fn diagnostics(run: &mut Run, id: &str, want: &Value, got: &[String]) {
@@ -315,7 +314,7 @@ fn diagnostics(run: &mut Run, id: &str, want: &Value, got: &[String]) {
 #[test]
 fn c2_conformance_examples() {
     let corpus = load("examples.json");
-    let mut run = run();
+    let mut run = run("examples", EXAMPLES_HELD);
     let mut later = 0;
     for e in corpus["examples"].as_array().into_iter().flatten() {
         let id = e["id"].as_str().unwrap_or("");
@@ -374,7 +373,7 @@ fn c2_conformance_examples() {
 #[test]
 fn c2_conformance_clause_cases() {
     let corpus = load("clause-cases.json");
-    let mut run = run();
+    let mut run = run("clause-cases", CLAUSE_HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         if c["kind"].as_str().is_some_and(|kind| LATER.contains(&kind)) || through_host(c) {
             continue;
@@ -413,7 +412,7 @@ fn c2_conformance_clause_cases() {
 #[test]
 fn c2_t_005_tree_clause_cases() {
     let corpus = load("clause-cases.json");
-    let mut run = run();
+    let mut run = run("tree-clause-cases", TREE_CASES_HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         if c["kind"] != "tree" {
             continue;
@@ -515,7 +514,7 @@ fn diagnostic_agrees(want: &Value, got: &carve::diagnostic::Diagnostic) -> bool 
 #[test]
 fn c2_t_005_parse_and_render_clause_diagnostics() {
     let corpus = load("clause-cases.json");
-    let mut run = run();
+    let mut run = run("clause-diagnostics", DIAGNOSTICS_HELD);
     for c in corpus["cases"].as_array().into_iter().flatten() {
         let kind = c["kind"].as_str().unwrap_or("render");
         if kind != "parse" && kind != "render" || through_host(c) {
@@ -579,7 +578,7 @@ fn c2_t_005_parse_and_render_clause_diagnostics() {
 #[test]
 fn c2_t_005_core_render_refusals() {
     let corpus = load("clause-cases.json");
-    let mut run = run();
+    let mut run = run("core-refusals", REFUSALS_HELD);
     for id in ["CC-512", "CC-513", "CC-514"] {
         let c = corpus["cases"]
             .as_array()
@@ -604,7 +603,7 @@ fn c2_t_005_core_render_refusals() {
 /// gate of `ast.md` reads them: each source gives its tree with positions.
 #[test]
 fn c2_a_tree_gate_fixtures() {
-    let mut run = run();
+    let mut run = run("trees", TREES_HELD);
     for name in [
         "examples-syntax-blocks",
         "examples-syntax-inline",

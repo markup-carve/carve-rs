@@ -1,7 +1,11 @@
 //! `migrateTree` (carve-rs#4335): the migrate clause cases and the JSON
 //! boundary call.
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, MigrateOptions, json::call};
+use holds::{Gate, Holds};
 use serde_json::{Value, json};
 
 fn corpus() -> Value {
@@ -15,35 +19,43 @@ fn corpus() -> Value {
     serde::Deserialize::deserialize(&mut de).unwrap()
 }
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_a_178_migrate_clause_cases() {
+    let mut gate = Gate::new("migrate clause cases", HELD);
     let mut seen = 0;
     for c in corpus()["cases"].as_array().unwrap() {
         if c["kind"] != "migrate" {
             continue;
         }
         seen += 1;
-        let source = c["options"]["source"].as_str().map(str::to_string);
-        let migrated = api::migrate_tree_with(&c["tree"], &MigrateOptions { source })
-            .unwrap_or_else(|e| panic!("{}: {e}", c["id"]));
-        let mut got: Value = serde_json::from_str(&api::encode_tree(&migrated.tree)).unwrap();
-        let mut want = c["expected"]["tree"].clone();
-        // C2-A-162: equality skips srcByteLength, and pos where the case states none.
-        let positions = want.to_string().contains("\"pos\"");
-        for tree in [&mut got, &mut want] {
-            geometry(tree, positions);
-        }
-        assert_eq!(got, want, "{}", c["id"]);
-        if let Some(want) = c["expected"]["diagnostics"].as_array() {
-            let codes: Vec<&str> = migrated
-                .diagnostics
-                .iter()
-                .map(|d| d.code.as_str())
-                .collect();
-            let wanted: Vec<&str> = want.iter().filter_map(|d| d["code"].as_str()).collect();
-            assert_eq!(codes, wanted, "{}", c["id"]);
-        }
+        let id = c["id"].as_str().unwrap_or("");
+        gate.case(id, || {
+            let source = c["options"]["source"].as_str().map(str::to_string);
+            let migrated = api::migrate_tree_with(&c["tree"], &MigrateOptions { source })
+                .unwrap_or_else(|e| panic!("{}: {e}", c["id"]));
+            let mut got: Value = serde_json::from_str(&api::encode_tree(&migrated.tree)).unwrap();
+            let mut want = c["expected"]["tree"].clone();
+            // C2-A-162: equality skips srcByteLength, and pos where the case states none.
+            let positions = want.to_string().contains("\"pos\"");
+            for tree in [&mut got, &mut want] {
+                geometry(tree, positions);
+            }
+            assert_eq!(got, want, "{}", c["id"]);
+            if let Some(want) = c["expected"]["diagnostics"].as_array() {
+                let codes: Vec<&str> = migrated
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.code.as_str())
+                    .collect();
+                let wanted: Vec<&str> = want.iter().filter_map(|d| d["code"].as_str()).collect();
+                assert_eq!(codes, wanted, "{}", c["id"]);
+            }
+        });
     }
+    gate.finish();
     assert_eq!(seen, 5);
 }
 

@@ -2,15 +2,23 @@
 //! carve-rs#4346): positionOf, diffTree, applyPatch, the fingerprints,
 //! headingId and the package facts.
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, HeadingIds, Options, json::call};
+use holds::{Gate, Holds};
 use serde_json::{Value, json};
 
 fn reply(request: &Value) -> Value {
     serde_json::from_str(&call(&request.to_string())).unwrap()
 }
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_t_041_position_clause_cases() {
+    let mut gate = Gate::new("position clause cases", HELD);
     let path = format!(
         "{}/spec-conformance/clause-cases.json",
         env!("CARGO_MANIFEST_DIR")
@@ -25,34 +33,38 @@ fn c2_t_041_position_clause_cases() {
             continue;
         }
         seen += 1;
-        let mut request = json!({"call": "positionOf", "offset": c["offset"]});
-        if let Some(text) = c["input"].as_str() {
-            request["source"] = text.into();
-        } else {
-            let bytes: Vec<u8> = c["inputBytes"]
-                .as_str()
-                .unwrap()
-                .split_whitespace()
-                .map(|h| u8::from_str_radix(h, 16).unwrap())
-                .collect();
-            request["sourceBytes"] = json!(bytes);
-        }
-        let got = reply(&request);
-        let want = &c["expected"];
-        if let Some(refusal) = want.get("refusal") {
-            assert_eq!(got["error"]["name"], refusal["error"], "{}", c["id"]);
-            assert_eq!(refusal["path"], "/offset");
-            assert!(
-                got["error"]["message"]
+        let id = c["id"].as_str().unwrap_or("");
+        gate.case(id, || {
+            let mut request = json!({"call": "positionOf", "offset": c["offset"]});
+            if let Some(text) = c["input"].as_str() {
+                request["source"] = text.into();
+            } else {
+                let bytes: Vec<u8> = c["inputBytes"]
                     .as_str()
                     .unwrap()
-                    .starts_with("option offset")
-            );
-        } else {
-            assert_eq!(got["ok"]["line"], want["line"], "{}", c["id"]);
-            assert_eq!(got["ok"]["column"], want["column"], "{}", c["id"]);
-        }
+                    .split_whitespace()
+                    .map(|h| u8::from_str_radix(h, 16).unwrap())
+                    .collect();
+                request["sourceBytes"] = json!(bytes);
+            }
+            let got = reply(&request);
+            let want = &c["expected"];
+            if let Some(refusal) = want.get("refusal") {
+                assert_eq!(got["error"]["name"], refusal["error"], "{}", c["id"]);
+                assert_eq!(refusal["path"], "/offset");
+                assert!(
+                    got["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("option offset")
+                );
+            } else {
+                assert_eq!(got["ok"]["line"], want["line"], "{}", c["id"]);
+                assert_eq!(got["ok"]["column"], want["column"], "{}", c["id"]);
+            }
+        });
     }
+    gate.finish();
     assert_eq!(seen, 15);
 }
 

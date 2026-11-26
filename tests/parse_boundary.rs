@@ -2,8 +2,12 @@
 //! its own JSON back through the tree reader (carve-rs#4336). The tree must
 //! be the one the reader gives for that JSON.
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, Options};
 use carve::include::{Cause, Includes, Request};
+use holds::{Gate, Holds};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -24,8 +28,12 @@ fn same_as_reader(input: &str, opts: &Options) {
     );
 }
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn every_clause_case_input_gives_the_reader_tree() {
+    let mut gate = Gate::new("clause case inputs", HELD);
     let mut de =
         serde_json::Deserializer::from_str(include_str!("../spec-conformance/clause-cases.json"));
     de.disable_recursion_limit();
@@ -33,10 +41,12 @@ fn every_clause_case_input_gives_the_reader_tree() {
     let mut n = 0;
     for case in cases["cases"].as_array().unwrap() {
         if let Some(input) = case["input"].as_str() {
-            same_as_reader(input, &Options::default());
+            let id = case["id"].as_str().unwrap_or("");
+            gate.case(id, || same_as_reader(input, &Options::default()));
             n += 1;
         }
     }
+    gate.finish();
     assert!(n > 900);
 }
 

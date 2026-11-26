@@ -1,12 +1,15 @@
 //! PROVISIONAL standard extension `carve.tabs` through the JSON boundary
 //! (C2-X-039 to C2-X-048, C2-X-056), driven by the clause cases that enable it.
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::api;
 use common::{parse_json, sorted};
+use holds::Gate;
 use serde_json::{Value, json};
 
-/// Cases held, each with its cause; a held case must keep failing.
+/// Cases held, each with its cause; a held case must keep failing and be a case of the runner.
 #[rustfmt::skip]
 const HELD: &[&str] = &[
     // carve#6795 (carve-rs line): no `<` join beside a cell covered from above.
@@ -113,16 +116,13 @@ fn pinned_cases() -> Vec<Value> {
 fn c2_x_039_the_pinned_tabs_cases() {
     let cases = pinned_cases();
     assert!(cases.len() >= 20, "{}", cases.len());
-    let mut failures = Vec::new();
+    let mut gate = Gate::by_id("extension clause cases", HELD);
     for case in &cases {
         let id = case["id"].as_str().unwrap_or("");
-        match (check(case), HELD.contains(&id)) {
-            (Some(failure), false) => failures.push(failure),
-            (None, true) => failures.push(format!("{id}: held but passes; drop the hold")),
-            _ => {}
-        }
+        let failure = check(case);
+        gate.check(id, failure.is_none(), || failure.unwrap_or_default());
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }
 
 /// Ruling D6 (carve#6070): clause cases of the spec after the engine pin.

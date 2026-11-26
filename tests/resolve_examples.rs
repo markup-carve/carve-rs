@@ -1,9 +1,12 @@
 //! C2-A-133: resolving each oracle tree with its result fields stripped gives
 //! the oracle tree back.
 mod common;
+#[path = "support/holds.rs"]
+mod holds;
 
 use carve::ast::owned::Node;
 use carve::options::Options;
+use holds::{Gate, Holds};
 use serde_json::Value;
 
 pub fn options_of(opts: &Value) -> Options {
@@ -17,10 +20,12 @@ pub fn options_of(opts: &Value) -> Options {
     o
 }
 
+/// `(example id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn c2_a_133_resolve_restores_the_oracle_results() {
-    let mut pass = 0;
-    let mut failures = Vec::new();
+    let mut gate = Gate::new("resolve examples", HELD);
     let all = common::examples();
     assert!(all.len() > 400, "corpus not read");
     for ex in &all {
@@ -28,19 +33,18 @@ fn c2_a_133_resolve_restores_the_oracle_results() {
         let mut stripped = expected.clone();
         common::strip_results(&mut stripped);
         let Ok(Node::Document(doc)) = serde_json::from_value::<Node>(stripped) else {
-            failures.push(format!("{}: no document", ex.id));
+            gate.check(&ex.id, false, || "no document".into());
             continue;
         };
         let arena = carve::Arena::new();
         let mut doc = doc.in_arena(&arena);
         carve::resolve::resolve(&mut doc, &options_of(&ex.opts), &arena);
         let back = serde_json::to_value(Node::Document(Box::new(doc.owned()))).unwrap_or_default();
-        if common::sorted(&back) == common::sorted(expected) {
-            pass += 1;
-        } else {
-            failures.push(ex.id.clone());
-        }
+        gate.check(
+            &ex.id,
+            common::sorted(&back) == common::sorted(expected),
+            || "the resolved tree differs".into(),
+        );
     }
-    println!("resolve: {pass}/{} pass", all.len());
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    gate.finish();
 }

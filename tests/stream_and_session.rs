@@ -3,12 +3,16 @@
 
 mod common;
 
+#[path = "support/holds.rs"]
+mod holds;
+
 use carve::api::{self, Options};
 use carve::{
     StreamOutcome, TextChange, parse_snapshot, parse_snapshot_with_identity, reparse,
     try_render_html_streaming,
 };
 use common::{options_of, parse_json};
+use holds::{Gate, Holds};
 use serde_json::Value;
 
 fn clause_cases() -> Vec<Value> {
@@ -36,22 +40,30 @@ fn fresh(source: &str) -> (api::Document, String) {
     (parsed.tree.into_document(), parsed.layout.to_string())
 }
 
+/// `(case id, cause)`.
+const HELD: Holds = &[];
+
 #[test]
 fn streaming_equals_the_render_over_the_clause_cases() {
+    let mut gate = Gate::new("streamed clause cases", HELD);
     let cases = clause_cases();
     assert!(cases.len() > 500, "{}", cases.len());
     for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
         let input = case["input"].as_str().unwrap_or_default();
         let options = options_of(&case["options"]);
-        let (outcome, chunks) = streamed(input, &options);
-        if let Ok(html) = api::render(input, &options) {
-            assert_eq!(outcome, StreamOutcome::Complete, "{}", case["id"]);
-            assert_eq!(chunks.concat(), html, "{}", case["id"]);
-        } else {
-            assert_eq!(outcome, StreamOutcome::NeedsAst, "{}", case["id"]);
-            assert!(chunks.is_empty(), "{}", case["id"]);
-        }
+        gate.case(id, || {
+            let (outcome, chunks) = streamed(input, &options);
+            if let Ok(html) = api::render(input, &options) {
+                assert_eq!(outcome, StreamOutcome::Complete, "{}", case["id"]);
+                assert_eq!(chunks.concat(), html, "{}", case["id"]);
+            } else {
+                assert_eq!(outcome, StreamOutcome::NeedsAst, "{}", case["id"]);
+                assert!(chunks.is_empty(), "{}", case["id"]);
+            }
+        });
     }
+    gate.finish();
 }
 
 #[test]
