@@ -171,7 +171,7 @@ fn c2_b_227_invalid_and_inapplicable_counts_stay_in_attrs() {
     let t = tree(src);
     assert_eq!(
         t["children"][0]["attrs"]["keyValues"],
-        serde_json::json!([["header-rows", "2"], ["footer-rows", "x"]])
+        serde_json::json!([["footer-rows", "x"]])
     );
     let html = render(src, &Options::default());
     assert!(!html.contains("header-rows=") && !html.contains("footer-rows="));

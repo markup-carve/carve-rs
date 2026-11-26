@@ -3,7 +3,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-const HEAD_OF_DATA_CELLS: &str = r#"{"type":"document","astVersion":"2.0","children":[{"type":"table","columns":[{"type":"table_column"}],"children":[{"type":"table_head","children":[{"type":"table_row","children":[{"type":"table_cell","header":false,"children":[{"type":"cell_paragraph","children":[{"type":"text","value":"H"}]}]}]}]}]}]}"#;
+/// A head with no rows, which no source spells (C2-W-011).
+const EMPTY_HEAD: &str = r#"{"type":"document","astVersion":"2.0","children":[{"type":"table","columns":[{"type":"table_column"}],"children":[{"type":"table_head","children":[]},{"type":"table_body","children":[{"type":"table_row","children":[{"type":"table_cell","header":false,"children":[{"type":"cell_paragraph","children":[{"type":"text","value":"H"}]}]}]}]}]}]}"#;
 const REFUSAL: &str = "carve[writer-refused]: writer carve: the source cannot be returned without its loss report: structure-unspellable at /children/0/children/0\n";
 
 fn run(args: &[&str], input: &str) -> (i32, String, String) {
@@ -40,13 +41,10 @@ fn report(path: &std::path::Path) -> serde_json::Value {
 
 #[test]
 fn a_writer_loss_refuses_the_source_like_fmt_from_ast() {
-    let (status, stdout, stderr) = run(&["fmt", "--from-ast", "-"], HEAD_OF_DATA_CELLS);
+    let (status, stdout, stderr) = run(&["fmt", "--from-ast", "-"], EMPTY_HEAD);
     assert_eq!((status, stdout.as_str(), stderr.as_str()), (1, "", REFUSAL));
 
-    let (status, stdout, stderr) = run(
-        &["render", "--from-ast", "--to", "carve", "-"],
-        HEAD_OF_DATA_CELLS,
-    );
+    let (status, stdout, stderr) = run(&["render", "--from-ast", "--to", "carve", "-"], EMPTY_HEAD);
     assert_eq!((status, stdout.as_str()), (1, ""));
     assert!(stderr.starts_with(REFUSAL), "{stderr}");
     assert!(stderr.contains("structure-unspellable"), "{stderr}");
@@ -65,7 +63,7 @@ fn report_losses_lists_the_writer_losses() {
             path.to_str().unwrap(),
             "-",
         ],
-        HEAD_OF_DATA_CELLS,
+        EMPTY_HEAD,
     );
     assert_eq!((status, stdout.as_str()), (1, ""));
     let file = &report(&path)["files"][0];
@@ -85,7 +83,7 @@ fn strict_losses_fails_a_writer_loss_as_a_render_loss() {
             "--strict-losses",
             "-",
         ],
-        HEAD_OF_DATA_CELLS,
+        EMPTY_HEAD,
     );
     assert_eq!((status, stdout.as_str()), (1, ""));
     assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
@@ -102,7 +100,7 @@ fn strict_losses_fails_a_writer_loss_as_a_render_loss() {
             "0",
             "-",
         ],
-        HEAD_OF_DATA_CELLS,
+        EMPTY_HEAD,
     );
     assert_eq!((status, stdout.as_str()), (1, ""));
     assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
@@ -123,7 +121,7 @@ fn an_allowed_writer_loss_still_refuses_the_source() {
             path.to_str().unwrap(),
             "-",
         ],
-        HEAD_OF_DATA_CELLS,
+        EMPTY_HEAD,
     );
     assert_eq!((status, stdout.as_str()), (1, ""));
     assert!(stderr.starts_with(REFUSAL), "{stderr}");
