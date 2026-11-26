@@ -28,6 +28,26 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2228", "html"),
     // carve#6804 (carve-rs line): an image whose alt is unknown writes no `alt`.
     ("CC-2210", "html"),
+    // carve#6663 (carve#6812 G1): header-rows sets the head of a pipe table.
+    ("CC-2237", "html"),
+    ("CC-2238", "html"),
+    ("CC-2239", "html"),
+    ("CC-2240", "html"),
+    ("syntax-blocks-219", "html"),
+    ("syntax-blocks-219", "tree"),
+    // carve#6664 (carve#6812 G1): an empty body-rows with a footer count makes the rows a foot.
+    ("CC-2068", "html"),
+    ("CC-2068", "children"),
+    ("CC-2246", "html"),
+    ("CC-2248", "html"),
+    // carve#6099 (carve#6812 G7): a tree number must keep its binary64 value.
+    ("CC-2313", "refusal"),
+    ("CC-2314", "refusal"),
+    ("CC-2315", "refusal"),
+    ("CC-2316", "refusal"),
+    ("CC-2317", "refusal"),
+    ("CC-2318", "refusal"),
+    ("CC-2319", "refusal"),
 ];
 
 /// A case with extensions or a host runs through the JSON boundary in

@@ -745,6 +745,8 @@ pub(super) enum Expr {
     Column(Box<(Self, Self)>),
     /// The extensions registered for the run.
     RunExtensions,
+    /// The registered extensions that generate ids (C2-X-079).
+    RunIdExtensions,
     /// Whether a text is a valid attribute line (C2-B-090).
     AttributeLine(Box<Self>),
     /// A `matches` on a `let` that is a slice of `field` or empty: the match starts with one of the
@@ -1059,6 +1061,7 @@ impl Scope<'_> {
             "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
             "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
             "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
+            "run" if arg.as_str() == Some("id_extensions") => Expr::RunIdExtensions,
             _ => Expr::Lit(Val::Null),
         }
     }
@@ -1482,7 +1485,8 @@ fn scans(expr: &Expr) -> bool {
         | Expr::Has(_)
         | Expr::Match { .. }
         | Expr::ShapeIs(_)
-        | Expr::RunExtensions => false,
+        | Expr::RunExtensions
+        | Expr::RunIdExtensions => false,
     }
 }
 
@@ -1533,7 +1537,8 @@ fn stateless(expr: &Expr) -> bool {
         | Expr::Has(_)
         | Expr::Match { .. }
         | Expr::ShapeIs(_)
-        | Expr::RunExtensions => true,
+        | Expr::RunExtensions
+        | Expr::RunIdExtensions => true,
     }
 }
 
@@ -2145,6 +2150,7 @@ impl<'a> Eval<'_, 'a> {
                 Val::num(self.records.column_at(at as usize, quotes as usize))
             }
             Expr::RunExtensions => self.records.extensions(),
+            Expr::RunIdExtensions => self.records.id_extensions(),
             Expr::Lookup(lookup) => self.lookup(lookup),
             Expr::IndexOf(args) => {
                 let haystack = self.value(&args.0);

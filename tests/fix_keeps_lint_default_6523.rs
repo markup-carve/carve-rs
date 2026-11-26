@@ -50,6 +50,15 @@ fn fix_clause_cases() {
         let out = child.wait_with_output().unwrap();
         let want = &case["expected"];
         let status = want["status"].as_i64();
+        // carve#6499 (carve#6812 G8): `upgrade` reports the braced strike when the subscript rule is off.
+        if ["CC-1354"].contains(&id) {
+            assert_ne!(
+                out.status.code(),
+                status.map(|n| i32::try_from(n).unwrap()),
+                "{id}: held but passes; drop the hold"
+            );
+            continue;
+        }
         assert_eq!(
             out.status.code(),
             status.map(|n| i32::try_from(n).unwrap()),

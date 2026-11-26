@@ -92,9 +92,19 @@
         "channel": { "enum": ["parse", "render-loss", "lint"] },
         "path": { "type": "string" },
         "file": { "type": "string" },
-        "messageWhen": { "type": "string", "description": "Exact when condition of the selected catalog message variant." }
+        "messageWhen": { "type": "string", "description": "Exact when condition of the selected catalog message variant." },
+        "includedBy": {
+          "type": "array",
+          "description": "The include chain of the entry (C2-T-020), from the top-level document inward: per include node, the file it stands in, absent for the input, and the line and column of the start of its range.",
+          "items": {
+            "type": "object",
+            "required": ["line", "column"],
+            "properties": { "file": { "type": "string" }, "line": { "type": "integer", "minimum": 1 }, "column": { "type": "integer", "minimum": 1 } },
+            "additionalProperties": false
+          }
+        }
       },
-      "dependentRequired": { "column": ["line"], "line": ["column"], "endColumn": ["endLine"], "endLine": ["endColumn"] },
+      "dependentRequired": { "column": ["line"], "line": ["column"], "endColumn": ["endLine"], "endLine": ["endColumn"], "includedBy": ["file"] },
       "additionalProperties": false
     },
     "diagnostics": { "type": "array", "items": { "anyOf": [{ "$ref": "#/$defs/code" }, { "$ref": "#/$defs/diagnostic" }] } },
@@ -145,7 +155,7 @@
         "inputBytes": { "type": "string", "pattern": "^[0-9A-F]{2}( [0-9A-F]{2})*$", "description": "The input as bytes in hex, for a source that is not a string." },
         "files": { "type": "object", "additionalProperties": { "$ref": "#/$defs/file" }, "description": "The files a resolver serves, each under its name, which is also its id." },
         "tree": { "type": "object", "description": "A tree or an envelope as a JSON value: the input of a tree, migrate, render or write case." },
-        "json": { "type": "string", "description": "The JSON text a tree case decodes, where the input is not a JSON value." },
+        "json": { "type": "string", "description": "The JSON text a tree case decodes, where the input is not a JSON value, or whose decoded tree a fingerprint case hashes (C2-A-219)." },
         "layout": { "type": "object", "description": "The source-layout sidecar a write case gives the writer beside its tree." },
         "annotations": { "type": "object", "description": "The annotation-range sidecar passed to a tree reader call." },
         "html": { "type": "string", "description": "The HTML an import case reads." },
@@ -158,7 +168,7 @@
         "fingerprintOf": { "type": "string", "description": "A source whose tree, parsed with positions off, gives the fingerprint a patch case passes to applyPatch (C2-T-045)." },
         "of": { "enum": ["source", "tree"], "description": "What a fingerprint case hashes: the source with sourceFingerprint, the default, or its tree parsed with positions off with treeFingerprint (C2-T-046)." },
         "options": { "$ref": "#/$defs/options" },
-        "host": { "type": "object", "description": "Conformance harness registrations, not a Carve option.", "properties": { "documentTransforms": { "type": "array", "items": { "type": "object", "required": ["name", "after"], "oneOf": [{ "properties": { "insert": { "type": "object" } }, "required": ["insert"] }, { "properties": { "setLevel": { "type": "integer", "minimum": 1 } }, "required": ["setLevel"] }], "properties": { "name": { "type": "string" }, "after": { "type": "string" }, "insert": { "type": "object" }, "setLevel": { "type": "integer", "minimum": 1 } }, "additionalProperties": false } } }, "additionalProperties": false },
+        "host": { "type": "object", "description": "Conformance harness registrations, not a Carve option.", "properties": { "documentTransforms": { "type": "array", "items": { "type": "object", "required": ["name", "after"], "oneOf": [{ "properties": { "insert": { "type": "object" } }, "required": ["insert"] }, { "properties": { "setLevel": { "type": "integer", "minimum": 1 } }, "required": ["setLevel"] }, { "properties": { "setValue": { "type": "string" } }, "required": ["setValue"] }], "properties": { "name": { "type": "string" }, "after": { "type": "string" }, "insert": { "type": "object" }, "setLevel": { "type": "integer", "minimum": 1 }, "setValue": { "type": "string" } }, "additionalProperties": false } }, "limits": { "type": "object", "description": "Lowered limits a harness sets for one case in place of the rows of data/limits.json; not a Carve option.", "properties": { "snippetDepth": { "type": "integer", "minimum": 1 }, "snippetNodes": { "type": "integer", "minimum": 0 }, "derivedTextBytes": { "type": "integer", "minimum": 0 } }, "additionalProperties": false } }, "additionalProperties": false },
         "expected": {
           "type": "object",
           "properties": {
@@ -217,7 +227,7 @@
         { "if": { "required": ["kind"], "properties": { "kind": { "enum": ["diff"] } } }, "then": { "required": ["input", "inputAfter"], "properties": { "input": true, "inputAfter": true, "expected": { "type": "object", "required": ["applies"], "properties": { "applies": true } } } } },
         { "if": { "required": ["kind"], "properties": { "kind": { "enum": ["patch"] } } }, "then": { "required": ["input", "patch"], "properties": { "input": true, "patch": true } } },
         { "if": { "required": ["kind"], "properties": { "kind": { "enum": ["export"] } } }, "then": { "required": ["input", "to"], "properties": { "input": true, "to": true } } },
-        { "if": { "required": ["kind"], "properties": { "kind": { "enum": ["fingerprint"] } } }, "then": { "properties": { "expected": { "type": "object", "required": ["fingerprint"], "properties": { "fingerprint": true } } }, "oneOf": [{ "required": ["input"], "properties": { "input": true } }, { "required": ["inputBytes"], "properties": { "inputBytes": true } }] } }
+        { "if": { "required": ["kind"], "properties": { "kind": { "enum": ["fingerprint"] } } }, "then": { "properties": { "expected": { "type": "object", "required": ["fingerprint"], "properties": { "fingerprint": true } } }, "oneOf": [{ "required": ["input"], "properties": { "input": true } }, { "required": ["inputBytes"], "properties": { "inputBytes": true } }, { "required": ["json"], "properties": { "json": true } }] } }
       ],
       "additionalProperties": false
     },

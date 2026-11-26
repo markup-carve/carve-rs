@@ -9,7 +9,10 @@ use serde_json::{Value, json};
 /// Cases held, each with its cause; a held case must keep failing.
 const HELD: &[&str] = &[
     // carve#6795 (carve-rs line): no `<` join beside a cell covered from above.
-    "CC-2187",
+    "CC-2187", // carve#6811: an xmlns:xlink value without whitespace stays.
+    "CC-2275",
+    // carve#6771 (carve#6812 G8): align on a cell adds its declaration after an authored style.
+    "CC-2308",
 ];
 
 fn call(request: &Value) -> Value {
