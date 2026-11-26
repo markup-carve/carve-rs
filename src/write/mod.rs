@@ -470,6 +470,21 @@ mod batched_repair_test {
     }
 
     #[test]
+    fn alike_superscript_units_share_their_probes() -> Result<(), Box<dyn std::error::Error>> {
+        // carve-rs#4849: each unit probed its own copy of the same inlines, about 45 parses per unit.
+        let src = format!("{}\n", "{^\\{^^} ".repeat(128));
+        let tree = parse_plain(&src).ok_or("parsed source")?;
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let (output, losses) = format_tree(&tree, Some(&src), &Settings::default());
+        let parses = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+        assert!(losses.is_empty());
+        assert!(parses < 200, "{parses} read-back parses for 128 units");
+        let again = parse_plain(&output).ok_or("parsed output")?;
+        assert!(node::trees_equal(V::Json(&tree), V::Json(&again)));
+        Ok(())
+    }
+
+    #[test]
     fn nested_links_take_a_few_repair_parses() -> Result<(), Box<dyn std::error::Error>> {
         // carve#6411: the probe rounds escape by kind (C2-W-088), not one escape per parse.
         for n in [146, 584] {
@@ -2572,13 +2587,7 @@ fn oust<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>, first: bool) 
     }
     let ousted = std::mem::take(&mut c.ousted);
     for (n, at) in ousted {
-        if let Some(p) = c
-            .escapes
-            .iter()
-            .position(|&(m, a)| id(m) == id(n) && a == at)
-        {
-            c.escapes.remove(p);
-        } else if w.escapes_of(n).contains(&at) {
+        if !c.drop_escape(id(n), at) && w.escapes_of(n).contains(&at) {
             c.retracted.push((n, at));
         }
     }
@@ -2763,13 +2772,7 @@ fn drop_asked_trials<'t>(
         if is_asked(w, group, first, (n, at), round) {
             continue;
         }
-        if let Some(p) = c
-            .escapes
-            .iter()
-            .position(|(e, a)| id(e) == id(n) && *a == at)
-        {
-            c.escapes.remove(p);
-        }
+        c.drop_escape(id(n), at);
         dropped = true;
     }
     dropped
@@ -2858,7 +2861,7 @@ fn drop_idle_trials<'t>(
         }
         with = Some(without);
         added.retain(|&k| k != key);
-        c.escapes.retain(|&(m, a)| (id(m), a) != key);
+        while c.drop_escape(key.0, key.1) {}
         c.trials.retain(|&(m, a)| (id(m), a) != key);
         if let Some(marks) = c.marks.get_mut(&key.0) {
             marks.remove(&at);
@@ -2995,8 +2998,7 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
             continue;
         };
         if reported_comment_closer(&comment_openers, block, node, at) {
-            c.escapes
-                .retain(|&(n, offset)| id(n) != id(node) || offset != at);
+            while c.drop_escape(id(node), at) {}
             continue;
         }
         let line = c.line_escapes.contains(&(id(node), at));

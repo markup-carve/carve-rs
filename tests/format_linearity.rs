@@ -81,3 +81,10 @@ fn bracket_runs_and_references() {
     assert_linear(&carve, "reference links", "[x][y] ", "");
     assert_linear(&carve, "escaped references", "[a\\*] ", "[a\\*]: /u\n");
 }
+
+/// carve-rs#4849: every node of a paragraph of inline notes searched all the escapes of the round.
+#[test]
+fn inline_notes_with_escaped_brackets() {
+    let carve = Carve::new();
+    assert_linear(&carve, "inline notes", "^[a{^\\[]]\n", "");
+}

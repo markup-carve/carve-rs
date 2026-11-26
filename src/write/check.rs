@@ -18,6 +18,7 @@ use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
 use serde_json::Value;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
     nodes.iter().collect()
@@ -124,6 +125,8 @@ pub struct Built {
 #[derive(Default)]
 pub struct Check<'t> {
     pub escapes: Vec<(N<'t>, usize)>,
+    /// The entries of `escapes` by node, kept with it by `add_escape` and `drop_escape`.
+    pub(super) escaped: AddrMap<usize, usize>,
     pub retracted: Vec<(N<'t>, usize)>,
     /// C2-W-125: escapes an earlier case placed in the text a brace of case one now repairs; they come
     /// out when the text reads back without them.
@@ -159,9 +162,38 @@ pub struct Check<'t> {
     pub constructs: Vec<(N<'t>, usize)>,
 }
 
-impl Check<'_> {
+impl<'t> Check<'t> {
     pub fn changes(&self) -> usize {
         self.escapes.len() + self.forms.len() + self.retracted.len()
+    }
+
+    fn add_escape(&mut self, node: N<'t>, at: usize) {
+        self.escapes.push((node, at));
+        *self.escaped.entry(id(node)).or_default() += 1;
+    }
+
+    /// Takes the first escape of `escapes` at byte `at` of the node `node` out; false where there is none.
+    pub fn drop_escape(&mut self, node: usize, at: usize) -> bool {
+        let Some(p) = self
+            .escapes
+            .iter()
+            .position(|&(n, a)| id(n) == node && a == at)
+        else {
+            return false;
+        };
+        self.escapes.remove(p);
+        if let Some(count) = self.escaped.get_mut(&node) {
+            *count -= 1;
+            if *count == 0 {
+                self.escaped.remove(&node);
+            }
+        }
+        true
+    }
+
+    /// Whether `escapes` holds an escape in the node `node`.
+    fn escapes_in(&self, node: usize) -> bool {
+        self.escaped.contains_key(&node)
     }
 }
 
@@ -336,7 +368,7 @@ pub fn escape_at<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize) 
     if !b.get(at).is_some_and(u8::is_ascii_punctuation) || is_escaped(w, c, node, at) {
         return false;
     }
-    c.escapes.push((node, at));
+    c.add_escape(node, at);
     mark(c, node, at, true);
     true
 }
@@ -1436,6 +1468,16 @@ fn probe_escapes<'t>(
     site: Site,
     takes: &Takes<'t>,
 ) -> Option<bool> {
+    let mut order = Vec::new();
+    let shape = probe_shape(w, c, e, expected, flags, site, takes, &mut order);
+    if let Some((found, taken)) = shape.as_ref().and_then(|k| w.probe_shapes.get(k)).cloned() {
+        for (place, at) in taken {
+            if let Some(&n) = order.get(place) {
+                escape_at(w, c, n, at);
+            }
+        }
+        return found;
+    }
     let key = probe_key(w, c, e, expected, flags, site);
     if let Some(known) = w.probes.get(&key).cloned() {
         for (n, at) in known.taken {
@@ -1447,6 +1489,17 @@ fn probe_escapes<'t>(
     let found = run_probe(w, c, e, expected, flags, takes);
     if !exhausted(w) {
         let asked = c.escapes.get(before..).unwrap_or(&[]).to_vec();
+        if let Some(shape) = shape {
+            let places: AddrMap<usize, usize> =
+                order.iter().enumerate().map(|(p, n)| (id(n), p)).collect();
+            let taken: Option<Vec<(usize, usize)>> = asked
+                .iter()
+                .map(|&(n, at)| places.get(&id(n)).map(|&p| (p, at)))
+                .collect();
+            if let Some(taken) = taken {
+                w.probe_shapes.insert(shape, (found, taken));
+            }
+        }
         w.probes.insert(
             key,
             ProbeResult {
@@ -1456,6 +1509,119 @@ fn probe_escapes<'t>(
         );
     }
     found
+}
+
+/// Inline types whose write and comparison read nothing but their own fields and repair state.
+const SHAPED: &[&str] = &[
+    "text",
+    "soft_break",
+    "emphasis",
+    "strong",
+    "underline",
+    "highlight",
+    "superscript",
+    "subscript",
+    "insert",
+    "delete",
+    "strike",
+];
+
+/// A probe reads only the inlines it writes: two probes of inlines alike in fields and repair state, and
+/// in the place of the node `e` and of what `takes` keeps, give the same escapes at the same places.
+/// `None` where a node of another type takes part; `order` the nodes by place.
+#[allow(clippy::too_many_arguments)]
+fn probe_shape<'t>(
+    w: &Writer<'t>,
+    c: &Check<'t>,
+    e: N<'t>,
+    expected: &[N<'t>],
+    flags: u32,
+    site: Site,
+    takes: &Takes<'t>,
+    order: &mut Vec<N<'t>>,
+) -> Option<String> {
+    if !SHAPED.contains(&ty(e)) {
+        return None;
+    }
+    let mut key = format!(
+        "{}{}{}{}|{flags}|{}|{:?}|{:?}|",
+        u8::from(site == Site::Across),
+        u8::from(w.kind_escapes),
+        u8::from(w.closer_kinds),
+        u8::from(w.whole_trials),
+        ty(e),
+        w.open_above.get(&id(e)),
+        node_state(w, c, e),
+    );
+    for n in expected {
+        shape_into(w, c, *n, &mut key, order)?;
+    }
+    if let Takes::Across {
+        closer,
+        word,
+        own,
+        mark,
+        note,
+    } = takes
+    {
+        let place = |n: usize| order.iter().position(|o| id(o) == n);
+        let mut own: Vec<Option<usize>> = own.iter().map(|&n| place(n)).collect();
+        own.sort_unstable();
+        let _ = write!(
+            key,
+            "|{:?}{:?}{own:?}{mark:?}{note}",
+            place(*closer),
+            place(*word)
+        );
+    }
+    Some(key)
+}
+
+fn shape_into<'t>(
+    w: &Writer<'t>,
+    c: &Check<'t>,
+    n: N<'t>,
+    key: &mut String,
+    order: &mut Vec<N<'t>>,
+) -> Option<()> {
+    if !SHAPED.contains(&ty(n)) {
+        return None;
+    }
+    order.push(n);
+    key.push('(');
+    let mut kids = Vec::new();
+    let mut plain = true;
+    n.each(&mut |field, value| match field {
+        "pos" => {}
+        "children" => kids.extend(children(n)),
+        _ if value.is_container() => plain = false,
+        _ => {
+            key.push_str(field);
+            if let Some(s) = value.as_str() {
+                let _ = write!(key, "={}:{s};", s.len());
+            } else {
+                let _ = write!(key, "={value};");
+            }
+        }
+    });
+    if !plain {
+        return None;
+    }
+    if let Some(state) = node_state(w, c, n) {
+        key.push_str(&state);
+    }
+    key.push('|');
+    if let Some(open) = w.open_above.get(&id(n)) {
+        let _ = write!(key, "{open}");
+    }
+    if let Some(fact) = w.fact(n) {
+        let _ = write!(key, "{fact:?}");
+    }
+    for k in kids {
+        shape_into(w, c, k, key, order)?;
+    }
+    key.push(')');
+    Some(())
 }
 
 fn probe_spelling<'t>(w: &Writer<'t>, expected: &[N<'t>]) -> Spelling<'t> {
@@ -1566,13 +1732,7 @@ fn oust<'t>(
         return;
     }
     for &(n, at) in ousted {
-        if let Some(p) = c
-            .escapes
-            .iter()
-            .position(|&(m, a)| id(m) == id(n) && a == at)
-        {
-            c.escapes.remove(p);
-        } else if w.escapes_of(n).contains(&at) {
+        if !c.drop_escape(id(n), at) && w.escapes_of(n).contains(&at) {
             c.retracted.push((n, at));
         }
         mark(c, n, at, false);
@@ -2237,13 +2397,7 @@ pub fn drop_early_trials(c: &mut Check<'_>) {
         return;
     }
     for (n, at) in std::mem::take(&mut c.trials) {
-        if let Some(p) = c
-            .escapes
-            .iter()
-            .position(|(e, a)| id(e) == id(n) && *a == at)
-        {
-            c.escapes.remove(p);
-        }
+        c.drop_escape(id(n), at);
         if let Some(m) = c.marks.get_mut(&id(n)) {
             m.remove(&at);
         }
@@ -2703,8 +2857,7 @@ fn parse_ends_in_text<'t>(
 /// Whether this round escapes in the content of `node`: a bracket of C2-W-125, or the opener of a
 /// construct the parse holds there, which already keeps `node` from reading on (C2-W-088).
 fn repairs_inside(c: &Check<'_>, node: V<'_>) -> bool {
-    let texts: AddrSet<usize> = texts_below(node).into_iter().map(id).collect();
-    c.escapes.iter().any(|&(n, _)| texts.contains(&id(n)))
+    texts_below(node).into_iter().any(|t| c.escapes_in(id(t)))
 }
 
 fn after_text_node<'t>(
