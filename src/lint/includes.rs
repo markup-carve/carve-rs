@@ -81,13 +81,35 @@ struct Registry<'t> {
 }
 
 impl<'t> Registry<'t> {
-    fn walk(&mut self, list: &'t Value, file: &str) {
-        for child in list["children"].as_array().into_iter().flatten() {
+    /// An include may stand in a container, as `- {{ a.crv }}`; its definitions count where it stands.
+    fn walk(&mut self, node: &'t Value, file: &str) {
+        let Some(map) = node.as_object() else {
+            return;
+        };
+        for (slot, value) in map {
+            if slot == "pos" || slot == "attrs" {
+                continue;
+            }
+            match value {
+                Value::Array(items) => self.list(items, file),
+                Value::Object(_) if value["type"].is_string() => {
+                    self.list(std::slice::from_ref(value), file);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn list(&mut self, items: &'t [Value], file: &str) {
+        for child in items {
             if child["type"] == "include" {
-                self.walk(child, child["file"].as_str().unwrap_or(file));
+                if child.get("children").is_some() {
+                    self.walk(child, child["file"].as_str().unwrap_or(file));
+                }
                 continue;
             }
             if child["type"] != "snippet_definition" {
+                self.walk(child, file);
                 continue;
             }
             let (Some(name), Some(start)) = (

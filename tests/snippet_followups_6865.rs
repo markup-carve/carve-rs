@@ -77,3 +77,16 @@ fn a_refused_include_is_not_linted() {
     let found = codes("{{ part.crv @lines:5-5 }}\n", &opts);
     assert_eq!(found, [("include-lines-out-of-range".into(), None, 1)]);
 }
+
+/// C2-N-090: the definitions of an include inside a container count where it stands.
+#[test]
+fn unused_snippet_reads_an_include_inside_a_container() {
+    let opts = with_files(&[("part.crv", "{$a}: A\n{$b}: B\n")]);
+    let found = codes("- {{ part.crv }}\n\n{$b}: again\n\nUse {{ $a }}.\n", &opts);
+    let unused: Vec<_> = found
+        .iter()
+        .filter(|(code, _, _)| code == "unused-snippet")
+        .map(|(_, file, line)| (file.clone(), *line))
+        .collect();
+    assert_eq!(unused, [(Some("part.crv".into()), 2)]);
+}
