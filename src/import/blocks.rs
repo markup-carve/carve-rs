@@ -812,18 +812,32 @@ impl Cx {
             if !lines.is_empty() {
                 lines.push(json!({ "type": "line", "children": [] }));
             }
+            let kids = self.kids(stanza);
             let mut current = Vec::new();
-            for child in self.kids(stanza) {
-                if self.dom.is(child, "br") {
-                    let children = self.line_inline(&current, stanza);
-                    lines.push(parent("line", children));
-                    current.clear();
-                } else {
+            let mut ended = false;
+            for (i, &child) in kids.iter().enumerate() {
+                if !self.dom.is(child, "br") {
                     current.push(child);
+                    continue;
+                }
+                let mut children = self.line_inline(&current, stanza);
+                current.clear();
+                // carve#6785: a final `<br>` is the hard break of the stanza's last line.
+                let last = kids.iter().skip(i + 1).all(|&k| self.html_blank(k));
+                // carve#6786: keep the break where the line cannot be written without it.
+                if last || needs_hard_break(&children) {
+                    children.push(json!({ "type": "hard_break" }));
+                }
+                lines.push(parent("line", children));
+                if last {
+                    ended = true;
+                    break;
                 }
             }
-            let children = self.line_inline(&current, stanza);
-            lines.push(parent("line", children));
+            if !ended {
+                let children = self.line_inline(&current, stanza);
+                lines.push(parent("line", children));
+            }
         }
         let mut m = node("line_block");
         m.insert("children".into(), Value::Array(lines));
@@ -831,6 +845,15 @@ impl Cx {
             .without_classes(&["line-block"])
             .apply(&mut m);
         Value::Object(m)
+    }
+
+    fn html_blank(&self, id: Id) -> bool {
+        self.dom.is_text(id)
+            && self
+                .dom
+                .text(id)
+                .chars()
+                .all(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}'))
     }
 
     fn line_inline(&mut self, nodes: &[Id], host: Id) -> Vec<Value> {
@@ -1918,6 +1941,16 @@ fn resolve_probe(probe: &Value) -> Option<Value> {
 
 pub(crate) fn flow(cx: &mut Cx, nodes: &[Id], host: Id, reader: Reader) -> Vec<Value> {
     cx.flow_of(nodes, host, reader)
+}
+
+/// C2-I-002, C2-I-102: an empty line, or one ending in a space or tab, needs its backslash.
+fn needs_hard_break(children: &[Value]) -> bool {
+    match children.last() {
+        None => true,
+        Some(last) => {
+            ty(last) == "text" && last["value"].as_str().unwrap_or("").ends_with([' ', '\t'])
+        }
+    }
 }
 
 /// C2-H-043 read back: the renderer writes the whole space and tab run of a
