@@ -90,3 +90,32 @@ fn tree_render_keeps_the_nesting_message_and_the_range() {
     let range = loss.range.as_ref().expect("a range");
     assert_eq!(range.start_offset, 14);
 }
+
+#[test]
+fn tree_render_names_the_included_file_of_a_profile_loss() {
+    let resolver = std::sync::Arc::new(|r: &api::Request<'_>| {
+        (r.path == "a.crv")
+            .then(|| {
+                (
+                    b"x\n\n```=html\n<b>x</b>\n```\n".to_vec(),
+                    "a.crv".to_string(),
+                )
+            })
+            .ok_or(api::Cause::NotFound)
+    });
+    let with_includes = Options {
+        includes: Some(api::Includes::new(resolver)),
+        ..Options::default()
+    };
+    let tree = api::parse("top\n\n{{ a.crv }}\n", &with_includes).expect("parses");
+    let rendered =
+        api::render_tree_with_diagnostics(&tree, &opts(Profile::Article)).expect("renders");
+    let loss = rendered
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "profile-construct-degraded")
+        .expect("the raw block is outside article");
+    assert!(loss.message.ends_with("does not allow: raw_block."));
+    assert_eq!(loss.file.as_deref(), Some("a.crv"));
+    assert_eq!(loss.range.as_ref().map(|r| r.start_offset), Some(3));
+}

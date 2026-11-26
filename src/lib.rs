@@ -642,7 +642,8 @@ fn tree_loss_diagnostics(
                 .and_then(|(pos, _)| pos)
                 .or_else(|| profile.and_then(|p| p.pos));
             let variant = usize::from(profile.is_some_and(|p| p.nesting));
-            let mut finding = diagnostic::Diagnostic::nth(code, variant, &values, None, pos);
+            let file = profile.and_then(|p| p.file.as_deref());
+            let mut finding = diagnostic::Diagnostic::nth(code, variant, &values, file, pos);
             if code == heading_shift::ABOVE_6 {
                 finding.message = heading_shift::message(opts.heading_shift);
             }
