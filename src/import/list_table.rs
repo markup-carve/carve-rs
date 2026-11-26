@@ -96,24 +96,63 @@ fn literal_mark(blocks: &mut [Value]) {
     }
 }
 
+/// The blocks of a cell's item: C2-M-069 paragraphs, a literal mark, or an empty line comment.
+fn item_blocks(cell: &Value) -> Vec<Value> {
+    let mut blocks: Vec<Value> = children(cell)
+        .iter()
+        .filter_map(|block| {
+            if kind(block) != "cell_paragraph" {
+                return Some(block.clone());
+            }
+            // C2-M-069: an empty cell paragraph gives no paragraph.
+            let inline = children(block);
+            (!inline.is_empty()).then(|| json!({ "type": "paragraph", "children": inline }))
+        })
+        .collect();
+    literal_mark(&mut blocks);
+    // C2-M-112: an item that holds no block holds an empty line comment, as `- %%` parses.
+    if blocks.is_empty() {
+        blocks.push(json!({ "type": "comment", "form": "line", "value": "" }));
+    }
+    blocks
+}
+
+/// The cell's attributes with `header`, `align` and `valign` added where it has none of its own.
+fn item_attrs(cell: &Value, header: bool) -> Option<Value> {
+    let mut attrs = cell.get("attrs").cloned();
+    let own: Vec<String> = attrs
+        .as_ref()
+        .and_then(|a| a["keyValues"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|kv| kv[0].as_str().map(str::to_string))
+        .collect();
+    let mut keys: Vec<Value> = Vec::new();
+    if header && !own.iter().any(|k| k == "header") {
+        keys.push(json!(["header", ""]));
+    }
+    for axis in ["align", "valign"] {
+        if let Some(v) = cell.get(axis)
+            && !own.iter().any(|k| k == axis)
+        {
+            keys.push(json!([axis, v]));
+        }
+    }
+    if !keys.is_empty() {
+        let a = attrs.get_or_insert_with(|| json!({}));
+        let kv = a
+            .as_object_mut()
+            .map(|m| m.entry("keyValues").or_insert_with(|| json!([])));
+        if let Some(Value::Array(list)) = kv {
+            list.extend(keys);
+        }
+    }
+    attrs
+}
+
 impl Cx {
     fn list_cell_item(&mut self, cell: &Value, header: bool, id: Id) -> Value {
-        let mut blocks: Vec<Value> = children(cell)
-            .iter()
-            .filter_map(|block| {
-                if kind(block) != "cell_paragraph" {
-                    return Some(block.clone());
-                }
-                // C2-M-069: an empty cell paragraph gives no paragraph.
-                let inline = children(block);
-                (!inline.is_empty()).then(|| json!({ "type": "paragraph", "children": inline }))
-            })
-            .collect();
-        literal_mark(&mut blocks);
-        // C2-M-112: an item that holds no block holds an empty line comment, as `- %%` parses.
-        if blocks.is_empty() {
-            blocks.push(json!({ "type": "comment", "form": "line", "value": "" }));
-        }
+        let blocks = item_blocks(cell);
         if cell.get("scope").is_some() {
             self.report(
                 id,
@@ -128,38 +167,10 @@ impl Cx {
                 "The headers of a list table cell dropped",
             );
         }
-        let mut attrs = cell.get("attrs").cloned();
-        let own: Vec<String> = attrs
-            .as_ref()
-            .and_then(|a| a["keyValues"].as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|kv| kv[0].as_str().map(str::to_string))
-            .collect();
-        let mut keys: Vec<Value> = Vec::new();
-        if header && !own.iter().any(|k| k == "header") {
-            keys.push(json!(["header", ""]));
-        }
-        for axis in ["align", "valign"] {
-            if let Some(v) = cell.get(axis)
-                && !own.iter().any(|k| k == axis)
-            {
-                keys.push(json!([axis, v]));
-            }
-        }
-        if !keys.is_empty() {
-            let a = attrs.get_or_insert_with(|| json!({}));
-            let kv = a
-                .as_object_mut()
-                .map(|m| m.entry("keyValues").or_insert_with(|| json!([])));
-            if let Some(Value::Array(list)) = kv {
-                list.extend(keys);
-            }
-        }
         let mut m = Map::new();
         m.insert("type".into(), "list_item".into());
         m.insert("children".into(), Value::Array(blocks));
-        if let Some(a) = attrs {
+        if let Some(a) = item_attrs(cell, header) {
             m.insert("attrs".into(), a);
         }
         for key in ["lang", "dir"] {

@@ -100,13 +100,7 @@ impl ImportOptions {
                     let Some(b) = v.as_bool() else {
                         return Err(Error::option(name, "not a boolean"));
                     };
-                    if name == "rawHtml" {
-                        out.raw_html = b;
-                    } else if name == "listTable" {
-                        out.list_table = b;
-                    } else {
-                        out.strict_losses = b;
-                    }
+                    *out.switch(name) = b;
                 }
                 "adapter" => {
                     out.adapter = v
@@ -121,6 +115,14 @@ impl ImportOptions {
             return Err(Error::option("from", "required"));
         }
         Ok(out)
+    }
+
+    fn switch(&mut self, name: &str) -> &mut bool {
+        match name {
+            "rawHtml" => &mut self.raw_html,
+            "listTable" => &mut self.list_table,
+            _ => &mut self.strict_losses,
+        }
     }
 }
 
