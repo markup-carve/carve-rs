@@ -1399,7 +1399,12 @@ const MAX_VERBATIM_TRIALS: usize = 32;
 /// C2-W-075, C2-W-088 (carve-js `takeVerbatimReferences`): after the rounds, which wrote every reference from the
 /// tree, the group's references take their verbatim text together where the group reads back with them, and
 /// otherwise one by one in document order; the others keep their spelling from the tree.
-fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
+fn take_verbatim_references<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    (first, reported): (bool, usize),
+    cache: GroupReads<'_>,
+) {
     if !w.tree_refs || w.lines.is_empty() {
         return;
     }
@@ -1415,9 +1420,8 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
         if known && w.lines == tree {
             return true;
         }
-        let chunk = written_chunk(w, group, first);
-        let parsed = children(chunk.parse(w));
-        parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
+        let text = written_text(w, group, first);
+        cache.read(w, text, |_, doc| reads_as(group, doc))
     };
     w.tree_refs = false;
     w.tree_ref_ids.clear();
@@ -1455,7 +1459,12 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
 /// references writes its leaf blocks as authored, cumulatively in document order, and takes the first state that
 /// reads back: first the leaf blocks that hold a lost node, then, only if none of those states reads back, the
 /// others. The rounds do not run again.
-fn take_authored_blocks<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
+fn take_authored_blocks<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    (first, reported): (bool, usize),
+    cache: GroupReads<'_>,
+) {
     if w.sp.losses.len() == reported || w.authored.is_none() || w.lines.is_empty() {
         return;
     }
@@ -1478,8 +1487,8 @@ fn take_authored_blocks<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, rep
     let lines = w.lines.clone();
     let losses = w.sp.losses.len();
     let mut tested = None;
-    if authored_reads_back(w, group, first, &failing, &mut tested)
-        || authored_reads_back(w, group, first, &rest, &mut tested)
+    if authored_reads_back(w, (group, first), &failing, &mut tested, cache)
+        || authored_reads_back(w, (group, first), &rest, &mut tested, cache)
     {
         w.sp.losses.truncate(reported);
     } else {
@@ -1493,10 +1502,10 @@ fn take_authored_blocks<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, rep
 /// the lines of that state stay written.
 fn authored_reads_back<'t>(
     w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
+    (group, first): (Arr<'t>, bool),
     leaves: &[N<'t>],
     tested: &mut Option<Vec<String>>,
+    cache: GroupReads<'_>,
 ) -> bool {
     let mut trials = 0;
     for &leaf in leaves {
@@ -1515,10 +1524,8 @@ fn authored_reads_back<'t>(
         }
         *tested = Some(w.lines.clone());
         trials += 1;
-        let chunk = written_chunk(w, group, first);
-        let parsed = children(chunk.parse(w));
-        if parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
-        {
+        let text = written_text(w, group, first);
+        if cache.read(w, text, |_, doc| reads_as(group, doc)) {
             return true;
         }
     }
@@ -1928,8 +1935,8 @@ fn write_group<'t>(
         at = next;
     }
     let group = nodes.slice(from, at).unwrap_or_else(Arr::empty);
-    take_verbatim_references(w, group, out.is_empty(), reported);
-    take_authored_blocks(w, group, out.is_empty(), reported);
+    take_verbatim_references(w, group, (out.is_empty(), reported), reads);
+    take_authored_blocks(w, group, (out.is_empty(), reported), reads);
     if w.lines.is_empty() {
         return at;
     }
@@ -2900,6 +2907,25 @@ struct GroupReads<'s> {
     reads: &'s Reads<'s>,
 }
 
+impl GroupReads<'_> {
+    /// `then` of the parse of `text`, read through the kept parses and counted as a parse.
+    fn read<R>(
+        self,
+        w: &mut Writer<'_>,
+        text: String,
+        then: impl FnOnce(&mut Writer<'_>, V<'_>) -> R,
+    ) -> R {
+        let round = Round {
+            chunks: self.kept,
+            reads: self.reads,
+            last: None,
+            source: None,
+            equal: false,
+        };
+        round.read(w, text, |w, _, parsed| then(w, parsed))
+    }
+}
+
 /// The parses of the rounds by their text: a write the rounds try again reads as before.
 #[derive(Default)]
 struct Reads<'k> {
@@ -3212,12 +3238,23 @@ fn group_chunk<'t>(
 
 /// The group written with the escapes `w` holds, for a parse.
 fn written_chunk<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool) -> Chunk {
+    Chunk::new(written_text(w, group, first))
+}
+
+/// The text of [`written_chunk`].
+fn written_text<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool) -> String {
     w.lines.clear();
     w.lead = None;
     w.lead_skip = 0;
     w.clear_starts();
     blocks::write_blocks(w, group, "", 0, false);
-    Chunk::new(group_source(w, first))
+    group_source(w, first)
+}
+
+/// Whether the parse `doc` holds the blocks of `group`.
+fn reads_as(group: Arr<'_>, doc: V<'_>) -> bool {
+    let parsed = children(doc);
+    parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
 }
 
 /// C2-W-088, C2-W-091: whether the test asks for the escape `at` of `node`.
