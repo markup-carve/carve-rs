@@ -12,8 +12,6 @@ use serde_json::{Value, json};
 /// Cases held, each with its cause; a held case must keep failing and be a case of the runner.
 #[rustfmt::skip]
 const HELD: &[&str] = &[
-    // carve#6811: an xmlns:xlink value without whitespace stays.
-    "CC-2275",
 ];
 
 fn call(request: &Value) -> Value {
