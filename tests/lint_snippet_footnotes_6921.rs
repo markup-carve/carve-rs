@@ -151,3 +151,20 @@ fn lint_reuses_the_include_content_that_produced_its_findings() {
     assert!(found.is_empty(), "{found:?}");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn nondefault_heading_ids_keep_copied_note_uses() {
+    let options = LintOptions {
+        heading_ids: carve::options::HeadingIds::Off,
+        includes: Some(Includes::new(Arc::new(|request: &Request<'_>| {
+            if request.path == "child.crv" {
+                Ok((b"{$s}: [^n]\n\n{{ $s }}".to_vec(), "child.crv".into()))
+            } else {
+                Err(Cause::NotFound)
+            }
+        }))),
+        ..LintOptions::default()
+    };
+    let found = lint("[^n]: Note\n\n{{ child.crv }}", &options);
+    assert!(found.is_empty(), "{found:?}");
+}

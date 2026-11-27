@@ -85,11 +85,12 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
         includes: Some(config),
         ..crate::Options::default()
     };
-    let Some(tree) = crate::tree_json_value(source, &render) else {
-        return;
-    };
-    let scanned = collect(V::Json(&tree), options, &stored, output);
-    finish(scanned, options, output);
+    let (scanned, _) = crate::with_expanded_tree(source, &render, |tree| {
+        tree.map(|tree| collect(tree, options, &stored, output))
+    });
+    if let Some(scanned) = scanned {
+        finish(scanned, options, output);
+    }
 }
 
 /// Lints the accepted includes of the expanded `tree`; `entry` holds the entry file's own findings.
