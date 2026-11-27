@@ -860,12 +860,12 @@ pub(crate) fn prepare_expanding<'a>(
         } else {
             key_range(&src, &id, pos, key).or(pos)
         };
-        diags.push(diagnostic::Diagnostic::new(
-            "duplicate-id",
-            &[("explicit", &id)],
-            file,
-            pos,
-        ));
+        let mut diagnostic =
+            diagnostic::Diagnostic::new("duplicate-id", &[("explicit", &id)], file, pos);
+        if file.is_some() {
+            diagnostic.included_by = files.as_ref().map(|f| f.chain_at(at)).unwrap_or_default();
+        }
+        diags.push(diagnostic);
     }
     if expanded {
         doc.stages = Some(&resolve::STAGES_EXPANDED);
