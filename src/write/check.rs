@@ -1019,6 +1019,12 @@ fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
             && ty(n) == "text"
         {
             let b = text(n).as_bytes();
+            // Adjacent text nodes are written as one run, so a braced mark may start the next one.
+            let after = level
+                .kids
+                .get(level.next)
+                .filter(|k| ty(*k) == "text")
+                .and_then(|k| text(k).as_bytes().first().copied());
             for (at, &x) in b.iter().enumerate() {
                 if !matches!(x, b'[' | b']' | b'{') || is_escaped(w, &c, n, at) {
                     continue;
@@ -1028,8 +1034,8 @@ fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
                     b'[' if room => level.brackets += 1,
                     b']' => level.brackets = level.brackets.saturating_sub(1),
                     b'{' if room
-                        && b.get(at + 1).is_some_and(|m| {
-                            crate::tables::BRACED_MARKS.as_bytes().contains(m)
+                        && b.get(at + 1).copied().or(after).is_some_and(|m| {
+                            crate::tables::BRACED_MARKS.as_bytes().contains(&m)
                         }) =>
                     {
                         level.braced += 1;
