@@ -420,7 +420,16 @@ fn c2_t_005_tree_clause_cases() {
         } else {
             run.check(id, "accepted", result.is_ok(), || format!("{result:?}"));
             if let (Ok(read), Some(want)) = (&result, c["expected"].get("tree")) {
-                let got = parse_json(&carve::reader::write_tree_json(read));
+                // C2-A-013: the tree of an envelope is what decodeTree returns.
+                let got = match c["json"].as_str() {
+                    Some(json) if parse_json(json).get("document").is_some() => {
+                        parse_json(&carve::api::decode_tree(json).map_or_else(
+                            |e| format!("{{\"refused\":{:?}}}", e.to_string()),
+                            |t| carve::api::encode_tree(&t),
+                        ))
+                    }
+                    _ => parse_json(&carve::reader::write_tree_json(read)),
+                };
                 run.check(id, "tree", sorted(&got) == sorted(want), || {
                     format!("expected {want}; got {got}")
                 });
