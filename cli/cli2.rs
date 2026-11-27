@@ -1283,14 +1283,6 @@ fn lint_file(
     } else {
         (bytes.to_vec(), Vec::new())
     };
-    if !counts.is_empty() {
-        let summary = counts
-            .iter()
-            .map(|(code, count)| format!("{code} {count}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!("{}: fixed {summary}", display(path));
-    }
     let (entries, suppressed) =
         api::lint_with_suppressed(source.as_slice(), &lint_opts).map_err(api_fail)?;
     let entries: Vec<Entry> = entries
@@ -1313,6 +1305,14 @@ fn lint_file(
         } else {
             output(&String::from_utf8_lossy(&source))?;
         }
+    }
+    if !counts.is_empty() {
+        let summary = counts
+            .iter()
+            .map(|(code, count)| format!("{code} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("{}: fixed {summary}", display(path));
     }
     if bool_value(args, "json", false) {
         diagnostics.push(loss_report(

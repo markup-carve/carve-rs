@@ -75,3 +75,23 @@ fn write_mode_reports_the_passed_file_name() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "*bold*\n");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn failed_write_does_not_report_a_fix() {
+    let path =
+        std::env::temp_dir().join(format!("carve-fix-unwritable-{}.crv", std::process::id()));
+    std::fs::write(&path, "**bold**\n").unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    let (status, stdout, stderr) = run(&["fix", "--write", path.to_str().unwrap()], "");
+    assert_eq!(status, 2);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("carve[output-unwritable]:"), "{stderr}");
+    assert!(!stderr.contains(": fixed "), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "**bold**\n");
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    std::fs::remove_file(path).unwrap();
+}
