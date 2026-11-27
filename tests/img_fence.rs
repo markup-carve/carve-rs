@@ -48,7 +48,7 @@ fn unsafe_elements_attributes_and_references_are_removed() {
         svg(
             r#"<svg xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1 1"><text x="0">a &lt; b</text></svg>"#
         ),
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><text x="0">a &lt; b</text></svg>"#
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1 1"><text x="0">a &lt; b</text></svg>"#
     );
 }
 
