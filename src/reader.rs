@@ -488,10 +488,16 @@ pub(crate) fn lift_envelope_declarations(document: &mut Value, external: Option<
         return;
     };
     let missing: Vec<Value> = {
-        let own = fields.get("extensions").and_then(Value::as_array);
+        let own: std::collections::HashSet<&Value> = fields
+            .get("extensions")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|item| &item["name"])
+            .collect();
         external
             .iter()
-            .filter(|d| !own.is_some_and(|own| own.iter().any(|item| item["name"] == d["name"])))
+            .filter(|d| !own.contains(&d["name"]))
             .cloned()
             .collect()
     };
@@ -520,11 +526,14 @@ fn envelope(value: &Value) -> Result<(), TreeError> {
     if let Some(external) = value["extensions"].as_array() {
         let internal = field(value, "/document/extensions").as_array();
         if let Some(internal) = internal {
+            let by_name: std::collections::HashMap<&Value, &Value> = internal
+                .iter()
+                .rev()
+                .map(|item| (&item["name"], item))
+                .collect();
             for declaration in external {
-                if let Some(other) = internal
-                    .iter()
-                    .find(|item| item["name"] == declaration["name"])
-                    && other != declaration
+                if let Some(other) = by_name.get(&declaration["name"])
+                    && *other != declaration
                 {
                     return Err(reader(
                         "/extensions",
