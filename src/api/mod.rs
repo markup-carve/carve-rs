@@ -1354,6 +1354,7 @@ impl Carve {
             layout: None,
             source: valid.then(|| input.text().to_string()),
             link_keys: None,
+            fallback_source: None,
         };
         if valid && let Some(written) = format_arena(&host, input, opts, &settings)? {
             return Ok(written);

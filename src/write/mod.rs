@@ -65,6 +65,8 @@ pub struct Settings {
     pub source: Option<String>,
     /// The link keys of the document around a nested write, in place of its definitions.
     pub link_keys: Option<LinkKeys>,
+    /// C2-W-088, C2-W-127: the source only the authored-block fallback reads, where `source` is withheld.
+    pub fallback_source: Option<String>,
 }
 
 impl Settings {
@@ -111,6 +113,9 @@ pub(crate) fn format_view<'t>(
     let mut settings = settings.clone();
     if let Some(src) = src {
         settings.layout = Some(facts::from_source(doc, src));
+        if settings.source.is_none() && settings.fallback_source.is_none() {
+            settings.fallback_source = Some(src.to_string());
+        }
     }
     write_trimmed(doc, pool, &settings, src.map(str::len), None)
 }
@@ -1376,6 +1381,12 @@ fn write_tree_once<'t>(
         .as_ref()
         .is_some_and(|f| f.values().any(|x| x.raw_ref.is_some()));
     w.tree_refs = tree_refs && verbatim;
+    // C2-W-088, C2-W-127: the authored-block fallback reads the source under `normalize` too.
+    w.authored = settings
+        .fallback_source
+        .as_ref()
+        .or(settings.source.as_ref())
+        .cloned();
     w.report_behind = report;
     let written = write_document(&mut w, doc);
     let source = controls::keep_above(&w, written, settings.source.as_deref());
@@ -1438,6 +1449,212 @@ fn take_verbatim_references<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool,
     }
     w.tree_ref_ids.clear();
     w.tree_refs = true;
+}
+
+/// C2-W-088 (carve#6813, carve#6846, carve#6848): a group that keeps a loss after the rounds and the verbatim
+/// references writes its leaf blocks as authored, cumulatively in document order, and takes the first state that
+/// reads back: first the leaf blocks that hold a lost node, then, only if none of those states reads back, the
+/// others. The rounds do not run again.
+fn take_authored_blocks<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, reported: usize) {
+    if w.sp.losses.len() == reported || w.authored.is_none() || w.lines.is_empty() {
+        return;
+    }
+    let lost: HashSet<usize> =
+        w.sp.losses
+            .get(reported..)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|l| l.node)
+            .collect();
+    let failing = authored_leaves(group, Some(&lost));
+    if failing.is_empty() {
+        return;
+    }
+    let failing_ids: HashSet<usize> = failing.iter().map(|&n| id(n)).collect();
+    let rest: Vec<N<'t>> = authored_leaves(group, None)
+        .into_iter()
+        .filter(|&n| !failing_ids.contains(&id(n)))
+        .collect();
+    let lines = w.lines.clone();
+    let losses = w.sp.losses.len();
+    let mut tested = None;
+    if authored_reads_back(w, group, first, &failing, &mut tested)
+        || authored_reads_back(w, group, first, &rest, &mut tested)
+    {
+        w.sp.losses.truncate(reported);
+    } else {
+        w.sp.losses.truncate(losses);
+        w.lines = lines;
+    }
+    w.authored_leaves.clear();
+}
+
+/// Writes `leaves` as authored one more at a time, keeping the earlier ones, and tells whether a state reads back;
+/// the lines of that state stay written.
+fn authored_reads_back<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    leaves: &[N<'t>],
+    tested: &mut Option<Vec<String>>,
+) -> bool {
+    let mut trials = 0;
+    for &leaf in leaves {
+        if trials >= MAX_VERBATIM_TRIALS {
+            return false;
+        }
+        let Some(content) = authored_content(w, leaf) else {
+            continue;
+        };
+        w.authored_leaves.insert(id(leaf), content);
+        reset_lines(w);
+        blocks::write_blocks(w, group, "", 0, false);
+        // A block whose authored source is its spelling changes no byte, so the state is the one tested before.
+        if tested.as_ref() == Some(&w.lines) {
+            continue;
+        }
+        *tested = Some(w.lines.clone());
+        trials += 1;
+        let chunk = written_chunk(w, group, first);
+        let parsed = children(chunk.parse(w));
+        if parsed.len() == group.len() && group.iter().zip(parsed).all(|(e, a)| writer_equal(e, a))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// The leaf blocks of `group` in document order that can be written as authored and hold a node of `lost` or stand
+/// below one; every one for `None`. A table cell is not one of them.
+fn authored_leaves<'t>(group: Arr<'t>, lost: Option<&HashSet<usize>>) -> Vec<N<'t>> {
+    let mut found = Vec::new();
+    let mut pending: Vec<(N<'t>, bool)> = group.iter().rev().map(|n| (n, false)).collect();
+    while let Some((n, below)) = pending.pop() {
+        let inside = below || lost.is_none_or(|l| l.contains(&id(n)));
+        if matches!(ty(n), "paragraph" | "heading" | "definition_term") {
+            if inside || lost.is_some_and(|l| holds_lost(n, l)) {
+                found.push(n);
+            }
+            continue;
+        }
+        let mut kids = Vec::new();
+        node::for_each_slot(n, true, &mut |slot, _, _| kids.extend(slot.iter()));
+        pending.extend(kids.into_iter().rev().map(|k| (k, inside)));
+    }
+    found
+}
+
+/// Whether `block` or a node below it is one of `lost`.
+fn holds_lost(block: N<'_>, lost: &HashSet<usize>) -> bool {
+    let mut pending = vec![block];
+    while let Some(n) = pending.pop() {
+        if lost.contains(&id(n)) {
+            return true;
+        }
+        node::for_each_slot(n, false, &mut |slot, _, _| pending.extend(slot.iter()));
+    }
+    false
+}
+
+/// C2-W-088: the content of a leaf block as authored, from the source: the byte range of its inline nodes, each line
+/// break without the spaces before it and the container prefix behind it, and each CR before an LF dropped (C2-B-010,
+/// C2-W-016, C2-W-022, C2-W-079). `None` where it cannot be cut out, and where a lone CR would end a line.
+fn authored_content(w: &Writer<'_>, leaf: N<'_>) -> Option<String> {
+    let source = w.authored.as_deref()?;
+    let kids = children(leaf);
+    let from = span(kids.first()?)?.0;
+    let to = span(kids.last()?)?.1;
+    if to < from {
+        return None;
+    }
+    let decode = |a: usize, b: usize| source.get(a..b).map(|t| t.replace("\r\n", "\n"));
+    let breaks = line_breaks(kids);
+    // A line break inside a node that holds no break node, as alternative text, loses the prefix of the break before.
+    let mut prefix = breaks
+        .first()
+        .and_then(|&b| break_parts(b, &decode))
+        .map(|(_, p, _, _)| p)
+        .unwrap_or_default();
+    let mut text = String::new();
+    let mut at = from;
+    for &b in &breaks {
+        let (head, next, start, end) = break_parts(b, &decode)?;
+        if start < at {
+            return None;
+        }
+        text.push_str(&without_prefixes(&decode(at, start)?, &prefix));
+        text.push_str(&head);
+        text.push('\n');
+        prefix = next;
+        at = end;
+    }
+    text.push_str(&without_prefixes(&decode(at, to)?, &prefix));
+    (!ends_line_in_lone_cr(&text)).then_some(text)
+}
+
+/// The soft and hard breaks below `nodes`, in document order.
+fn line_breaks<'t>(nodes: Arr<'t>) -> Vec<N<'t>> {
+    let mut breaks = Vec::new();
+    let mut pending: Vec<N<'t>> = nodes.iter().rev().collect();
+    while let Some(n) = pending.pop() {
+        if matches!(ty(n), "soft_break" | "hard_break") {
+            breaks.push(n);
+        }
+        let mut below = Vec::new();
+        node::for_each_slot(n, true, &mut |slot, _, _| below.extend(slot.iter()));
+        pending.extend(below.into_iter().rev());
+    }
+    breaks
+}
+
+/// The authored line break `n`: its line up to the line end without blanks, the container prefix behind it, and its
+/// byte range.
+fn break_parts(
+    n: N<'_>,
+    decode: &impl Fn(usize, usize) -> Option<String>,
+) -> Option<(String, String, usize, usize)> {
+    let (start, end) = span(n)?;
+    let spelled = decode(start, end)?;
+    let cut = spelled.find('\n')?;
+    Some((
+        spelled
+            .get(..cut)?
+            .trim_end_matches([' ', '\t', '\r'])
+            .to_string(),
+        spelled.get(cut + 1..)?.to_string(),
+        start,
+        end,
+    ))
+}
+
+/// C2-W-016: a lone CR at the end of a written line has no spelling.
+fn ends_line_in_lone_cr(text: &str) -> bool {
+    text.match_indices('\r').any(|(i, _)| {
+        text.get(i + 1..)
+            .unwrap_or_default()
+            .trim_start_matches([' ', '\t'])
+            .chars()
+            .next()
+            .is_none_or(|c| c == '\n')
+    })
+}
+
+/// `text` with `prefix` taken off each line after the first that holds it; a lazy line keeps its spelling.
+fn without_prefixes(text: &str, prefix: &str) -> String {
+    if prefix.is_empty() || !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    for (at, line) in text.split('\n').enumerate() {
+        if at > 0 {
+            out.push('\n');
+            out.push_str(line.strip_prefix(prefix).unwrap_or(line));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 /// The references of `group` whose sidecar records their verbatim text, in document order.
@@ -1682,12 +1899,9 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
             }
             at = next;
         }
-        take_verbatim_references(
-            w,
-            nodes.slice(from, at).unwrap_or_else(Arr::empty),
-            out.is_empty(),
-            reported,
-        );
+        let group = nodes.slice(from, at).unwrap_or_else(Arr::empty);
+        take_verbatim_references(w, group, out.is_empty(), reported);
+        take_authored_blocks(w, group, out.is_empty(), reported);
         if w.lines.is_empty() {
             continue;
         }
@@ -4231,6 +4445,17 @@ fn prune_whole_group(
             .get(p + 1..)
             .and_then(|r| r.find('\\'))
             .map(|q| q + p + 1);
+    }
+}
+
+#[cfg(test)]
+mod authored_fallback_test {
+    use super::*;
+
+    #[test]
+    fn format_plain_reads_its_body_for_the_authored_fallback() {
+        let body = "[a *[a][]*[x]: /u\n".repeat(122);
+        assert_eq!(format_plain(&body).as_deref(), Some(body.as_str()));
     }
 }
 

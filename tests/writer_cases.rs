@@ -13,40 +13,7 @@ use holds::{Gate, Holds};
 use serde_json::Value;
 
 /// `(entry id, reason)` of the `write` and `format` clause cases.
-const HELD: &[(&str, &str)] = &[
-    (
-        "CC-2426",
-        "carve#6846: the C2-W-088 fallback keeps earlier authored blocks (cumulative)",
-    ),
-    (
-        "CC-2427",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2428",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2429",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2430",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2431",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2432",
-        "carve#6848 (carve-rs line): the authored-block fallback of C2-W-088 as ruled",
-    ),
-    (
-        "CC-2323",
-        "carve#6813: a key the escape rounds cannot spell is no loss where the output reads back",
-    ),
-];
+const HELD: Holds = &[];
 
 /// `(example id, reason)` of the `write` examples.
 const EXAMPLES_HELD: Holds = &[];
