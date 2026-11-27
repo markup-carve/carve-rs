@@ -1082,16 +1082,21 @@ fn fix_fragment(code: &str, text: &str) -> Option<String> {
     }
 }
 
-fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
+fn apply_fixes(
+    bytes: &[u8],
+    options: &LintOptions,
+) -> Result<(Vec<u8>, Vec<(String, usize)>), i32> {
     const MAX_PASSES: usize = 10;
     let mut source = String::from_utf8_lossy(bytes).into_owned();
     let mut seen = std::collections::HashSet::new();
+    let mut counts: Vec<(String, usize)> = Vec::new();
     for _ in 0..MAX_PASSES {
         if !seen.insert(source.clone()) {
-            return Ok(source.into_bytes());
+            return Ok((source.into_bytes(), counts));
         }
         let entries = api::lint(source.as_bytes(), options).map_err(api_fail)?;
-        let mut candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
+        let mut candidates = BTreeMap::<(usize, usize), Vec<(String, String)>>::new();
+        let mut order = Vec::new();
         for entry in entries {
             let Some(range) = entry.range else {
                 continue;
@@ -1101,6 +1106,9 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             };
             if let Some(replacement) = fix_fragment(&entry.code, slice) {
                 if replacement != slice {
+                    if !order.contains(&entry.code) {
+                        order.push(entry.code.clone());
+                    }
                     let start = if entry.code == "heading-closing-hashes"
                         && range.start_offset > 0
                         && source.as_bytes()[range.start_offset - 1] == b' '
@@ -1112,33 +1120,45 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
                     candidates
                         .entry((start, range.end_offset))
                         .or_default()
-                        .push(replacement);
+                        .push((entry.code, replacement));
                 }
             }
         }
         let mut changes: Vec<_> = candidates
             .into_iter()
             .filter_map(|(range, replacements)| {
-                (replacements.iter().all(|r| r == &replacements[0]))
+                (replacements.iter().all(|r| r.1 == replacements[0].1))
                     .then(|| (range, replacements[0].clone()))
             })
             .collect();
         changes.sort_by_key(|(range, _)| std::cmp::Reverse(range.0));
         let mut boundary = source.len();
         let mut applied = false;
-        for ((start, end), replacement) in changes {
+        let mut applied_counts = BTreeMap::<String, usize>::new();
+        for ((start, end), (code, replacement)) in changes {
             if end > boundary {
                 continue;
             }
             source.replace_range(start..end, &replacement);
+            *applied_counts.entry(code).or_default() += 1;
             boundary = start;
             applied = true;
         }
         if !applied {
-            return Ok(source.into_bytes());
+            return Ok((source.into_bytes(), counts));
+        }
+        for code in order {
+            if let Some(count) = applied_counts.remove(&code) {
+                if let Some((_, total)) = counts.iter_mut().find(|(existing, _)| *existing == code)
+                {
+                    *total += count;
+                } else {
+                    counts.push((code, count));
+                }
+            }
         }
     }
-    Ok(source.into_bytes())
+    Ok((source.into_bytes(), counts))
 }
 
 fn leading_frontmatter(node: &Value) -> bool {
@@ -1258,11 +1278,19 @@ fn lint_file(
     lint_opts.upgrade = bool_value(args, "upgrade", false);
     // C2-T-049: under `--fix` every rule keeps the state it has under `lint`.
     let fixed = args.command == "fix" || bool_value(args, "fix", false);
-    let source = if fixed {
+    let (source, counts) = if fixed {
         apply_fixes(bytes, &lint_opts)?
     } else {
-        bytes.to_vec()
+        (bytes.to_vec(), Vec::new())
     };
+    if !counts.is_empty() {
+        let summary = counts
+            .iter()
+            .map(|(code, count)| format!("{code} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("{}: fixed {summary}", display(path));
+    }
     let (entries, suppressed) =
         api::lint_with_suppressed(source.as_slice(), &lint_opts).map_err(api_fail)?;
     let entries: Vec<Entry> = entries
