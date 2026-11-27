@@ -216,8 +216,13 @@ impl Parser<'_> {
                 {
                     let first_of_group = data.rows.len() == 1
                         || data.rows.windows(2).last().is_some_and(|pair| {
-                            pair[0].cells.first().is_some_and(|cell| cell.header)
-                                != pair[1].cells.first().is_some_and(|cell| cell.header)
+                            pair.first()
+                                .and_then(|row| row.cells.first())
+                                .is_some_and(|cell| cell.header)
+                                != pair
+                                    .last()
+                                    .and_then(|row| row.cells.first())
+                                    .is_some_and(|cell| cell.header)
                         });
                     if let Some(row) = data.rows.last_mut() {
                         // C2-B-175 adds cells past the written row. A span mark in
