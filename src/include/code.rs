@@ -17,6 +17,11 @@ pub(super) fn quoted_lines(text: &str, lines: &FileLines, node: &ast::Include<'_
     } else {
         ','
     };
+    quoted_by(text, lines, sep)
+}
+
+/// [`quoted_lines`] for records separated by `sep`.
+pub(super) fn quoted_by(text: &str, lines: &FileLines, sep: char) -> Vec<bool> {
     let mut inside = false;
     (0..lines.len())
         .map(|i| {

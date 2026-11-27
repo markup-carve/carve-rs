@@ -117,3 +117,17 @@ fn a_duplicate_id_of_a_second_site_names_that_site() {
         ["a.crv:1:2 duplicate-id <3:1"]
     );
 }
+
+#[test]
+fn a_table_region_reads_its_markers_as_the_expansion_does() {
+    assert_eq!(
+        findings(
+            "{table}\n{{ t.csv @region:k @code:csv }}\n",
+            &[(
+                "t.csv",
+                "a,b\n%% #region k\n1,\"x\n%% #endregion k\ny\"\n2,z\n%% #endregion k\n\u{202e}\n"
+            )],
+        ),
+        Vec::<String>::new()
+    );
+}

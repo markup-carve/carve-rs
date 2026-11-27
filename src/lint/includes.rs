@@ -606,36 +606,32 @@ fn selected_source<'a>(node: V<'_>, text: &'a str) -> (&'a str, usize, usize, Op
         return (text, 0, 0, selected_lines(node));
     }
     // C2-N-086: the region's own lines, not the definitions C2-N-020 appends from the rest of the file.
-    if let Some(name) = node.at("options").at("region").as_str()
-        && let Ok((from, to)) =
-            crate::include::region_lines(text, name, node.at("options").get("code").is_some())
-    {
-        let (start, end) = line_offsets(text, from, to);
-        return (text.get(start..end).unwrap_or(""), start, from - 1, None);
+    if let Some(name) = node.at("options").at("region").as_str() {
+        let code = node.at("options").at("code");
+        let table = node
+            .at("attrs")
+            .at("keyValues")
+            .as_array()
+            .is_some_and(|pairs| {
+                (0..pairs.len()).any(|index| {
+                    pairs
+                        .get(index)
+                        .and_then(|pair| pair.item(0).as_str())
+                        .is_some_and(|key| key.eq_ignore_ascii_case("table"))
+                })
+            });
+        let separator = match code.as_str() {
+            Some("csv") if table => Some(','),
+            Some("tsv") if table => Some('\t'),
+            _ => None,
+        };
+        if let Some((start, end, shift)) =
+            crate::include::region_span(text, name, !code.is_null(), separator)
+        {
+            return (text.get(start..end).unwrap_or(""), start, shift, None);
+        }
     }
     (text, 0, 0, None)
-}
-
-/// Byte offsets of the one-based lines `from` to `to`; an empty range starts and ends at line `from`.
-fn line_offsets(text: &str, from: usize, to: usize) -> (usize, usize) {
-    let mut start = text.len();
-    let mut end = text.len();
-    let mut offset = 0;
-    for (index, line) in text.split_inclusive('\n').enumerate() {
-        if index + 1 == from {
-            start = offset;
-            if to < from {
-                end = offset;
-                break;
-            }
-        }
-        offset += line.len();
-        if index + 1 == to {
-            end = offset;
-            break;
-        }
-    }
-    (start, end.max(start))
 }
 
 fn line_span(text: &str, range: &str) -> Option<(usize, usize)> {
