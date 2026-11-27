@@ -755,6 +755,31 @@ pub fn unmarked_trees_equal<'a, 'b>(a: impl Into<V<'a>>, b: impl Into<V<'b>>) ->
     equal_values(a.into(), b.into(), false, true)
 }
 
+/// Whether [`without_standard_data`] changes `n`: an object below it holds a `data` object that is empty or
+/// holds a standard namespace.
+pub fn holds_standard_data(n: V<'_>) -> bool {
+    if let Some(items) = n.as_array() {
+        return items.iter().any(holds_standard_data);
+    }
+    if !n.is_object() {
+        return false;
+    }
+    if let Some(d) = n.get("data").filter(|d| d.is_object()) {
+        let mut empty = true;
+        d.each(&mut |_, _| empty = false);
+        if empty
+            || ["carve.source", "carve.style", "carve.annotation"]
+                .iter()
+                .any(|k| d.get(k).is_some())
+        {
+            return true;
+        }
+    }
+    let mut found = false;
+    n.each(&mut |_, value| found = found || holds_standard_data(value));
+    found
+}
+
 /// `n` without the standard data namespaces (C2-A-193).
 pub fn without_standard_data(n: V<'_>) -> Value {
     let mut copy = n.to_value();

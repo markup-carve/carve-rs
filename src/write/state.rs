@@ -66,12 +66,16 @@ pub struct Matcher {
 }
 
 /// A [`ProbeResult`] with its escapes by place in the shape of the probed inlines.
-pub type ShapeResult = (Option<bool>, Vec<(usize, usize)>);
+pub type ShapeResult = (Option<bool>, Vec<(usize, usize)>, Asked);
+
+/// Whether a computation read `closer_kinds` and `whole_trials`; a cached answer carries it to its later uses.
+pub type Asked = (bool, bool);
 
 #[derive(Debug, Clone)]
 pub struct ProbeResult<'t> {
     pub found: Option<bool>,
     pub taken: Vec<(N<'t>, usize)>,
+    pub asked: Asked,
 }
 
 /// Whether the current group has a grammar-level read-back certificate.
@@ -151,9 +155,15 @@ pub struct Writer<'t> {
     pub closer_kinds: bool,
     /// C2-W-125: true while a group that every other form lost is written again keeping a trial that gives the tree.
     pub whole_trials: bool,
+    /// Set where a round's decision read `whole_trials`.
+    pub whole_trials_asked: bool,
+    /// Set where a round's decision read `closer_kinds`.
+    pub closer_kinds_asked: std::cell::Cell<bool>,
     /// C2-W-125: true while the first rounds of a group of one paragraph run, where the write places the backslash
     /// of case nine that the rounds would.
     pub seed_cases: bool,
+    /// Set where a pass's first round set `seed_cases`.
+    pub seeded: bool,
     /// The bracket partners of the group in repair, by its first node and length.
     pub partners: Option<((usize, usize), super::check::Partners<'t>)>,
     /// Set when a node of the group did not read back during the kind rounds.
@@ -213,9 +223,27 @@ pub struct Writer<'t> {
     pub authored: Option<String>,
     /// C2-W-088: the leaf blocks written with their authored content while that fallback tries them.
     pub authored_leaves: HashMap<usize, String>,
+    /// Whether a candidate content of a collapsed reference reads back as that reference, by node and candidate:
+    /// every write of a group asks again, and the answer depends on neither.
+    pub collapsed_reads: HashMap<(usize, String), bool>,
 }
 
 impl<'t> Writer<'t> {
+    /// The reads of `closer_kinds` and `whole_trials` noted so far, which start again from none.
+    pub fn take_asked(&mut self) -> Asked {
+        (
+            self.closer_kinds_asked.replace(false),
+            std::mem::take(&mut self.whole_trials_asked),
+        )
+    }
+
+    pub fn note_asked(&mut self, (closer, whole): Asked) {
+        if closer {
+            self.closer_kinds_asked.set(true);
+        }
+        self.whole_trials_asked |= whole;
+    }
+
     pub fn new(pool: &'t typed_arena::Arena<Value>, align_tables: bool) -> Self {
         Self {
             pool,
@@ -251,7 +279,10 @@ impl<'t> Writer<'t> {
             no_mark_text: false,
             closer_kinds: false,
             whole_trials: false,
+            whole_trials_asked: false,
+            closer_kinds_asked: std::cell::Cell::new(false),
             seed_cases: false,
+            seeded: false,
             partners: None,
             kind_failed: false,
             parses: 0,
@@ -285,6 +316,7 @@ impl<'t> Writer<'t> {
             capped_runs: Vec::new(),
             authored: None,
             authored_leaves: HashMap::new(),
+            collapsed_reads: HashMap::new(),
         }
     }
 
