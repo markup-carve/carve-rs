@@ -11,13 +11,27 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
+Carve 0.2.0 makes carve-rs the Carve 0.2 engine.
+
 ### Breaking
 
-- The crate is now the Carve 0.2 engine: the `carve2` crate moves to the root as `carve-lang` (imported as `carve`), its library is `carve::api`, and the `carve2` binary, including the WASI `carve2 call`, is now `carve` (`carve call`). The 0.1 engine, its API, CLI, docs and the `experimental-event-parser` features are removed; `README.md` maps every 0.1 call to its 0.2 counterpart. The `fs` feature (default on) still removes every code path that opens a file. Rust 1.88 is the new minimum. The Markdown, plain-text and ANSI writers return as `markdown`, `plain` and `ansi` writer targets in a later change.
+- The crate is now the Carve 0.2 engine: the `carve2` crate moves to the root as `carve-lang` (imported as `carve`), its library is `carve::api`, and the `carve2` binary, including the WASI `carve2 call`, is now `carve` (`carve call`). The 0.1 engine, its API, CLI, docs and the `experimental-event-parser` features are removed; `README.md` maps every 0.1 call to its 0.2 counterpart. The `fs` feature (default on) still removes every code path that opens a file. Rust 1.88 is the new minimum. The Markdown, plain-text and ANSI writers are the `markdown`, `plain` and `ansi` export targets (#4348, #4358).
 
 ### Fixes
 
-- `to_html` renders a loose bullet list, such as a blank line before a nested list, on its fast path instead of the full parser; a blank before a nested list had made 0.1.14 about 1.7x slower than 0.1.13 on such documents (markup-carve/carve#6026).
+- The canonical writer reads references from the tree before its escape rounds, so a second `fmt` pass no longer changes the output; a `/` or `*` before a hard break takes its escape (#4900, #4901).
+- A writer group that still loses a node writes its paragraphs, headings and terms as authored instead of refusing (#4906).
+- The writer reports `metadata.fields` beside frontmatter as `field-unspellable`, and a region marker keeps the closer of the fence above it (#4895).
+- HTML import keeps a document holding an empty `<code></code>` and drops the empty span; an empty element counts in a ranged comment's range only when the import keeps it (#4896, #4897).
+- Under an allow-list profile a snippet definition outside the profile is reported, and tree renders name the profile and construct in `profile-construct-degraded` (#4884).
+- A tree decoded from an envelope carries every envelope declaration its root lacks (#4909).
+
+### Improvements
+
+- An annotation range may carry a `data` object, checked like other extension data (#4907).
+- `carve lint` with includes expands the document once and lints each included file once (#4874).
 
 ## [0.1.14] - 2026-11-12
 
