@@ -85,8 +85,9 @@ const ATTRIBUTES: &[&str] = &[
     "clip-rule",
 ];
 
-/// C2-X-010, C2-X-059: claims each `code_block` of an enabled language whose
-/// body is SVG source. Returns the qualified names it claimed.
+/// C2-X-010, C2-X-059: claims each `code_block` of an enabled language.
+/// The renderer decides whether its body is safe SVG. Returns the qualified
+/// names it claimed.
 pub(crate) fn claim(
     doc: &mut Value,
     enabled: &[(&'static str, &'static str)],
@@ -129,10 +130,7 @@ fn matcher<'m>(
         return None;
     }
     let syntax = map.get("syntax").and_then(Value::as_str)?;
-    let body = map.get("value").and_then(Value::as_str)?;
-    if !body.trim_start().starts_with("<") {
-        return None;
-    }
+    map.get("value").and_then(Value::as_str)?;
     enabled.iter().find(|(name, _)| *name == syntax)
 }
 

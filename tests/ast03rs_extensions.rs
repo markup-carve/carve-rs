@@ -59,6 +59,17 @@ fn hostile_image_source_is_still_claimed_and_falls_back_on_render() {
 }
 
 #[test]
+fn image_fence_claim_does_not_prejudge_svg_safety() {
+    let tree = parse("```img\nplain text\n```", "carve.imgFence.img");
+    let node = &tree["children"][0];
+    assert_eq!(node["name"], "carve.imgFence.img");
+    assert_eq!(
+        node["payload"],
+        json!([{"format":"image/svg+xml","value":"plain text\n"}])
+    );
+}
+
+#[test]
 fn disclosures_use_the_declared_title_slot() {
     for (name, extension) in [
         ("details", "carve.details"),
