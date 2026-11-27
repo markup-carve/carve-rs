@@ -394,6 +394,30 @@ fn c2_b_168_table_shaped_paragraph_names_its_owner() {
 }
 
 #[test]
+fn c2_b_010_lone_cr_remains_table_shaped_paragraph_text() {
+    let source = "| é |\r| 字 |\r";
+    let found = findings(source, "table-shaped-paragraph");
+    assert_eq!(found.len(), 1);
+    let pos = found[0].pos.expect("table-shaped warning range");
+    assert_eq!(
+        (pos.start_offset, pos.end_offset),
+        (0, u32::try_from(source.len()).unwrap())
+    );
+    assert!(findings("| é |\r\n| 字 |", "table-shaped-paragraph").is_empty());
+}
+
+#[test]
+fn c2_b_010_table_line_endings_variants() {
+    for i in 0..1_000 {
+        let content = format!("{}é{}字", "a".repeat(i % 13), " ".repeat(i % 5));
+        let ending = if i % 2 == 0 { "\r" } else { "\r\n" };
+        let source = format!("| {content} |{ending}");
+        let found = findings(&source, "table-shaped-paragraph");
+        assert_eq!(found.len(), usize::from(i % 2 == 0), "variant {i}");
+    }
+}
+
+#[test]
 fn c2_h_075_semantic_key_ignores_quoted_value_text() {
     let source = "[x](u){note=\"see kbd=x\" kbd=y}";
     let finding = findings(source, "semantic-attribute-outside-span");
