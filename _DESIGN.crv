@@ -1,0 +1,7 @@
+# carve#6907: 0.2 migration lint for an empty aligned table cell
+
+Root cause: the pinned lint model's `deprecated-cell-alignment` expression requires a non-space character after the old alignment run and its separating space. That recognizes a cell such as `|< pen |`, but excludes a complete cell whose entire content is `?v `, as in U-162's `|?v |`. The prefix still has the removed 0.1.13 syntax and changes the 0.2 reading.
+
+One general change: add a fallback for *every* complete pipe-table cell whose whole authored text consists of a valid old alignment run followed by space, with no remaining content. Use the same allowed horizontal and vertical marks and optional header mark as the pinned rule, and report the same code, message, range and source path. Leave the model's existing nonempty-cell evaluation in place. The fallback is a semantic extension of that rule to its empty-cell boundary, not a U-162 string or sample lookup.
+
+The pinned spec-data copy and existing fixtures stay unchanged. New tests cover the map sample, other valid empty runs, nonempty cells, malformed/escaped/modern prefixes, upgrade gating, and the label-comment cases settled by carve-rs#4925. Compare input and diagnostics before and after, then run targeted lint tests before pushing.
