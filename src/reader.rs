@@ -813,7 +813,7 @@ fn check_annotation_ids(root: &Value) -> Result<(), TreeError> {
     Ok(())
 }
 
-fn extension_names(root: &Value) -> Result<HashMap<String, Value>, TreeError> {
+pub(crate) fn extension_names(root: &Value) -> Result<HashMap<String, Value>, TreeError> {
     let mut names = HashMap::new();
     for (i, decl) in root["extensions"]
         .as_array()
@@ -977,7 +977,7 @@ fn check_data(
     Ok(())
 }
 
-fn check_opaque(root: &Value, path: &str) -> Result<(), TreeError> {
+pub(crate) fn check_opaque(root: &Value, path: &str) -> Result<(), TreeError> {
     let mut pending = vec![(root, path.to_string())];
     while let Some((value, path)) = pending.pop() {
         match value {
