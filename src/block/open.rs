@@ -214,7 +214,36 @@ impl Parser<'_> {
                     ..
                 }) = &mut self.leaf
                 {
+                    let first_of_group = data.rows.len() == 1
+                        || data.rows.windows(2).last().is_some_and(|pair| {
+                            pair.first()
+                                .and_then(|row| row.cells.first())
+                                .is_some_and(|cell| cell.header)
+                                != pair
+                                    .last()
+                                    .and_then(|row| row.cells.first())
+                                    .is_some_and(|cell| cell.header)
+                        });
                     if let Some(row) = data.rows.last_mut() {
+                        // C2-B-175 adds cells past the written row. A span mark in
+                        // one of those fragments has no positioned cell for the
+                        // lint model to visit, but is still authored cell text.
+                        if first_of_group {
+                            for &(start, end) in frags.iter().skip(row.cells.len()) {
+                                if text
+                                    .get(start..end)
+                                    .is_some_and(|fragment| fragment.trim() == "^")
+                                {
+                                    self.findings.push(super::Finding {
+                                        code: "table-span-marker-blocked",
+                                        message: 2,
+                                        start,
+                                        end,
+                                        values: Vec::new(),
+                                    });
+                                }
+                            }
+                        }
                         table::join_continuation(row, text, &frags);
                         row.end = (k.offset() + k.rest().len()).max(row.end);
                         *end = row.end.max(*end);
@@ -391,10 +420,12 @@ impl Parser<'_> {
     }
 
     fn set_leaf(&mut self, leaf: Leaf, start: usize, end: usize, attrs: Option<AttrBlock>) {
+        let opener = start;
         let (start, attrs) = self.take_pending(start, attrs);
         self.leaf = Some(OpenLeaf {
             leaf,
             start,
+            opener,
             end,
             attrs,
             depth: self.stack.len(),
@@ -692,6 +723,7 @@ impl Parser<'_> {
                     held: Vec::new(),
                 },
                 start: s,
+                opener: start,
                 end: e,
                 attrs,
                 depth: self.stack.len(),
@@ -702,8 +734,15 @@ impl Parser<'_> {
         let figure =
             info.name.as_deref() == Some("figure") && info.title.is_none() && info.label.is_none();
         let sigil = info.sigil;
+        let (diagnostic_kind, anonymous) = div_diagnostic(&info, figure, &self.stack);
         self.push_container(
-            Kind::Div { len, sigil, figure },
+            Kind::Div {
+                len,
+                sigil,
+                figure,
+                diagnostic_kind,
+                anonymous,
+            },
             ContainerKind::Div {
                 info: Box::new(info),
                 sigil,
@@ -809,6 +848,7 @@ impl Parser<'_> {
                 pieces: Pieces::One(Some(piece)),
             },
             start: k.offset(),
+            opener: k.offset(),
             end: e,
             attrs: None,
             depth: self.stack.len(),
@@ -1019,6 +1059,39 @@ fn continuation(k: &Cursor<'_>) -> Option<Vec<(usize, usize)>> {
         s = p + 1;
     }
     Some(frags)
+}
+
+/// Catalog kind and template for an unclosed colon container.
+fn div_diagnostic(
+    info: &shapes::DivInfo,
+    figure: bool,
+    stack: &[super::Container],
+) -> (&'static str, bool) {
+    let kind = info.name.as_deref().and_then(|name| {
+        crate::tables::DIV_NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, kind)| *kind)
+    });
+    let name = match kind {
+        Some("admonition") => "admonition",
+        Some("directive") => "directive",
+        Some("figure_group")
+            if figure
+                && !stack
+                    .iter()
+                    .any(|frame| matches!(frame.kind, Kind::Div { figure: true, .. })) =>
+        {
+            "figure group"
+        }
+        _ => match info.sigil {
+            Some('>') => "quote fence",
+            Some('\\') => "hard-break block",
+            _ if info.name.is_some() => "div",
+            _ => "container",
+        },
+    };
+    (name, info.is_anonymous())
 }
 
 /// C2-B-197: one image form, glued attribute blocks, trailing spaces.

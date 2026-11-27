@@ -78,6 +78,8 @@ enum Kind {
         len: usize,
         sigil: Option<char>,
         figure: bool,
+        diagnostic_kind: &'static str,
+        anonymous: bool,
     },
 }
 
@@ -211,6 +213,8 @@ impl LineCommentFence {
 struct OpenLeaf {
     leaf: Leaf,
     start: usize,
+    /// The opener itself, past attribute lines included in `start`.
+    opener: usize,
     end: usize,
     attrs: Option<AttrBlock>,
     /// Stack depth of the container that holds the leaf.
@@ -634,6 +638,7 @@ impl<'a> Parser<'a> {
                 opener: s,
             },
             start,
+            opener: s,
             end: e,
             attrs,
             depth: 1,
@@ -656,6 +661,7 @@ impl<'a> Parser<'a> {
                         opener: s,
                     },
                     start,
+                    opener: s,
                     end: e,
                     attrs: None,
                     depth: 1,
@@ -1179,7 +1185,14 @@ impl<'a> Parser<'a> {
             _ => open.start,
         };
         let line_block = matches!(open.leaf, Leaf::LineBlock { .. });
-        let f = fence_finding(self.src, (code, ch), start, open.end, line_block);
+        let f = fence_finding(
+            self.src,
+            (code, ch),
+            start,
+            open.opener,
+            open.end,
+            line_block,
+        );
         self.findings.push(f);
     }
 
@@ -1301,14 +1314,19 @@ impl<'a> Parser<'a> {
             return;
         }
         if !self.fence_closes
-            && let Kind::Div { len, .. } = c.kind
+            && let Kind::Div {
+                len,
+                diagnostic_kind,
+                anonymous,
+                ..
+            } = c.kind
         {
             self.findings.push(Finding {
                 code: "unclosed-container-fence",
-                message: 0,
+                message: usize::from(anonymous),
                 start: c.start,
                 end: c.end,
-                values: vec![("width", len.to_string()), ("kind", "container".into())],
+                values: vec![("width", len.to_string()), ("kind", diagnostic_kind.into())],
             });
         }
         let loose = match c.kind {
@@ -1370,12 +1388,13 @@ fn fence_finding(
     src: &Source,
     (code, ch): (&'static str, u8),
     start: usize,
+    opener: usize,
     end: usize,
     line_block: bool,
 ) -> Finding {
     let text = src.text();
     let run: String = text
-        .get(start..)
+        .get(opener..)
         .unwrap_or("")
         .bytes()
         .take_while(|&b| b == ch)
@@ -1408,7 +1427,14 @@ fn fence_finding(
 
 /// C2-B-111: a comment block in a line block that its container ends.
 fn unclosed_comment(src: &Source, f: &LineCommentFence) -> Finding {
-    fence_finding(src, ("unclosed-comment-fence", b'%'), f.start, f.end, false)
+    fence_finding(
+        src,
+        ("unclosed-comment-fence", b'%'),
+        f.start,
+        f.start,
+        f.end,
+        false,
+    )
 }
 
 /// C2-B-123: a comment block hides its body but does not end the stanza.

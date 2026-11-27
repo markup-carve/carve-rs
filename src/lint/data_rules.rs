@@ -966,6 +966,15 @@ fn empty_old_cell_alignment(
     let Some(prefix) = captures.name("prefix") else {
         return;
     };
+    // A lone alignment symbol separated from its pipe is cell text. Keep
+    // composite old prefixes, whose vertical mark identifies the old form.
+    if prefix.start() > usize::from(text.starts_with('='))
+        && captures
+            .name("mark")
+            .is_some_and(|mark| mark.as_str().len() == 1)
+    {
+        return;
+    }
     if text.starts_with('=')
         && !matches!(
             records.node_key(&records.subject_field(&subject, F::Node), "header"),
