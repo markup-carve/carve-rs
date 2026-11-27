@@ -2390,14 +2390,29 @@ impl<'t> SavedGroup<'t> {
             .flat_map(|roles| roles.values().map(|n| id(*n)))
             .collect();
         ids.extend(stand_ins);
+        // An empty map holds no entry of the group: skip its lookups.
         for n in &ids {
-            w.sp.escapes.remove(n);
-            w.sp.attempts.remove(n);
-            w.sp.lost.remove(n);
-            w.sp.lost_keys.remove(n);
-            w.forms.remove(n);
-            w.round_forms.remove(n);
-            w.glued.remove(n);
+            if !w.sp.escapes.is_empty() {
+                w.sp.escapes.remove(n);
+            }
+            if !w.sp.attempts.is_empty() {
+                w.sp.attempts.remove(n);
+            }
+            if !w.sp.lost.is_empty() {
+                w.sp.lost.remove(n);
+            }
+            if !w.sp.lost_keys.is_empty() {
+                w.sp.lost_keys.remove(n);
+            }
+            if !w.forms.is_empty() {
+                w.forms.remove(n);
+            }
+            if !w.round_forms.is_empty() {
+                w.round_forms.remove(n);
+            }
+            if !w.glued.is_empty() {
+                w.glued.remove(n);
+            }
         }
         w.sp.escapes.extend(self.escapes);
         w.sp.attempts.extend(self.attempts);
@@ -2938,7 +2953,7 @@ struct Reads<'k> {
     base: std::cell::Cell<usize>,
     /// Whether a parse reads back as the group, by the parse's source, the group's first node and length, and
     /// whether span marks are compared.
-    equal: std::cell::RefCell<std::collections::HashMap<(usize, usize, usize, bool), bool>>,
+    equal: std::cell::RefCell<AddrMap<(usize, usize, usize, bool), bool>>,
 }
 
 const LISTED_READS: usize = 8;
