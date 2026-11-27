@@ -589,6 +589,10 @@ impl<'a> Index<'a, '_> {
     }
 
     fn heading_target(&self, key: &str, arena: &Arena) -> Option<&'a str> {
+        // The key is parsed as inline content only to look it up, so without a heading nothing is read.
+        if self.heading_by_text.is_empty() {
+            return None;
+        }
         let plain_key = if key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b' ') {
             std::borrow::Cow::Borrowed(key)
         } else {
