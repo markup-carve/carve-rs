@@ -605,22 +605,37 @@ fn selected_source<'a>(node: V<'_>, text: &'a str) -> (&'a str, usize, usize, Op
     if node.at("section").as_str().is_some() {
         return (text, 0, 0, selected_lines(node));
     }
-    if node.at("options").get("region").is_some()
-        && let Some((start, end)) = selected_offsets(node, text.len())
+    // C2-N-086: the region's own lines, not the definitions C2-N-020 appends from the rest of the file.
+    if let Some(name) = node.at("options").at("region").as_str()
+        && let Ok((from, to)) =
+            crate::include::region_lines(text, name, node.at("options").get("code").is_some())
     {
-        let start = text[..start].rfind('\n').map_or(0, |offset| offset + 1);
-        let end = text[end..]
-            .find('\n')
-            .map_or(text.len(), |offset| end + offset + 1);
-        let shift = text
-            .get(..start)
-            .unwrap_or("")
-            .bytes()
-            .filter(|b| *b == b'\n')
-            .count();
-        return (text.get(start..end).unwrap_or(""), start, shift, None);
+        let (start, end) = line_offsets(text, from, to);
+        return (text.get(start..end).unwrap_or(""), start, from - 1, None);
     }
     (text, 0, 0, None)
+}
+
+/// Byte offsets of the one-based lines `from` to `to`; an empty range starts and ends at line `from`.
+fn line_offsets(text: &str, from: usize, to: usize) -> (usize, usize) {
+    let mut start = text.len();
+    let mut end = text.len();
+    let mut offset = 0;
+    for (index, line) in text.split_inclusive('\n').enumerate() {
+        if index + 1 == from {
+            start = offset;
+            if to < from {
+                end = offset;
+                break;
+            }
+        }
+        offset += line.len();
+        if index + 1 == to {
+            end = offset;
+            break;
+        }
+    }
+    (start, end.max(start))
 }
 
 fn line_span(text: &str, range: &str) -> Option<(usize, usize)> {
@@ -676,21 +691,6 @@ fn selected_lines(node: V<'_>) -> Option<(u32, u32)> {
             crate::ast::Pos::at(usize::try_from(b).unwrap_or(usize::MAX)),
         )
     })
-}
-
-fn selected_offsets(node: V<'_>, length: usize) -> Option<(usize, usize)> {
-    let children = node.at("children").as_array()?;
-    let children = (0..children.len()).filter_map(|index| children.get(index));
-    let start = children
-        .clone()
-        .filter_map(|c| c.field("/pos/startOffset").as_u64())
-        .min()?;
-    let end = children
-        .filter_map(|c| c.field("/pos/endOffset").as_u64())
-        .max()?;
-    let start = usize::try_from(start).ok()?.min(length);
-    let end = usize::try_from(end).ok()?.min(length);
-    (start <= end).then_some((start, end))
 }
 
 /// A file included twice repeats a finding with only another path; per-column findings share a range.
