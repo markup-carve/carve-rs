@@ -158,6 +158,18 @@ fn inline_matcher<'m>(
         return None;
     }
     let name = map.get("name").and_then(Value::as_str)?;
+    if name == "cite"
+        && !map
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|children| {
+                plain_text(children)
+                    .split(';')
+                    .any(|key| !key.trim().is_empty())
+            })
+    {
+        return None;
+    }
     matchers.iter().find(|(source, _)| *source == name)
 }
 

@@ -22,6 +22,29 @@ fn wiki_and_cite_keep_their_parsed_props() {
 }
 
 #[test]
+fn wiki_and_cite_props_read_back_without_a_host() {
+    for (source, extension) in [
+        (":wiki[Page]\n", "carve.wiki"),
+        (":cite[doe; smith]\n", "carve.cite"),
+    ] {
+        let tree = parse(source, extension);
+        let request = json!({"call":"writeWithDiagnostics", "tree":tree});
+        let response: Value =
+            serde_json::from_str(&carve::api::json::call(&request.to_string())).unwrap();
+        assert_eq!(response["ok"]["output"], source, "{response}");
+        assert_eq!(response["ok"]["diagnostics"], json!([]));
+    }
+}
+
+#[test]
+fn a_citation_without_a_key_keeps_its_core_form() {
+    let tree = parse(":cite[; ; ]", "carve.cite");
+    let node = &tree["children"][0]["children"][0];
+    assert_eq!(node["name"], "cite");
+    assert!(node.get("props").is_none());
+}
+
+#[test]
 fn image_fence_keeps_payload_and_positioned_fallback() {
     let tree = parse("```img\n<svg/>\n```", "carve.imgFence.img");
     let node = &tree["children"][0];
