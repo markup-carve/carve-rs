@@ -3201,9 +3201,7 @@ fn settle<'t>(
     if drop_trials(w, &mut c, group, first, round) && c.changes() == 0 {
         return true;
     }
-    if !w.kind_escapes {
-        defer_closer_repairs(&mut c);
-    }
+    defer_closer_repairs(w, &mut c);
     if w.kind_escapes {
         // C2-W-088: a node the kind rounds leave unread sends the group to the
         // rounds of the reported openers only.
@@ -3233,8 +3231,8 @@ fn settle<'t>(
 
 /// C2-W-088, C2-W-125 (carve-js#5464): in the rounds of the reported openers only, a round whose parse holds a
 /// construct the tree does not hold escapes that construct's opener; a closer repair waits for the parse after it.
-fn defer_closer_repairs(c: &mut Check<'_>) {
-    if c.constructs.is_empty() {
+fn defer_closer_repairs(w: &Writer<'_>, c: &mut Check<'_>) {
+    if w.kind_escapes || c.constructs.is_empty() {
         return;
     }
     let constructs: HashSet<(usize, usize)> =
