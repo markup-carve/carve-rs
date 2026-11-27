@@ -115,18 +115,7 @@ fn check_node(
             "extension is outside its registered parent slot",
         ));
     }
-    for key in node["props"]
-        .as_object()
-        .into_iter()
-        .flat_map(|props| props.keys())
-    {
-        if rule["props"].get(key).is_none() {
-            return Err(reader(
-                &format!("{path}/props"),
-                "unregistered extension prop",
-            ));
-        }
-    }
+    check_props(node, path, rule)?;
     check_slot_names(node, path, rule)?;
     for (slot, spec) in rule["slots"]
         .as_object()
@@ -160,6 +149,34 @@ fn check_node(
         }
     }
     Ok(())
+}
+
+fn check_props(node: &Value, path: &str, rule: &Value) -> Result<(), TreeError> {
+    let name = node["name"].as_str().unwrap_or("");
+    for key in node["props"]
+        .as_object()
+        .into_iter()
+        .flat_map(|props| props.keys())
+    {
+        if rule["props"].get(key).is_none() && !standard_inline_prop(name, key) {
+            return Err(reader(
+                &format!("{path}/props"),
+                "unregistered extension prop",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The standard wiki and citation matchers register these properties in their
+/// host definitions. The pinned extension catalog lists their source forms but
+/// leaves their property maps empty, so the reader must retain the built-in
+/// definitions when it validates a tree without a host instance.
+fn standard_inline_prop(name: &str, key: &str) -> bool {
+    matches!(
+        (name, key),
+        ("carve.wiki", "target") | ("carve.cite", "keys" | "refs")
+    )
 }
 
 fn check_slot_names(node: &Value, path: &str, rule: &Value) -> Result<(), TreeError> {

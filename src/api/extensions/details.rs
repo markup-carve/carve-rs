@@ -37,7 +37,7 @@ fn disclosure(name: &str, claim: &Claim<'_>) -> Option<Value> {
         "name": name,
         "version": "1",
         "children": [],
-        "slots": {"summary": title, "body": body},
+        "slots": {"title": title, "body": body},
         "fallback": titled_fallback(&title, &body),
     }))
 }
@@ -93,7 +93,7 @@ fn container(head: &str, inner: &str, body: &str, tail: &str, cx: &RenderContext
 
 fn summary(node: &Value, label: &str, cx: &RenderContext<'_>) -> Result<String, Error> {
     let slot = node
-        .pointer("/slots/summary")
+        .pointer("/slots/title")
         .cloned()
         .unwrap_or_else(|| json!([]));
     let text = if slot.as_array().is_some_and(|s| !s.is_empty()) {
@@ -151,7 +151,7 @@ impl Renderer for Details {
 pub fn details() -> Bundle {
     Bundle {
         extensions: vec![Extension {
-            declaration: declaration("carve.details", &["summary", "body"]),
+            declaration: declaration("carve.details", &["title", "body"]),
             renderers: vec![
                 (Channel::Interactive, Box::new(Details)),
                 (Channel::BuildTime, Box::new(Details)),
@@ -230,7 +230,7 @@ pub fn spoiler() -> Bundle {
                 transform: None,
             },
             Extension {
-                declaration: declaration("carve.spoilerBlock", &["summary", "body"]),
+                declaration: declaration("carve.spoilerBlock", &["title", "body"]),
                 renderers: vec![
                     (Channel::Interactive, Box::new(SpoilerBlock(false))),
                     (Channel::BuildTime, Box::new(SpoilerBlock(true))),

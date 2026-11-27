@@ -85,8 +85,9 @@ const ATTRIBUTES: &[&str] = &[
     "clip-rule",
 ];
 
-/// C2-X-010, C2-X-059: claims each `code_block` of an enabled language whose
-/// body is SVG source. Returns the qualified names it claimed.
+/// C2-X-010, C2-X-059: claims each `code_block` of an enabled language.
+/// The renderer decides whether its body is safe SVG. Returns the qualified
+/// names it claimed.
 pub(crate) fn claim(
     doc: &mut Value,
     enabled: &[(&'static str, &'static str)],
@@ -129,10 +130,7 @@ fn matcher<'m>(
         return None;
     }
     let syntax = map.get("syntax").and_then(Value::as_str)?;
-    let body = map.get("value").and_then(Value::as_str)?;
-    if !body.trim_start().starts_with("<svg") {
-        return None;
-    }
+    map.get("value").and_then(Value::as_str)?;
     enabled.iter().find(|(name, _)| *name == syntax)
 }
 
@@ -140,7 +138,6 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
     let syntax = code.get("syntax").cloned().unwrap_or(Value::Null);
     let body = code.get("value").cloned().unwrap_or_default();
     let mut fallback = code.clone();
-    fallback.remove("pos");
     fallback.remove("attrs");
     let mut out = Map::new();
     out.insert("type".into(), "block_extension".into());
@@ -148,6 +145,10 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
     out.insert("version".into(), "1".into());
     out.insert("children".into(), json!([]));
     out.insert("props".into(), json!({ "language": syntax }));
+    out.insert(
+        "payload".into(),
+        json!([{"format": "image/svg+xml", "value": body}]),
+    );
     out.insert("fallback".into(), json!([Value::Object(fallback)]));
     out.insert(
         "source".into(),
