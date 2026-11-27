@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "carve-lang"
-version = "0.1.14"
+version = "0.2.0"
 dependencies = [
  "bumpalo",
  "carve-lang 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -72,3 +72,6 @@
 4253: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
 4269: the quadratic erased-line restore came from #3830 in the same unreleased window; output unchanged.
 4271: fixes regressions against 0.1.13 found by the full-corpus verdict (carve#5961); 0.1.13 renders the fixed rows.
+4309: fixed the 0.1 engine's `to_html` fast path; #4348 removed the 0.1 engine before 0.2.0, so nothing of it ships.
+4316: a 0.1 layout fix (corpus 1063) in files #4348 removed; nothing of it ships in 0.2.0.
+4318: toolchain lint fixes, mostly in 0.1 engine files #4348 removed; no behavior moved.
