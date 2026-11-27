@@ -237,9 +237,7 @@ fn write_element(dom: &Dom, id: Id, root: bool, depth: usize, out: &mut String) 
         out.push_str(" xmlns=\"http://www.w3.org/2000/svg\"");
     }
     for (key, value) in attrs {
-        let allowed = ATTRIBUTES.contains(&key.as_str())
-            || (key == "xmlns:xlink" && safe_namespace_value(value));
-        if allowed && safe_value(value) {
+        if safe_attribute(key, value) {
             let _ = write!(out, " {key}=\"{}\"", escape(value));
         }
     }
@@ -258,6 +256,11 @@ fn write_element(dom: &Dom, id: Id, root: bool, depth: usize, out: &mut String) 
         let _ = write!(out, ">{inner}</{name}>");
     }
     Some(())
+}
+
+fn safe_attribute(key: &str, value: &str) -> bool {
+    (ATTRIBUTES.contains(&key) || (key == "xmlns:xlink" && safe_namespace_value(value)))
+        && safe_value(value)
 }
 
 /// C2-X-059: namespace declarations cannot contain XML whitespace or U+00A0.
