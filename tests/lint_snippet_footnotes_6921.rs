@@ -1,0 +1,132 @@
+use carve::include::{Cause, Includes, Request};
+use carve::lint::{LintOptions, lint};
+use std::sync::Arc;
+
+fn codes(source: &str, child: Option<&str>) -> Vec<(&'static str, Option<String>)> {
+    let options = LintOptions {
+        includes: child.map(|text| {
+            Includes::new(Arc::new({
+                let text = text.to_string();
+                move |request: &Request<'_>| {
+                    if request.path == "child.crv" {
+                        Ok((text.as_bytes().to_vec(), "child.crv".into()))
+                    } else {
+                        Err(Cause::NotFound)
+                    }
+                }
+            }))
+        }),
+        ..LintOptions::default()
+    };
+    lint(source, &options)
+        .into_iter()
+        .map(|d| (d.code, d.file))
+        .collect()
+}
+
+#[test]
+fn a_thousand_snippet_copy_closures_keep_their_note_used() {
+    let mut checked = 0;
+    for index in 0..125 {
+        let key = format!("note{index}");
+        for shape in 0..8 {
+            let (source, child) = match shape {
+                0 => (
+                    format!("{{$s}}: [^{key}]\n\n{{{{ $s }}}}\n\n[^{key}]: Note"),
+                    None,
+                ),
+                1 => (
+                    format!("[^{key}]: Note\n\n{{$s}}: [^{key}]\n\n{{{{ $s }}}}"),
+                    None,
+                ),
+                2 => (
+                    format!(
+                        "{{$s}}: before [^{key}] after\n\n{{{{ $s }}}} and {{{{ $s }}}}\n\n[^{key}]: Note"
+                    ),
+                    None,
+                ),
+                3 => (
+                    format!(
+                        "{{$a}}: [^{key}]\n\n{{$b}}: {{{{ $a }}}}\n\n{{{{ $b }}}}\n\n[^{key}]: Note"
+                    ),
+                    None,
+                ),
+                4 => (
+                    format!("[^{key}]: Note\n\n{{{{ child.crv }}}}"),
+                    Some(format!("{{$s}}: [^{key}]\n\n{{{{ $s }}}}")),
+                ),
+                5 => (
+                    format!("[^{key}]: Note\n\n{{{{ child.crv }}}}"),
+                    Some(format!(
+                        "{{$a}}: [^{key}]\n\n{{$b}}: {{{{ $a }}}}\n\n{{{{ $b }}}}"
+                    )),
+                ),
+                6 => (
+                    format!("[^{key}]: Note\n\n{{{{ $s }}}}\n\n{{{{ child.crv }}}}"),
+                    Some(format!("{{$s}}: [^{key}]")),
+                ),
+                _ => (
+                    format!("{{{{ child.crv }}}}\n\n[^{key}]: Note"),
+                    Some(format!("{{$s}}: [^{key}]\n\n{{{{ $s }}}}")),
+                ),
+            };
+            let found = codes(&source, child.as_deref());
+            assert!(found.is_empty(), "shape={shape} key={key} found={found:?}");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 1_000);
+}
+
+#[test]
+fn copied_snippet_references_count_in_note_lint() {
+    let cases = [
+        (
+            "{$s}: [^n]\n\n{{ $s }} and {{ $s }}.\n\n[^n]: Note",
+            None,
+            vec![],
+        ),
+        (
+            "[^n]: Note\n\n{{ child.crv }}",
+            Some("{$s}: [^n]\n\n{{ $s }}"),
+            vec![],
+        ),
+        (
+            "{$s}: [^n]\n\n{{ $s }}\n\n{{ child.crv }}",
+            Some("[^n]: Note"),
+            vec![("unused-footnote-definition", Some("child.crv".into()))],
+        ),
+        (
+            "[^n]: Note\n\n{{ child.crv }}",
+            Some("{$s}: [^n]"),
+            vec![
+                ("unused-footnote-definition", None),
+                ("unused-snippet", Some("child.crv".into())),
+            ],
+        ),
+        (
+            "[^n]: Note\n\n{{ $s }}\n\n{{ child.crv }}",
+            Some("{$s}: [^n]"),
+            vec![],
+        ),
+        (
+            "[^n]: Root\n\n{{ $s }}\n\n{{ child.crv }}",
+            Some("{$s}: [^n]\n\n[^n]: Child"),
+            vec![("unused-footnote-definition", None)],
+        ),
+        (
+            "[^n]: Note\n\n{{ child.crv }}",
+            Some("{$a}: [^n]\n\n{$b}: {{ $a }}\n\n{{ $b }}"),
+            vec![],
+        ),
+        (
+            "[^n]: Root\n\n{{ $b }}\n\n{{ child.crv }}",
+            Some("{$a}: [^n]\n\n{$b}: {{ $a }}\n\n[^n]: Child"),
+            vec![("unused-footnote-definition", None)],
+        ),
+    ];
+    for (source, child, expected) in cases {
+        let got = codes(source, child);
+        assert_eq!(got, expected, "{source:?} child={child:?}");
+    }
+}

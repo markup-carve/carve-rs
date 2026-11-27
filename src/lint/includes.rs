@@ -237,7 +237,7 @@ struct Walk {
 
 impl Walk {
     /// Records a definition or a reference of `scope`.
-    fn record(&mut self, node: V<'_>, ty: &str, scope: usize) {
+    fn record(&mut self, node: V<'_>, ty: &str, scope: usize, in_snippet: bool) {
         let (Some(key), Some((start, end))) = (node.at("key").as_str(), node.offsets()) else {
             return;
         };
@@ -269,8 +269,12 @@ impl Walk {
         } else {
             self.found.unresolved.insert(place);
         }
-        self.uses
-            .push((scope, ty == "footnote_ref", key.to_string()));
+        // The authored reference in a snippet definition is not a rendered use.
+        // Copies are counted from the resolved expansion in the outer lint pass.
+        if !(in_snippet && ty == "footnote_ref") {
+            self.uses
+                .push((scope, ty == "footnote_ref", key.to_string()));
+        }
     }
 
     /// The scope of the children of `node`: a new one under an expanded include.
@@ -301,20 +305,26 @@ impl References {
             uses: Vec::new(),
             found: Self::default(),
         };
-        let mut pending = vec![(tree, 0)];
-        while let Some((node, scope)) = pending.pop() {
+        let mut pending = vec![(tree, 0, false)];
+        while let Some((node, scope, in_snippet)) = pending.pop() {
             let ty = node.ty();
             let ty = ty.as_str().unwrap_or_default();
-            walk.record(node, ty, scope);
+            walk.record(node, ty, scope, in_snippet);
             let inner = walk.enter(node, ty, scope);
+            let below_snippet = in_snippet || ty == "snippet_definition";
             node.each(&mut |slot, value| {
                 if slot == "pos" || slot == "attrs" {
                     return;
                 }
                 if let Some(items) = value.as_array() {
-                    pending.extend(items.into_iter().rev().map(|item| (item, inner)));
+                    pending.extend(
+                        items
+                            .into_iter()
+                            .rev()
+                            .map(|item| (item, inner, below_snippet)),
+                    );
                 } else if value.is_container() {
-                    pending.push((value, inner));
+                    pending.push((value, inner, below_snippet));
                 }
             });
         }

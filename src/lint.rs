@@ -211,7 +211,51 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             None => includes::scan(source, opts, &mut out),
         }
     }
+    if source.contains("{{") && out.iter().any(|d| d.code == "unused-footnote-definition") {
+        reconcile_copied_footnotes(source, &parse, &mut out);
+    }
     out
+}
+
+/// A copy has no position, so the source-based lint model cannot see its use of a note.
+/// Read the actual resolved copy graph and remove unused hints for notes it reaches.
+fn reconcile_copied_footnotes(source: &str, opts: &crate::Options, out: &mut Vec<Diagnostic>) {
+    let arena = crate::Arena::for_input(source);
+    let mut diagnostics = Vec::new();
+    let mut findings = Vec::new();
+    let mut guard = None;
+    let Ok((doc, _, files)) = crate::prepare_expanding(
+        source,
+        opts,
+        &arena,
+        &mut diagnostics,
+        &mut |_| {},
+        Some((&mut findings, &mut guard)),
+    ) else {
+        return;
+    };
+    let order = crate::resolve::order::Order::build_with(&doc, files.as_ref());
+    let used: HashSet<(Option<String>, u32)> = order
+        .notes
+        .iter()
+        .filter(|note| !note.refs.is_empty())
+        .filter_map(|note| {
+            let pos = note.node.pos()?;
+            Some((
+                files
+                    .as_ref()
+                    .and_then(|files| files.file_of_pos(pos))
+                    .map(str::to_string),
+                pos.start_offset,
+            ))
+        })
+        .collect();
+    out.retain(|d| {
+        d.code != "unused-footnote-definition"
+            || !d
+                .pos
+                .is_some_and(|pos| used.contains(&(d.file.clone(), pos.start_offset)))
+    });
 }
 
 fn lint_core<'a>(
