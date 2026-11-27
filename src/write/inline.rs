@@ -768,25 +768,34 @@ fn collapsed_content(w: &mut Writer<'_>, node: V<'_>, content: String, flags: u3
         .into_iter()
         .flatten()
     {
-        if reads_as_collapsed(w, &candidate, key, children(node)) {
+        if reads_as_collapsed(w, node, &candidate, key) {
             return candidate;
         }
     }
     content
 }
 
-fn reads_as_collapsed(w: &mut Writer<'_>, candidate: &str, key: &str, kids: Arr<'_>) -> bool {
+/// Taken again from the answer to the same question, the read is counted as the parse was.
+fn reads_as_collapsed(w: &mut Writer<'_>, node: V<'_>, candidate: &str, key: &str) -> bool {
+    let text = format!("[{candidate}][]\n");
+    let asked = (id(node), candidate.to_string());
+    if let Some(&reads) = w.collapsed_reads.get(&asked) {
+        w.parses += 1;
+        w.work_chars = w.work_chars.saturating_add(text.len());
+        return reads;
+    }
     let keys = std::iter::once(key.to_string()).collect();
-    let chunk = super::check::Chunk::new(format!("[{candidate}][]\n"));
-    let Some(p) = children(chunk.parse_keys(w, Some(&keys))).single() else {
-        return false;
-    };
-    let Some(link) = children(p).single() else {
-        return false;
-    };
-    ty(link) == "link"
-        && s(link, "key") == Some(key)
-        && super::node::lists_equal(children(link), kids)
+    let chunk = super::check::Chunk::new(text);
+    let reads = children(chunk.parse_keys(w, Some(&keys)))
+        .single()
+        .and_then(|p| children(p).single())
+        .is_some_and(|link| {
+            ty(link) == "link"
+                && s(link, "key") == Some(key)
+                && super::node::lists_equal(children(link), children(node))
+        });
+    w.collapsed_reads.insert(asked, reads);
+    reads
 }
 
 fn is_label_space(c: u8) -> bool {

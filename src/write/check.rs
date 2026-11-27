@@ -1478,7 +1478,9 @@ fn probe_escapes<'t>(
 ) -> Option<bool> {
     let mut order = Vec::new();
     let shape = probe_shape(w, c, e, expected, flags, site, takes, &mut order);
-    if let Some((found, taken)) = shape.as_ref().and_then(|k| w.probe_shapes.get(k)).cloned() {
+    if let Some((found, taken, asked)) = shape.as_ref().and_then(|k| w.probe_shapes.get(k)).cloned()
+    {
+        w.note_asked(asked);
         for (place, at) in taken {
             if let Some(&n) = order.get(place) {
                 escape_at(w, c, n, at);
@@ -1488,31 +1490,37 @@ fn probe_escapes<'t>(
     }
     let key = probe_key(w, c, e, expected, flags, site);
     if let Some(known) = w.probes.get(&key).cloned() {
+        w.note_asked(known.asked);
         for (n, at) in known.taken {
             escape_at(w, c, n, at);
         }
         return known.found;
     }
     let before = c.escapes.len();
+    let outer = w.take_asked();
     let found = run_probe(w, c, e, expected, flags, takes);
+    let asked = w.take_asked();
+    w.note_asked(outer);
+    w.note_asked(asked);
     if !exhausted(w) {
-        let asked = c.escapes.get(before..).unwrap_or(&[]).to_vec();
+        let escapes = c.escapes.get(before..).unwrap_or(&[]).to_vec();
         if let Some(shape) = shape {
             let places: AddrMap<usize, usize> =
                 order.iter().enumerate().map(|(p, n)| (id(n), p)).collect();
-            let taken: Option<Vec<(usize, usize)>> = asked
+            let taken: Option<Vec<(usize, usize)>> = escapes
                 .iter()
                 .map(|&(n, at)| places.get(&id(n)).map(|&p| (p, at)))
                 .collect();
             if let Some(taken) = taken {
-                w.probe_shapes.insert(shape, (found, taken));
+                w.probe_shapes.insert(shape, (found, taken, asked));
             }
         }
         w.probes.insert(
             key,
             ProbeResult {
                 found,
-                taken: asked,
+                taken: escapes,
+                asked,
             },
         );
     }

@@ -2023,7 +2023,13 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
     let saved = SavedGroup::new(w, group);
     w.kind_failed = false;
+    w.take_asked();
+    w.seeded = false;
+    let work = (w.work_chars, w.parses);
     let end = repair_rounds(w, doc, from, first, reported);
+    let kind_work = (w.work_chars - work.0, w.parses - work.1);
+    // These rounds read none of the switches the closer and trial rounds turn on.
+    let switch_free = w.take_asked() == (false, false) && !w.seeded;
     if (w.sp.losses.len() == reported && !w.kind_failed) || !w.kind_escapes {
         return end;
     }
@@ -2031,13 +2037,22 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     saved.restore(w, reported, group);
     let before = SavedGroup::new(w, group);
     // C2-W-005: where that loses a node, the closer repairs give their kind too, the smallest departure that keeps it.
-    w.closer_kinds = true;
-    w.group_certificate = GroupCertificate::None;
-    let end = repair_rounds(w, doc, from, first, reported);
-    w.closer_kinds = false;
-    if w.sp.losses.len() == reported && !w.kind_failed {
-        return end;
-    }
+    // Where the kind rounds read no switch these rounds turn on, they repeat them and lose a node again.
+    let closer_work = if switch_free && fits(w, kind_work.0) {
+        count_work(w, kind_work);
+        Some(kind_work)
+    } else {
+        w.closer_kinds = true;
+        w.group_certificate = GroupCertificate::None;
+        w.take_asked();
+        let work = (w.work_chars, w.parses);
+        let end = repair_rounds(w, doc, from, first, reported);
+        w.closer_kinds = false;
+        if w.sp.losses.len() == reported && !w.kind_failed {
+            return end;
+        }
+        (w.take_asked() == (false, false)).then(|| (w.work_chars - work.0, w.parses - work.1))
+    };
     w.kind_failed = false;
     // C2-W-088: a group whose kind rounds leave a node unread is written by
     // rounds of the reported escapes only.
@@ -2045,16 +2060,36 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     let unrepaired = SavedGroup::new(w, group);
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
+    w.take_asked();
+    let work = (w.work_chars, w.parses);
     let end = repair_rounds(w, doc, from, first, reported);
     w.kind_escapes = true;
     if w.sp.losses.len() == reported {
         return end;
     }
+    let reported_only = (!w.take_asked().1).then(|| Settled {
+        group: SavedGroup::new(w, group),
+        losses: w.sp.losses.get(reported..).unwrap_or_default().to_vec(),
+        certificate: w.group_certificate,
+        end,
+        work: (w.work_chars - work.0, w.parses - work.1),
+    });
     // C2-W-125: where every form loses a node, a trial that gives the tree only with a backslash behind it is kept.
     let mut last = unrepaired;
     for kinds in [true, false] {
         last.restore(w, reported, group);
         last = SavedGroup::new(w, group);
+        // These rounds repeat the closer rounds, or without the kinds the reported ones, where no decision of those
+        // read the switches that differ: they lose a node again and are restored.
+        let repeated = if kinds {
+            closer_work
+        } else {
+            reported_only.as_ref().map(|r| r.work)
+        };
+        if let Some(work) = repeated.filter(|work| fits(w, work.0)) {
+            count_work(w, work);
+            continue;
+        }
         w.whole_trials = true;
         w.kind_escapes = kinds;
         w.kind_failed = false;
@@ -2068,11 +2103,41 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         w.kind_failed = false;
     }
     last.restore(w, reported, group);
+    if let Some(r) = reported_only.filter(|r| fits(w, r.work.0)) {
+        count_work(w, r.work);
+        r.group.restore(w, reported, group);
+        w.sp.losses.extend(r.losses);
+        w.group_certificate = r.certificate;
+        return r.end;
+    }
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
     let end = repair_rounds(w, doc, from, first, reported);
     w.kind_escapes = true;
     end
+}
+
+/// The end of the rounds of the reported escapes of a group that read no trial decision: the rounds from the same
+/// state repeat them decision for decision.
+struct Settled<'t> {
+    group: SavedGroup<'t>,
+    losses: Vec<state::Loss>,
+    certificate: GroupCertificate,
+    end: usize,
+    /// The characters and parses the rounds spent.
+    work: (usize, usize),
+}
+
+/// C2-W-133: rounds that repeat earlier ones run again where their work would reach the budget, which they could
+/// exhaust this time.
+fn fits(w: &Writer<'_>, chars: usize) -> bool {
+    w.work_chars.saturating_add(chars) <= w.work_limit.min(w.work_cap)
+}
+
+/// Rounds that repeat earlier ones count toward the budget as if they ran.
+fn count_work(w: &mut Writer<'_>, (chars, parses): (usize, usize)) {
+    w.work_chars = w.work_chars.saturating_add(chars);
+    w.parses += parses;
 }
 
 /// The ids of the nodes of `group` and of their stand-ins.
@@ -2454,6 +2519,7 @@ fn seed_first_write<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
         && !w.whole_trials
         && group.len() == 1
         && check::seed_group(w, group);
+    w.seeded |= w.seed_cases;
 }
 
 /// C2-I-118: the rounds would place the escapes behind a capped opener one per round and stop at the first
@@ -3028,7 +3094,10 @@ fn is_asked<'t>(
         asked_outside(w, group, first, (node, at), &order, round)
     } else {
         asked_in_group(w, group, first, (node, at), (&order, own_rank), round)
-    } || (w.whole_trials && gives_tree(w, group, first, (node, at)));
+    } || {
+        w.whole_trials_asked = true;
+        w.whole_trials && gives_tree(w, group, first, (node, at))
+    };
     w.lines = lines;
     w.lead = lead;
     w.lead_skip = lead_skip;
@@ -3378,7 +3447,10 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
             let key = (id(n), *at);
             (!trials.contains(&key) || text(*n).as_bytes().get(*at) == Some(&b'`'))
                 && !c.own_escapes.contains(&key)
-                && (w.closer_kinds || !c.closers.contains(&key))
+                && (!c.closers.contains(&key) || {
+                    w.closer_kinds_asked.set(true);
+                    w.closer_kinds
+                })
         })
         .copied()
         .collect();
@@ -3666,7 +3738,8 @@ fn holds_mark(n: V<'_>, mark: char) -> bool {
 fn writer_equal(expected: V<'_>, actual: V<'_>) -> bool {
     node::trees_equal(expected, actual)
         || extension::source_core_equivalent(expected, Some(actual))
-        || node::trees_equal(&node::without_standard_data(expected), actual)
+        || (node::holds_standard_data(expected)
+            && node::trees_equal(&node::without_standard_data(expected), actual))
         || extension::with_core_inlines(expected).is_some_and(|e| node::trees_equal(&e, actual))
 }
 

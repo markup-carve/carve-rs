@@ -137,6 +137,20 @@ pub fn with_core_inlines(tree: V<'_>) -> Option<Value> {
             _ => {}
         }
     }
+    fn holds_extension(v: V<'_>) -> bool {
+        if let Some(items) = v.as_array() {
+            return items.iter().any(holds_extension);
+        }
+        if !v.is_object() {
+            return false;
+        }
+        let mut found = ty(v) == "inline_extension";
+        v.each(&mut |_, x| found = found || holds_extension(x));
+        found
+    }
+    if !holds_extension(tree) {
+        return None;
+    }
     let mut out = tree.to_value();
     let mut changed = false;
     walk(&mut out, &mut changed);
