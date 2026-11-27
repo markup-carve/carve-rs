@@ -161,6 +161,36 @@ thread_local! {
 }
 
 #[cfg(test)]
+mod verbatim_pass_settlement_test {
+    use super::*;
+
+    #[test]
+    fn cc_2323_ends_after_one_kind_round_when_verbatim_refs_read_back()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for lines in [113, 455, 910, 7281] {
+            let source = "[a *[a][]*[x]: /u\n".repeat(lines);
+            let before = REPAIR_PARSES.with(std::cell::Cell::get);
+            let result = crate::api::Carve::new()
+                .format_with_diagnostics(&source, &crate::api::WriteOptions::default())?;
+            let comparisons = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .all(|loss| loss.code != "writer-refused")
+            );
+            assert_eq!(
+                comparisons,
+                2,
+                "{} bytes: one kind round with its link fallback",
+                source.len()
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod nested_inline_write_test {
     use super::*;
 
@@ -1456,6 +1486,72 @@ fn take_verbatim_references<'t>(
     w.tree_refs = true;
 }
 
+/// C2-W-075: a kind round can stop at a missing tree-spelled reference without recording a loss. If the
+/// verbatim reference form reads back, it needs no reported-opener pass. The final restoration still runs after
+/// the C2-W-146 pair test.
+fn verbatim_settles<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    cache: GroupReads<'_>,
+) -> bool {
+    if group.len() != 1
+        || group.first().is_none_or(|node| ty(node) != "paragraph")
+        || !w.tree_refs
+        || w.lines.is_empty()
+        || verbatim_references(w, group).is_empty()
+    {
+        return false;
+    }
+    let saved = SavedGroup::new(w, group);
+    let (lead, lead_skip, bare_dot_head, starts, start_index, prewritten, raw_refs) = (
+        w.lead.clone(),
+        w.lead_skip,
+        w.bare_dot_head.clone(),
+        w.starts.clone(),
+        w.start_index.clone(),
+        w.prewritten,
+        w.raw_refs.clone(),
+    );
+    let new_forms = w.new_forms.clone();
+    let ids = group_node_ids(w, group);
+    let case_eight_links: Vec<usize> = ids
+        .iter()
+        .copied()
+        .filter(|id| w.case_eight_links.contains(id))
+        .collect();
+    let unknown_alts: Vec<usize> = ids
+        .iter()
+        .copied()
+        .filter(|id| w.unknown_alts.contains(id))
+        .collect();
+    let tree_ref_ids = std::mem::take(&mut w.tree_ref_ids);
+    let losses = w.sp.losses.len();
+    w.tree_refs = false;
+    reset_lines(w);
+    blocks::write_blocks(w, group, "", 0, false);
+    let source = group_source(w, first);
+    let reads_back = cache.read(w, source, |_, doc| reads_as(group, doc)) && !exhausted(w);
+    saved.restore(w, losses, group);
+    w.lead = lead;
+    w.lead_skip = lead_skip;
+    w.bare_dot_head = bare_dot_head;
+    w.starts = starts;
+    w.start_index = start_index;
+    w.prewritten = prewritten;
+    w.raw_refs = raw_refs;
+    w.new_forms = new_forms;
+    for id in ids.iter() {
+        w.case_eight_links.remove(id);
+        w.unknown_alts.remove(id);
+    }
+    w.case_eight_links.extend(case_eight_links);
+    w.unknown_alts.extend(unknown_alts);
+    w.tree_ref_ids = tree_ref_ids;
+    w.tree_refs = true;
+    reads_back
+}
+
 /// C2-W-088 (carve#6813, carve#6846, carve#6848): a group that keeps a loss after the rounds and the verbatim
 /// references writes its leaf blocks as authored, cumulatively in document order, and takes the first state that
 /// reads back: first the leaf blocks that hold a lost node, then, only if none of those states reads back, the
@@ -2100,6 +2196,15 @@ fn repair_group<'t>(
     if (w.sp.losses.len() == reported && !w.kind_failed) || !w.kind_escapes {
         return end;
     }
+    let written = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
+    if w.kind_failed
+        && w.sp.losses.len() == reported
+        && w.last_repair_rounds == 1
+        && verbatim_settles(w, written, first, reads)
+    {
+        w.kind_failed = false;
+        return end;
+    }
     w.kind_failed = false;
     saved.restore(w, reported, group);
     let before = SavedGroup::new(w, group);
@@ -2593,6 +2698,7 @@ fn repair_rounds_once<'t>(
         };
         if let Some(end) = done {
             w.seed_cases = false;
+            w.last_repair_rounds = history.rounds;
             return end;
         }
     }
