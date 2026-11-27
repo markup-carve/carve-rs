@@ -59,6 +59,10 @@ fn accepts_a_declaration_on_the_envelope() {
     let extensions = bare.as_object_mut().unwrap().remove("extensions").unwrap();
     let envelope = json!({"astVersion":"2.0","extensions":extensions,"document":bare});
     decode(&envelope, &sidecar(&json!({"x.note":{"by":"a"}}))).unwrap();
+    let mut empty = bare.clone();
+    empty["extensions"] = json!([]);
+    let both = json!({"astVersion":"2.0","extensions":envelope["extensions"],"document":empty});
+    decode(&both, &sidecar(&json!({"x.note":{"by":"a"}}))).unwrap();
 }
 
 #[test]

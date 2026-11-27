@@ -1783,12 +1783,22 @@ pub fn decode_tree_with(json: &str, options: TreeReadOptions<'_>) -> Result<Tree
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
         let supplied: Value = deep_json(json)
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
-        if root.get("extensions").is_none()
-            && let Some(extensions) = supplied.get("extensions")
-            && supplied.get("document").is_some()
+        // Envelope declarations count with the document's (C2-A-029); the reader
+        // already refused a name the two declare differently.
+        if supplied.get("document").is_some()
+            && let Some(extensions) = supplied.get("extensions").and_then(Value::as_array)
             && let Some(fields) = root.as_object_mut()
         {
-            fields.insert("extensions".to_string(), extensions.clone());
+            let own = fields
+                .entry("extensions")
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Some(own) = own.as_array_mut() {
+                for declaration in extensions {
+                    if !own.iter().any(|item| item["name"] == declaration["name"]) {
+                        own.push(declaration.clone());
+                    }
+                }
+            }
         }
         crate::reader::check_annotations(&root, annotations)?;
     }
