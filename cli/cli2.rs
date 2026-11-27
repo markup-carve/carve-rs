@@ -8,6 +8,8 @@ use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::Path;
 
+const IMPORT_FROM_VALUES: &[&str] = &["html", "markdown", "gfm", "djot"];
+
 #[derive(Default)]
 struct Args {
     command: String,
@@ -223,7 +225,7 @@ fn enum_flag_value(name: &str, input: &str, row: &Value) -> bool {
     if name == "to" {
         ["html", "carve", "markdown", "plain", "ansi"].contains(&input)
     } else if name == "from" {
-        ["html", "markdown", "gfm", "djot"].contains(&input)
+        IMPORT_FROM_VALUES.contains(&input)
     } else {
         row["values"]
             .as_array()
@@ -1615,6 +1617,7 @@ fn tree_if_needed(
 fn help(command: &str) -> String {
     let mut out = format!("Usage: carve {command} [FLAG...] [FILE...]\n");
     let command = if command == "fix" { "lint" } else { command };
+    let mut flags = Vec::new();
     for row in flag_rows() {
         if flag_row(
             std::slice::from_ref(&row),
@@ -1625,15 +1628,26 @@ fn help(command: &str) -> String {
         {
             continue;
         }
-        let kind = match row["values"].as_array() {
-            Some(values) => values
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join("|"),
-            None => row["kind"].as_str().unwrap_or("").to_string(),
+        let kind = if command == "import" && row["name"] == "from" {
+            IMPORT_FROM_VALUES.join("|")
+        } else {
+            match row["values"].as_array() {
+                Some(values) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("|"),
+                None => row["kind"].as_str().unwrap_or("").to_string(),
+            }
         };
-        let _ = writeln!(out, "  --{} {kind}", row["name"].as_str().unwrap_or(""));
+        flags.push((row["name"].as_str().unwrap_or("").to_string(), kind));
+    }
+    if command == "import" {
+        flags.push(("directory".into(), "path".into()));
+        flags.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+    for (name, kind) in flags {
+        let _ = writeln!(out, "  --{name} {kind}");
     }
     if command == "render" {
         out.push_str("  --to html|carve|markdown|plain|ansi\n  --quote-locale LOCALE\n");
