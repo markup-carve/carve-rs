@@ -56,6 +56,7 @@ impl Context<'_> {
 pub(super) struct Scanned {
     findings: Vec<Diagnostic>,
     snippets: Option<SnippetUse>,
+    references: Option<References>,
 }
 
 /// What [`reconcile_snippets`] reads of the tree.
@@ -86,25 +87,26 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
     let Some(tree) = crate::tree_json_value(source, &render) else {
         return;
     };
-    let unused = output.iter().any(|d| d.code == "unused-snippet");
-    let scanned = collect(V::Json(&tree), options, &stored, unused);
+    let scanned = collect(V::Json(&tree), options, &stored, output);
     finish(scanned, options, output);
 }
 
-/// Lints the accepted includes of the expanded `tree`; `unused` says an entry finding is `unused-snippet`.
+/// Lints the accepted includes of the expanded `tree`; `entry` holds the entry file's own findings.
 pub(super) fn collect(
     tree: V<'_>,
     options: &LintOptions,
     stored: &Sources,
-    unused: bool,
+    entry: &[Diagnostic],
 ) -> Scanned {
     let mut findings = Vec::new();
     let Ok(sources) = stored.lock() else {
         return Scanned {
             findings,
             snippets: None,
+            references: None,
         };
     };
+    let unused = entry.iter().any(|d| d.code == "unused-snippet");
     let file = options.includes.as_ref().and_then(|c| c.file.as_deref());
     let mut context = Context {
         options,
@@ -155,7 +157,16 @@ pub(super) fn collect(
             _ => None,
         })
         .flatten();
-    Scanned { findings, snippets }
+    let references = entry
+        .iter()
+        .chain(&findings)
+        .any(|d| REFERENCE_CODES.contains(&d.code))
+        .then(|| References::of(tree));
+    Scanned {
+        findings,
+        snippets,
+        references,
+    }
 }
 
 /// Adds the include findings an entry finding does not already report, then reconciles snippets.
@@ -184,6 +195,186 @@ pub(super) fn finish(scanned: Scanned, options: &LintOptions, output: &mut Vec<D
     }
     if let Some(snippets) = scanned.snippets {
         reconcile_snippets(&snippets, output);
+    }
+    if let Some(references) = scanned.references {
+        references.reconcile(output);
+    }
+}
+
+const REFERENCE_CODES: [&str; 4] = [
+    "unresolved-reference-link",
+    "unresolved-footnote",
+    "unused-link-reference-definition",
+    "unused-footnote-definition",
+];
+
+/// A file of the expansion and the scope that includes it; scope 0 is the entry, whose file is "".
+struct Scope {
+    file: String,
+    outer: Option<usize>,
+}
+
+/// References and definitions of the expanded tree, by file (C2-N-053).
+#[derive(Default)]
+struct References {
+    /// `(file, start)` of a reference the expansion resolved, and of one it did not.
+    resolved: HashSet<(String, usize)>,
+    unresolved: HashSet<(String, usize)>,
+    /// `(file, footnote?, key)` of a definition some reference reaches.
+    used: HashSet<(String, bool, String)>,
+    /// Definition ranges of each file, by start: start, end, footnote?, key.
+    definitions: HashMap<String, Vec<(usize, usize, bool, String)>>,
+}
+
+/// The walk state of [`References::of`].
+struct Walk {
+    scopes: Vec<Scope>,
+    defined: HashSet<(String, bool, String)>,
+    /// Scope, footnote?, key of every reference.
+    uses: Vec<(usize, bool, String)>,
+    found: References,
+}
+
+impl Walk {
+    /// Records a definition or a reference of `scope`.
+    fn record(&mut self, node: V<'_>, ty: &str, scope: usize) {
+        let (Some(key), Some((start, end))) = (node.at("key").as_str(), node.offsets()) else {
+            return;
+        };
+        let file = self
+            .scopes
+            .get(scope)
+            .map(|s| s.file.clone())
+            .unwrap_or_default();
+        let target = match ty {
+            "link_reference_definition" | "footnote" => {
+                let note = ty == "footnote";
+                self.defined.insert((file.clone(), note, key.to_string()));
+                self.found.definitions.entry(file).or_default().push((
+                    start,
+                    end,
+                    note,
+                    key.to_string(),
+                ));
+                return;
+            }
+            "link" => "href",
+            "image" => "src",
+            "footnote_ref" => "number",
+            _ => return,
+        };
+        let place = (file, start);
+        if node.get(target).is_some_and(|v| !matches!(v, V::Null)) {
+            self.found.resolved.insert(place);
+        } else {
+            self.found.unresolved.insert(place);
+        }
+        self.uses
+            .push((scope, ty == "footnote_ref", key.to_string()));
+    }
+
+    /// The scope of the children of `node`: a new one under an expanded include.
+    fn enter(&mut self, node: V<'_>, ty: &str, scope: usize) -> usize {
+        if ty != "include" || node.get("children").is_none() {
+            return scope;
+        }
+        let Some(file) = node.at("file").as_str() else {
+            return scope;
+        };
+        self.scopes.push(Scope {
+            file: file.to_string(),
+            outer: Some(scope),
+        });
+        self.scopes.len() - 1
+    }
+}
+
+impl References {
+    /// C2-N-054 and C2-N-055: a reference looks up its own file first, then each including file outward.
+    fn of(tree: V<'_>) -> Self {
+        let mut walk = Walk {
+            scopes: vec![Scope {
+                file: String::new(),
+                outer: None,
+            }],
+            defined: HashSet::new(),
+            uses: Vec::new(),
+            found: Self::default(),
+        };
+        let mut pending = vec![(tree, 0)];
+        while let Some((node, scope)) = pending.pop() {
+            let ty = node.ty();
+            let ty = ty.as_str().unwrap_or_default();
+            walk.record(node, ty, scope);
+            let inner = walk.enter(node, ty, scope);
+            node.each(&mut |slot, value| {
+                if slot == "pos" || slot == "attrs" {
+                    return;
+                }
+                if let Some(items) = value.as_array() {
+                    pending.extend(items.into_iter().rev().map(|item| (item, inner)));
+                } else if value.is_container() {
+                    pending.push((value, inner));
+                }
+            });
+        }
+        let Walk {
+            scopes,
+            defined,
+            uses,
+            found: mut this,
+        } = walk;
+        for ranges in this.definitions.values_mut() {
+            ranges.sort_unstable_by_key(|range| range.0);
+        }
+        for (scope, note, key) in uses {
+            let mut at = Some(scope);
+            while let Some(found) = at.and_then(|index| scopes.get(index)) {
+                let entry = (found.file.clone(), note, key.clone());
+                if defined.contains(&entry) {
+                    this.used.insert(entry);
+                    break;
+                }
+                at = found.outer;
+            }
+        }
+        this
+    }
+
+    /// Drops a reference finding the expansion resolved at every site, and an unused finding on a
+    /// definition that a reference of another file reaches.
+    fn reconcile(&self, output: &mut Vec<Diagnostic>) {
+        output.retain(|d| {
+            let Some(pos) = d.pos else { return true };
+            let file = if d.included_by.is_empty() {
+                String::new()
+            } else {
+                d.file.clone().unwrap_or_default()
+            };
+            let start = pos.start_offset as usize;
+            match d.code {
+                "unresolved-reference-link" | "unresolved-footnote" => {
+                    let place = (file, start);
+                    !self.resolved.contains(&place) || self.unresolved.contains(&place)
+                }
+                "unused-link-reference-definition" | "unused-footnote-definition" => {
+                    let note = d.code == "unused-footnote-definition";
+                    let Some(ranges) = self.definitions.get(&file) else {
+                        return true;
+                    };
+                    let at = ranges.partition_point(|range| range.0 <= start);
+                    !ranges
+                        .get(..at)
+                        .and_then(<[_]>::last)
+                        .is_some_and(|(from, to, n, key)| {
+                            *n == note
+                                && (*from..*to).contains(&start)
+                                && self.used.contains(&(file.clone(), note, key.clone()))
+                        })
+                }
+                _ => true,
+            }
+        });
     }
 }
 
