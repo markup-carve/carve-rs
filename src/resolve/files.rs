@@ -197,6 +197,12 @@ impl<'a> Files<'a> {
         self.list.get(*self.ids.get(&pos)?)?.id
     }
 
+    /// C2-N-087: the include chain of the file instance at `pos`, outermost first.
+    #[must_use]
+    pub fn chain_at(&self, pos: usize) -> Vec<IncludeSite> {
+        self.chain_of(self.ids.get(&pos).copied())
+    }
+
     /// The included file that owns this exact AST position.
     #[must_use]
     pub fn file_of_pos(&self, pos: &crate::ast::Pos) -> Option<&'a str> {

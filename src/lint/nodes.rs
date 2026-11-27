@@ -373,11 +373,19 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
         let prefix = sink.source.get(..from).unwrap_or("");
         let line_start = prefix.rfind('\n').map_or(0, |at| at + 1);
         let before = prefix.get(line_start..).unwrap_or("");
+        let rest = sink.source.get(from..).unwrap_or("");
+        let rest = rest
+            .get(..rest.find('\n').unwrap_or(rest.len()))
+            .unwrap_or("");
+        // C2-I-072, C2-I-087: a label is glued to the `]` of its text, or follows `[^`; link text and `^[` take none.
+        // C2-I-077: only a comment that takes the label's closer leaves the label unclosed.
         if let Some(open) = before.rfind('[')
             && !before.get(open..).unwrap_or("").contains(']')
-            && before
-                .get(..open)
-                .is_some_and(|head| head.trim_end().ends_with(']'))
+            && (before.get(..open).is_some_and(|head| head.ends_with(']'))
+                || before
+                    .get(open + 1..)
+                    .is_some_and(|tail| tail.starts_with('^')))
+            && rest.contains(']')
         {
             sink.emit_range("comment-in-reference-label", from, to, item.path(), &[], 0);
         }

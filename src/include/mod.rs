@@ -45,6 +45,27 @@ pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usiz
     Ok((range.from + 1, range.to))
 }
 
+/// C2-N-037, C2-N-046: the byte span of a region's content lines and the
+/// number of lines before it, read as the expansion reads them; `table` is
+/// the record separator of a table include, whose quoted fields hold no marker.
+pub(crate) fn region_span(
+    text: &str,
+    name: &str,
+    code: bool,
+    table: Option<char>,
+) -> Option<(usize, usize, usize)> {
+    let lines = lines::file_lines(text);
+    let quoted = table.map_or_else(Vec::new, |sep| code::quoted_by(text, &lines, sep));
+    let skip = |i: usize| quoted.get(i).copied().unwrap_or(false);
+    let range = lines::region_range(text, &lines, name, code, &skip).ok()?;
+    let start = lines.starts.get(range.from).copied()?;
+    let end = match range.to.checked_sub(1) {
+        Some(last) if range.to > range.from => lines.nexts.get(last).copied()?,
+        _ => start,
+    };
+    Some((start, end, range.from))
+}
+
 use std::sync::Arc;
 
 /// C2-N-007: the error causes a resolver returns.
