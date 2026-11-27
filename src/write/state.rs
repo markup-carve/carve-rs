@@ -171,6 +171,8 @@ pub struct Writer<'t> {
     pub partners: Option<((usize, usize), super::check::Partners<'t>)>,
     /// Set when a node of the group did not read back during the kind rounds.
     pub kind_failed: bool,
+    /// Rounds the last repair pass actually ran, for deciding whether an extra read-back can save work.
+    pub last_repair_rounds: usize,
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
@@ -295,6 +297,7 @@ impl<'t> Writer<'t> {
             seeded: false,
             partners: None,
             kind_failed: false,
+            last_repair_rounds: 0,
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
