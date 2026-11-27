@@ -39,6 +39,29 @@ fn numbered_caption_ids_are_crossref_candidates() {
 }
 
 #[test]
+fn case_only_crossref_candidates_follow_authored_id_order() {
+    let cases = [
+        (
+            "{#XY}\n# A\n\n{#Xy}\n# B\n\n</#xy>",
+            "the ids XY and Xy differ only in case",
+        ),
+        (
+            "{#Xy}\n# A\n\n{#XY}\n# B\n\n</#xy>",
+            "the ids Xy and XY differ only in case",
+        ),
+        (
+            "{#XY}\n# A\n\n{#Xy}\n# B\n\n{#xY}\n# C\n\n</#xy>",
+            "the ids XY, Xy, and xY differ only in case",
+        ),
+    ];
+    for (source, phrase) in cases {
+        let findings = messages(source, "broken-crossref", &LintOptions::default());
+        assert_eq!(findings.len(), 1, "{source:?}: {findings:?}");
+        assert!(findings[0].contains(phrase), "{source:?}: {findings:?}");
+    }
+}
+
+#[test]
 fn rendered_footnotes_and_raw_html_anchors_are_fragment_targets() {
     let options = LintOptions::default();
     let footnotes = "Text[^n].\n\n[^n]: note\n\n[x](#fn1) [y](#fnref1)\n";
