@@ -1048,7 +1048,11 @@ pub(crate) fn duplicate_definitions(
                 p
             }
         });
-        diags.push(diagnostic::Diagnostic::new(code, &[], file, pos));
+        let values = match node {
+            ast::Node::Footnote(x) => vec![("label", x.key)],
+            _ => Vec::new(),
+        };
+        diags.push(diagnostic::Diagnostic::new(code, &values, file, pos));
     }
 }
 

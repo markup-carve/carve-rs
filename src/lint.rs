@@ -188,11 +188,10 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         }
         None => diagnostics,
     };
-    out.extend(
-        diagnostics
-            .into_iter()
-            .filter(|diagnostic| !data_rules::modeled_ids().contains(diagnostic.code)),
-    );
+    out.extend(diagnostics.into_iter().filter(|diagnostic| {
+        (diagnostic.code == "table-span-marker-blocked" && active_catalog(diagnostic.code, opts))
+            || !data_rules::modeled_ids().contains(diagnostic.code)
+    }));
     if includes {
         // C2-N-087: a file included twice reports each parse finding once.
         let mut seen = HashSet::new();

@@ -1697,14 +1697,23 @@ fn limit(
 /// [`Error::Option`] for an unknown rule id, a setting other than `on` or
 /// `off`, or an unknown platform (C2-W-109).
 pub fn lint<'a>(input: impl Into<Input<'a>>, opts: &LintOptions) -> Result<Vec<Entry>, Error> {
+    lint_with_suppressed(input, opts).map(|(entries, _)| entries)
+}
+
+/// Lint entries with the count of include failures held back by C2-T-024.
+///
+/// # Errors
+///
+/// The same option errors as [`lint`].
+pub fn lint_with_suppressed<'a>(
+    input: impl Into<Input<'a>>,
+    opts: &LintOptions,
+) -> Result<(Vec<Entry>, usize), Error> {
     options::check_lint(opts)?;
     let input = input.into();
-    let mut entries: Vec<Entry> = crate::lint::lint(&input.text(), opts)
-        .iter()
-        .map(Entry::from)
-        .collect();
+    let (mut entries, suppressed) = record::cap_includes(&crate::lint::lint(&input.text(), opts));
     input.remap(&mut entries);
-    Ok(entries)
+    Ok((entries, suppressed))
 }
 
 /// `includeDependencies`: the include nodes of an expanded tree in tree

@@ -1261,8 +1261,9 @@ fn lint_file(
     } else {
         bytes.to_vec()
     };
-    let entries: Vec<Entry> = api::lint(source.as_slice(), &lint_opts)
-        .map_err(api_fail)?
+    let (entries, suppressed) =
+        api::lint_with_suppressed(source.as_slice(), &lint_opts).map_err(api_fail)?;
+    let entries: Vec<Entry> = entries
         .into_iter()
         .filter(|e| {
             !value(args, "ignore")
@@ -1288,7 +1289,7 @@ fn lint_file(
             path,
             &entries,
             &source,
-            0,
+            suppressed,
             opts.includes.as_ref(),
         ));
     } else {

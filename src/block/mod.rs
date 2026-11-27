@@ -78,6 +78,8 @@ enum Kind {
         len: usize,
         sigil: Option<char>,
         figure: bool,
+        diagnostic_kind: &'static str,
+        anonymous: bool,
     },
 }
 
@@ -1301,14 +1303,19 @@ impl<'a> Parser<'a> {
             return;
         }
         if !self.fence_closes
-            && let Kind::Div { len, .. } = c.kind
+            && let Kind::Div {
+                len,
+                diagnostic_kind,
+                anonymous,
+                ..
+            } = c.kind
         {
             self.findings.push(Finding {
                 code: "unclosed-container-fence",
-                message: 0,
+                message: usize::from(anonymous),
                 start: c.start,
                 end: c.end,
-                values: vec![("width", len.to_string()), ("kind", "container".into())],
+                values: vec![("width", len.to_string()), ("kind", diagnostic_kind.into())],
             });
         }
         let loose = match c.kind {
@@ -1374,8 +1381,20 @@ fn fence_finding(
     line_block: bool,
 ) -> Finding {
     let text = src.text();
+    // Attribute lines can be part of the block range. Find the opener run
+    // inside that range before filling the marker template.
+    let marker_start = text
+        .as_bytes()
+        .get(start..end)
+        .and_then(|bytes| {
+            bytes.iter().enumerate().find_map(|(offset, &byte)| {
+                (byte == ch && bytes.get(offset..offset + 3) == Some(&[ch; 3]))
+                    .then_some(start + offset)
+            })
+        })
+        .unwrap_or(start);
     let run: String = text
-        .get(start..)
+        .get(marker_start..)
         .unwrap_or("")
         .bytes()
         .take_while(|&b| b == ch)
