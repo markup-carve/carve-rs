@@ -420,10 +420,12 @@ impl Parser<'_> {
     }
 
     fn set_leaf(&mut self, leaf: Leaf, start: usize, end: usize, attrs: Option<AttrBlock>) {
+        let opener = start;
         let (start, attrs) = self.take_pending(start, attrs);
         self.leaf = Some(OpenLeaf {
             leaf,
             start,
+            opener,
             end,
             attrs,
             depth: self.stack.len(),
@@ -721,6 +723,7 @@ impl Parser<'_> {
                     held: Vec::new(),
                 },
                 start: s,
+                opener: start,
                 end: e,
                 attrs,
                 depth: self.stack.len(),
@@ -845,6 +848,7 @@ impl Parser<'_> {
                 pieces: Pieces::One(Some(piece)),
             },
             start: k.offset(),
+            opener: k.offset(),
             end: e,
             attrs: None,
             depth: self.stack.len(),

@@ -109,6 +109,22 @@ fn code_fence_message_keeps_marker_after_attributes() {
         "{}",
         hits[0].message
     );
+    let with_marker_in_attribute = finding(
+        "{title=\"````\"}\n```csv\nbody",
+        "unclosed-code-fence",
+        false,
+    );
+    assert_eq!(with_marker_in_attribute.len(), 1);
+    assert!(
+        with_marker_in_attribute[0]
+            .message
+            .contains("The ``` fence")
+    );
+    assert!(
+        !with_marker_in_attribute[0]
+            .message
+            .contains("The ```` fence")
+    );
 }
 
 #[test]
