@@ -8,6 +8,8 @@ use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::Path;
 
+const IMPORT_FROM_VALUES: &[&str] = &["html", "markdown", "gfm", "djot"];
+
 #[derive(Default)]
 struct Args {
     command: String,
@@ -223,7 +225,7 @@ fn enum_flag_value(name: &str, input: &str, row: &Value) -> bool {
     if name == "to" {
         ["html", "carve", "markdown", "plain", "ansi"].contains(&input)
     } else if name == "from" {
-        ["html", "markdown", "gfm", "djot"].contains(&input)
+        IMPORT_FROM_VALUES.contains(&input)
     } else {
         row["values"]
             .as_array()
@@ -1080,16 +1082,26 @@ fn fix_fragment(code: &str, text: &str) -> Option<String> {
     }
 }
 
-fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
+struct FixedSource {
+    source: Vec<u8>,
+    counts: Vec<(String, usize)>,
+}
+
+fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<FixedSource, i32> {
     const MAX_PASSES: usize = 10;
     let mut source = String::from_utf8_lossy(bytes).into_owned();
     let mut seen = std::collections::HashSet::new();
+    let mut counts: Vec<(String, usize)> = Vec::new();
     for _ in 0..MAX_PASSES {
         if !seen.insert(source.clone()) {
-            return Ok(source.into_bytes());
+            return Ok(FixedSource {
+                source: source.into_bytes(),
+                counts,
+            });
         }
         let entries = api::lint(source.as_bytes(), options).map_err(api_fail)?;
-        let mut candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
+        let mut candidates = BTreeMap::<(usize, usize), Vec<(String, String)>>::new();
+        let mut order = Vec::new();
         for entry in entries {
             let Some(range) = entry.range else {
                 continue;
@@ -1099,6 +1111,9 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             };
             if let Some(replacement) = fix_fragment(&entry.code, slice) {
                 if replacement != slice {
+                    if !order.contains(&entry.code) {
+                        order.push(entry.code.clone());
+                    }
                     let start = if entry.code == "heading-closing-hashes"
                         && range.start_offset > 0
                         && source.as_bytes()[range.start_offset - 1] == b' '
@@ -1110,33 +1125,51 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
                     candidates
                         .entry((start, range.end_offset))
                         .or_default()
-                        .push(replacement);
+                        .push((entry.code, replacement));
                 }
             }
         }
         let mut changes: Vec<_> = candidates
             .into_iter()
             .filter_map(|(range, replacements)| {
-                (replacements.iter().all(|r| r == &replacements[0]))
+                (replacements.iter().all(|r| r.1 == replacements[0].1))
                     .then(|| (range, replacements[0].clone()))
             })
             .collect();
         changes.sort_by_key(|(range, _)| std::cmp::Reverse(range.0));
         let mut boundary = source.len();
         let mut applied = false;
-        for ((start, end), replacement) in changes {
+        let mut applied_counts = BTreeMap::<String, usize>::new();
+        for ((start, end), (code, replacement)) in changes {
             if end > boundary {
                 continue;
             }
             source.replace_range(start..end, &replacement);
+            *applied_counts.entry(code).or_default() += 1;
             boundary = start;
             applied = true;
         }
         if !applied {
-            return Ok(source.into_bytes());
+            return Ok(FixedSource {
+                source: source.into_bytes(),
+                counts,
+            });
+        }
+        for code in order {
+            if let Some(count) = applied_counts.remove(&code) {
+                if let Some((_, total)) = counts.iter_mut().find(|(existing, _)| *existing == code)
+                {
+                    *total += count;
+                } else {
+                    counts.push((code, count));
+                }
+            }
         }
     }
-    Ok(source.into_bytes())
+    Ok(FixedSource {
+        source: source.into_bytes(),
+        counts,
+    })
 }
 
 fn leading_frontmatter(node: &Value) -> bool {
@@ -1256,10 +1289,13 @@ fn lint_file(
     lint_opts.upgrade = bool_value(args, "upgrade", false);
     // C2-T-049: under `--fix` every rule keeps the state it has under `lint`.
     let fixed = args.command == "fix" || bool_value(args, "fix", false);
-    let source = if fixed {
+    let FixedSource { source, counts } = if fixed {
         apply_fixes(bytes, &lint_opts)?
     } else {
-        bytes.to_vec()
+        FixedSource {
+            source: bytes.to_vec(),
+            counts: Vec::new(),
+        }
     };
     let (entries, suppressed) =
         api::lint_with_suppressed(source.as_slice(), &lint_opts).map_err(api_fail)?;
@@ -1283,6 +1319,14 @@ fn lint_file(
         } else {
             output(&String::from_utf8_lossy(&source))?;
         }
+    }
+    if !counts.is_empty() {
+        let summary = counts
+            .iter()
+            .map(|(code, count)| format!("{code} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("{}: fixed {summary}", display(path));
     }
     if bool_value(args, "json", false) {
         diagnostics.push(loss_report(
@@ -1615,6 +1659,7 @@ fn tree_if_needed(
 fn help(command: &str) -> String {
     let mut out = format!("Usage: carve {command} [FLAG...] [FILE...]\n");
     let command = if command == "fix" { "lint" } else { command };
+    let mut flags = Vec::new();
     for row in flag_rows() {
         if flag_row(
             std::slice::from_ref(&row),
@@ -1625,15 +1670,26 @@ fn help(command: &str) -> String {
         {
             continue;
         }
-        let kind = match row["values"].as_array() {
-            Some(values) => values
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join("|"),
-            None => row["kind"].as_str().unwrap_or("").to_string(),
+        let kind = if command == "import" && row["name"] == "from" {
+            IMPORT_FROM_VALUES.join("|")
+        } else {
+            match row["values"].as_array() {
+                Some(values) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("|"),
+                None => row["kind"].as_str().unwrap_or("").to_string(),
+            }
         };
-        let _ = writeln!(out, "  --{} {kind}", row["name"].as_str().unwrap_or(""));
+        flags.push((row["name"].as_str().unwrap_or("").to_string(), kind));
+    }
+    if command == "import" {
+        flags.push(("directory".into(), "path".into()));
+        flags.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+    for (name, kind) in flags {
+        let _ = writeln!(out, "  --{name} {kind}");
     }
     if command == "render" {
         out.push_str("  --to html|carve|markdown|plain|ansi\n  --quote-locale LOCALE\n");
