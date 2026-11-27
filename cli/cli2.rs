@@ -633,7 +633,10 @@ impl<'a> Positions<'a> {
         let start = self.line_starts[line - 1];
         (
             line,
-            self.chars_before(offset) - self.chars_before(start) + 1,
+            self.chars_before(offset) - self.chars_before(start) + 1
+                - usize::from(
+                    line == 1 && offset >= 3 && self.bytes.starts_with(&[0xef, 0xbb, 0xbf]),
+                ),
         )
     }
 }
@@ -1855,6 +1858,17 @@ mod position_tests {
         assert_eq!(positions.place(4), (1, 4));
         assert_eq!(positions.place(5), (2, 1));
         assert_eq!(positions.place(7), (2, 2));
+    }
+
+    #[test]
+    fn leading_bom_takes_no_diagnostic_column() {
+        let positions = Positions::new("\u{feff}# é\nq".as_bytes());
+        assert_eq!(positions.place(0), (1, 1));
+        assert_eq!(positions.place(3), (1, 1));
+        assert_eq!(positions.place(5), (1, 3));
+        assert_eq!(positions.place(8), (2, 1));
+        let later = Positions::new("a\n\u{feff}b".as_bytes());
+        assert_eq!(later.place(5), (2, 2));
     }
 
     #[test]
