@@ -1867,62 +1867,85 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
     let mut list: Option<N<'t>> = None;
     let mut at = 0;
     while at < nodes.len() {
-        let from = at;
-        let reported = w.sp.losses.len();
-        at = repair_group(w, doc, from, out.is_empty());
-        // C2-W-146: test the written text with the five pair rules and `unattached-caption`, and reparse each escape round.
-        for _ in 0..16 {
-            if w.group_certificate == GroupCertificate::PlainRows {
-                break;
-            }
-            #[cfg(test)]
-            PAIR_SCANS.with(|count| count.set(count.get() + 1));
-            let asked = pairs::asked(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
-            if asked.is_empty() {
-                break;
-            }
-            let saved_lines = w.lines.clone();
-            // Only the group's entries: a copy of the whole map made a document of many groups quadratic.
-            let saved_escapes = group_escapes(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
-            let saved_losses = w.sp.losses.len();
-            pairs::apply(w, &asked);
-            let next = repair_group(w, doc, from, out.is_empty());
-            if w.sp.losses.len() > saved_losses {
-                let group = nodes.slice(from, at.max(next)).unwrap_or_else(Arr::empty);
-                for n in &group_ids(w, group) {
-                    w.sp.escapes.remove(n);
-                }
-                w.sp.escapes.extend(saved_escapes);
-                w.lines = saved_lines;
-                w.sp.losses.truncate(saved_losses);
-                break;
-            }
-            at = next;
-        }
-        let group = nodes.slice(from, at).unwrap_or_else(Arr::empty);
-        take_verbatim_references(w, group, out.is_empty(), reported);
-        take_authored_blocks(w, group, out.is_empty(), reported);
-        if w.lines.is_empty() {
-            continue;
-        }
-        if out.is_empty() && w.blank_first {
-            out.push(String::new());
-        }
-        let blanks = match (before, nodes.get(from)) {
-            (Some(b), Some(n)) => blocks::blank_lines_between(w, b, list, n, false),
-            _ => 0,
+        // The passes of a group write the same texts again, and so do groups of the same content: the groups read
+        // through one cache, and each group may add up to the bound to it.
+        let kept = typed_arena::Arena::new();
+        let kept_reads = Reads::default();
+        let reads = GroupReads {
+            kept: &kept,
+            reads: &kept_reads,
         };
-        out.extend(std::iter::repeat_n(String::new(), blanks));
-        w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
-        out.append(&mut w.lines);
-        before = at.checked_sub(1).and_then(|i| nodes.get(i));
-        list = last_block(nodes, from, at, list);
+        while at < nodes.len() && kept_reads.chars.get() <= MAX_KEPT_READ_CHARS {
+            at = write_group(w, doc, at, (&mut out, &mut before, &mut list), reads);
+        }
     }
     if out.is_empty() {
         "\n".into()
     } else {
         out.join("\n") + "\n"
     }
+}
+
+/// Writes the group that starts at `from` onto `out`, and returns where the next group starts.
+fn write_group<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    from: usize,
+    (out, before, list): (&mut Vec<String>, &mut Option<N<'t>>, &mut Option<N<'t>>),
+    reads: GroupReads<'_>,
+) -> usize {
+    let nodes = children(doc);
+    reads.reads.base.set(reads.reads.chars.get());
+    let reported = w.sp.losses.len();
+    let mut at = repair_group(w, doc, from, out.is_empty(), reads);
+    // C2-W-146: test the written text with the five pair rules and `unattached-caption`, and reparse each escape round.
+    for _ in 0..16 {
+        if w.group_certificate == GroupCertificate::PlainRows {
+            break;
+        }
+        #[cfg(test)]
+        PAIR_SCANS.with(|count| count.set(count.get() + 1));
+        let asked = pairs::asked(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
+        if asked.is_empty() {
+            break;
+        }
+        let saved_lines = w.lines.clone();
+        // Only the group's entries: a copy of the whole map made a document of many groups quadratic.
+        let saved_escapes = group_escapes(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
+        let saved_losses = w.sp.losses.len();
+        pairs::apply(w, &asked);
+        let next = repair_group(w, doc, from, out.is_empty(), reads);
+        if w.sp.losses.len() > saved_losses {
+            let group = nodes.slice(from, at.max(next)).unwrap_or_else(Arr::empty);
+            for n in &group_ids(w, group) {
+                w.sp.escapes.remove(n);
+            }
+            w.sp.escapes.extend(saved_escapes);
+            w.lines = saved_lines;
+            w.sp.losses.truncate(saved_losses);
+            break;
+        }
+        at = next;
+    }
+    let group = nodes.slice(from, at).unwrap_or_else(Arr::empty);
+    take_verbatim_references(w, group, out.is_empty(), reported);
+    take_authored_blocks(w, group, out.is_empty(), reported);
+    if w.lines.is_empty() {
+        return at;
+    }
+    if out.is_empty() && w.blank_first {
+        out.push(String::new());
+    }
+    let blanks = match (*before, nodes.get(from)) {
+        (Some(b), Some(n)) => blocks::blank_lines_between(w, b, *list, n, false),
+        _ => 0,
+    };
+    out.extend(std::iter::repeat_n(String::new(), blanks));
+    w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
+    out.append(&mut w.lines);
+    *before = at.checked_sub(1).and_then(|i| nodes.get(i));
+    *list = last_block(nodes, from, at, *list);
+    at
 }
 
 /// Whether `node` is written into one group with the block `before` above it.
@@ -2015,18 +2038,7 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
     src
 }
 
-fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
-    // Every pass of the group reads its writes through one cache: the passes write the same texts again.
-    let kept = typed_arena::Arena::new();
-    let kept_reads = Reads::default();
-    let reads = GroupReads {
-        kept: &kept,
-        reads: &kept_reads,
-    };
-    repair_group_with(w, doc, from, first, reads)
-}
-
-fn repair_group_with<'t>(
+fn repair_group<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     from: usize,
@@ -2505,7 +2517,7 @@ fn repair_rounds_once<'t>(
     let mut first_round = None;
     w.capped_runs.clear();
     loop {
-        let done = if kept_reads.chars.get() <= MAX_KEPT_READ_CHARS {
+        let done = if kept_reads.added() <= MAX_KEPT_READ_CHARS {
             repair_round(
                 w,
                 doc,
@@ -2879,15 +2891,16 @@ fn repeated_repair_in<'g>(
     refuse
 }
 
-/// The rounds of a group mostly read again what a round before them tried, in this pass or an earlier one;
-/// their parses are kept across rounds and passes up to a bound, and a round past it keeps its own.
+/// The rounds of a group mostly read again what a round before them tried, in this pass, an earlier one or a
+/// group of the same content; their parses are kept across rounds, passes and groups up to a bound per group, and a
+/// round past it keeps its own.
 #[derive(Clone, Copy)]
 struct GroupReads<'s> {
     kept: &'s typed_arena::Arena<Chunk>,
     reads: &'s Reads<'s>,
 }
 
-/// The parses of the rounds of one group by their text: a write the rounds try again reads as before.
+/// The parses of the rounds by their text: a write the rounds try again reads as before.
 #[derive(Default)]
 struct Reads<'k> {
     /// Searched in order while short; the map holds them all once it is not.
@@ -2895,6 +2908,8 @@ struct Reads<'k> {
     parsed: std::cell::RefCell<std::collections::HashMap<&'k str, V<'k>>>,
     /// The characters of the chunks held by the arena these parses live in.
     chars: std::cell::Cell<usize>,
+    /// `chars` when the current group started.
+    base: std::cell::Cell<usize>,
     /// Whether a parse reads back as the group, by the parse's source, the group's first node and length, and
     /// whether span marks are compared.
     equal: std::cell::RefCell<std::collections::HashMap<(usize, usize, usize, bool), bool>>,
@@ -2903,6 +2918,11 @@ struct Reads<'k> {
 const LISTED_READS: usize = 8;
 
 impl<'k> Reads<'k> {
+    /// The characters the current group added.
+    fn added(&self) -> usize {
+        self.chars.get() - self.base.get()
+    }
+
     fn get(&self, text: &str) -> Option<(&'k str, V<'k>)> {
         let list = self.list.borrow();
         if list.len() <= LISTED_READS {
@@ -2926,8 +2946,8 @@ impl<'k> Reads<'k> {
     }
 }
 
-/// The characters of parses the rounds of one group keep to read again; the rounds past it keep theirs for
-/// one round only.
+/// The characters of parses the rounds of one group add to those kept to read again; the rounds past it keep
+/// theirs for one round only.
 const MAX_KEPT_READ_CHARS: usize = 1 << 18;
 
 /// The parses of one repair round: the last one is read by the loss report and the prune.
@@ -2949,7 +2969,7 @@ impl<'s> Round<'s> {
     }
 
     fn keeps(&self, text: &str) -> bool {
-        self.reads.chars.get().saturating_add(text.len()) <= MAX_KEPT_READ_CHARS
+        self.reads.added().saturating_add(text.len()) <= MAX_KEPT_READ_CHARS
     }
 
     fn alloc(&self, text: String) -> &'s Chunk {
