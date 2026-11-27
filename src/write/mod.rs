@@ -3237,7 +3237,8 @@ fn defer_closer_repairs(c: &mut Check<'_>) {
     if c.constructs.is_empty() {
         return;
     }
-    let constructs: HashSet<(usize, usize)> = c.constructs.iter().map(|&(n, at)| (id(n), at)).collect();
+    let constructs: HashSet<(usize, usize)> =
+        c.constructs.iter().map(|&(n, at)| (id(n), at)).collect();
     let deferred: Vec<(usize, usize)> = c
         .escapes
         .iter()
