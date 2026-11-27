@@ -731,31 +731,7 @@ impl Parser<'_> {
         let figure =
             info.name.as_deref() == Some("figure") && info.title.is_none() && info.label.is_none();
         let sigil = info.sigil;
-        let anonymous = info.is_anonymous();
-        let diagnostic_kind = match info.name.as_deref().and_then(|name| {
-            crate::tables::DIV_NAMES
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, kind)| *kind)
-        }) {
-            Some("admonition") => "admonition",
-            Some("directive") => "directive",
-            Some("figure_group")
-                if figure
-                    && !self
-                        .stack
-                        .iter()
-                        .any(|frame| matches!(frame.kind, Kind::Div { figure: true, .. })) =>
-            {
-                "figure group"
-            }
-            _ => match sigil {
-                Some('>') => "quote fence",
-                Some('\\') => "hard-break block",
-                _ if info.name.is_some() => "div",
-                _ => "container",
-            },
-        };
+        let (diagnostic_kind, anonymous) = div_diagnostic(&info, figure, &self.stack);
         self.push_container(
             Kind::Div {
                 len,
@@ -1079,6 +1055,39 @@ fn continuation(k: &Cursor<'_>) -> Option<Vec<(usize, usize)>> {
         s = p + 1;
     }
     Some(frags)
+}
+
+/// Catalog kind and template for an unclosed colon container.
+fn div_diagnostic(
+    info: &shapes::DivInfo,
+    figure: bool,
+    stack: &[super::Container],
+) -> (&'static str, bool) {
+    let kind = info.name.as_deref().and_then(|name| {
+        crate::tables::DIV_NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, kind)| *kind)
+    });
+    let name = match kind {
+        Some("admonition") => "admonition",
+        Some("directive") => "directive",
+        Some("figure_group")
+            if figure
+                && !stack
+                    .iter()
+                    .any(|frame| matches!(frame.kind, Kind::Div { figure: true, .. })) =>
+        {
+            "figure group"
+        }
+        _ => match info.sigil {
+            Some('>') => "quote fence",
+            Some('\\') => "hard-break block",
+            _ if info.name.is_some() => "div",
+            _ => "container",
+        },
+    };
+    (name, info.is_anonymous())
 }
 
 /// C2-B-197: one image form, glued attribute blocks, trailing spaces.
