@@ -99,9 +99,9 @@ Includes use the resolver of `includes.md`:
 use carve::api::{self, Includes, Options};
 use carve::include::fs::resolver;
 
-let root = std::path::Path::new("docs");
+let root = std::fs::canonicalize("docs").expect("readable root");
 let opts = Options {
-    includes: Some(Includes::new(resolver(root).expect("readable root"))),
+    includes: Some(Includes::new(resolver(&root).expect("readable root"))),
     ..Options::default()
 };
 let tree = api::parse("{{ intro.crv }}", &opts)?;
@@ -238,15 +238,13 @@ A renderer receives the node as its JSON value and a `RenderContext` with the op
 Over JSON, `host.documentTransforms` registers transforms that need no host code: each `{"name", "after", "insert"}` inserts the node `insert` after the node at the JSON pointer `after`. This is the form of the conformance host:
 
 ```json
-{"call": "render", "tree": {...}, "host": {"documentTransforms": [
-  {"name": "sample.insert", "after": "/children/0", "insert": {"type": "block_extension", "name": "sample.insert", "version": "1", "children": [], "fallback": [...]}}
-]}}
+{"call":"render","tree":{"type":"document","astVersion":"2.0","children":[{"type":"paragraph","children":[{"type":"text","value":"Hi"}]}]},"host":{"documentTransforms":[{"name":"sample.insert","after":"/children/0","insert":{"type":"paragraph","children":[{"type":"text","value":"There"}]}}]}}
 ```
 
 `Carve::enable_standard("carve.tabs", renderer)` enables the standard `carve.tabs` extension (C2-X-039, provisional): its matcher claims `tabs` divs, and with `renderer` its standard renderers render them. Over JSON, the option `extensions` names it and `renderers` maps it to `"standard"`:
 
 ```json
-{"call": "render", "source": "...", "options": {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}}}
+{"call": "render", "source": ":::: tabs\n::: tab \"First\"\nHello.\n:::\n::::\n", "options": {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}}}
 ```
 
 The standard tabs renderer defaults to CSS radio controls. Set `"renderers": {"carve.tabs": {"standard": {"mode": "aria"}}}` for buttons and tab panels with WAI-ARIA roles. Static rendering writes titled sections in either mode. Authored `role`, `aria-label` and `aria-labelledby` on the tabs wrapper replace the corresponding generated attributes.
@@ -304,7 +302,7 @@ A binding whose host supplies included files (a browser, an in-memory store) pas
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 
 ```json
-{"error": {"name": "CarveOptionError", "category": "usage", "status": 2, "message": "option nope: unknown option"}}
+{"error": {"name": "CarveOptionError", "category": "usage", "status": 2, "message": "option nope: unknown option", "path": "/nope"}}
 ```
 
 ## Standard extensions on the command line
