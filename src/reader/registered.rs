@@ -115,18 +115,7 @@ fn check_node(
             "extension is outside its registered parent slot",
         ));
     }
-    for key in node["props"]
-        .as_object()
-        .into_iter()
-        .flat_map(|props| props.keys())
-    {
-        if rule["props"].get(key).is_none() && !standard_inline_prop(name, key) {
-            return Err(reader(
-                &format!("{path}/props"),
-                "unregistered extension prop",
-            ));
-        }
-    }
+    check_props(node, path, rule)?;
     check_slot_names(node, path, rule)?;
     for (slot, spec) in rule["slots"]
         .as_object()
@@ -157,6 +146,23 @@ fn check_node(
                     ));
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+fn check_props(node: &Value, path: &str, rule: &Value) -> Result<(), TreeError> {
+    let name = node["name"].as_str().unwrap_or("");
+    for key in node["props"]
+        .as_object()
+        .into_iter()
+        .flat_map(|props| props.keys())
+    {
+        if rule["props"].get(key).is_none() && !standard_inline_prop(name, key) {
+            return Err(reader(
+                &format!("{path}/props"),
+                "unregistered extension prop",
+            ));
         }
     }
     Ok(())
