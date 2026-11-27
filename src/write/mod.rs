@@ -2016,6 +2016,23 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 }
 
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
+    // Every pass of the group reads its writes through one cache: the passes write the same texts again.
+    let kept = typed_arena::Arena::new();
+    let kept_reads = Reads::default();
+    let reads = GroupReads {
+        kept: &kept,
+        reads: &kept_reads,
+    };
+    repair_group_with(w, doc, from, first, reads)
+}
+
+fn repair_group_with<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    from: usize,
+    first: bool,
+    reads: GroupReads<'_>,
+) -> usize {
     w.group_certificate = GroupCertificate::None;
     let end = group_end(w, children(doc), from);
     // A loss reported while finding the boundary names a block behind the group (C2-B-137).
@@ -2026,7 +2043,7 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     w.take_asked();
     w.seeded = false;
     let work = (w.work_chars, w.parses);
-    let end = repair_rounds(w, doc, from, first, reported);
+    let end = repair_rounds(w, doc, (from, first, reported), reads);
     let kind_work = (w.work_chars - work.0, w.parses - work.1);
     // These rounds read none of the switches the closer and trial rounds turn on.
     let switch_free = w.take_asked() == (false, false) && !w.seeded;
@@ -2042,7 +2059,7 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         count_work(w, kind_work);
         Some(kind_work)
     } else {
-        match closer_rounds(w, doc, (from, first, reported)) {
+        match closer_rounds(w, doc, (from, first, reported), reads) {
             Ok(end) => return end,
             Err(work) => work,
         }
@@ -2056,7 +2073,7 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     w.group_certificate = GroupCertificate::None;
     w.take_asked();
     let work = (w.work_chars, w.parses);
-    let end = repair_rounds(w, doc, from, first, reported);
+    let end = repair_rounds(w, doc, (from, first, reported), reads);
     w.kind_escapes = true;
     if w.sp.losses.len() == reported {
         return end;
@@ -2065,7 +2082,7 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     trial_rounds(
         w,
         doc,
-        (from, first, reported),
+        (from, first, reported, reads),
         group,
         unrepaired,
         closer_work,
@@ -2079,12 +2096,13 @@ fn closer_rounds<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     (from, first, reported): (usize, bool, usize),
+    reads: GroupReads<'_>,
 ) -> Result<usize, Option<(usize, usize)>> {
     w.closer_kinds = true;
     w.group_certificate = GroupCertificate::None;
     w.take_asked();
     let work = (w.work_chars, w.parses);
-    let end = repair_rounds(w, doc, from, first, reported);
+    let end = repair_rounds(w, doc, (from, first, reported), reads);
     w.closer_kinds = false;
     if w.sp.losses.len() == reported && !w.kind_failed {
         return Ok(end);
@@ -2096,7 +2114,7 @@ fn closer_rounds<'t>(
 fn trial_rounds<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
-    (from, first, reported): (usize, bool, usize),
+    (from, first, reported, reads): (usize, bool, usize, GroupReads<'_>),
     group: Arr<'t>,
     unrepaired: SavedGroup<'t>,
     closer_work: Option<(usize, usize)>,
@@ -2121,7 +2139,7 @@ fn trial_rounds<'t>(
         w.kind_escapes = kinds;
         w.kind_failed = false;
         w.group_certificate = GroupCertificate::None;
-        let end = repair_rounds(w, doc, from, first, reported);
+        let end = repair_rounds(w, doc, (from, first, reported), reads);
         w.whole_trials = false;
         w.kind_escapes = true;
         if w.sp.losses.len() == reported && !w.kind_failed {
@@ -2141,7 +2159,7 @@ fn trial_rounds<'t>(
     }
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
-    let end = repair_rounds(w, doc, from, first, reported);
+    let end = repair_rounds(w, doc, (from, first, reported), reads);
     w.kind_escapes = true;
     end
 }
@@ -2418,11 +2436,10 @@ struct History {
 fn repair_rounds<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
-    from: usize,
-    first: bool,
-    reported: usize,
+    (from, first, reported): (usize, bool, usize),
+    reads: GroupReads<'_>,
 ) -> usize {
-    let end = repair_rounds_once(w, doc, from, first, reported);
+    let end = repair_rounds_once(w, doc, (from, first, reported), reads);
     if w.kind_failed || w.sp.losses.len() != reported {
         return end;
     }
@@ -2443,7 +2460,7 @@ fn repair_rounds<'t>(
         w.sp.escapes.remove(n);
         w.sp.attempts.remove(n);
     }
-    let again = repair_rounds_once(w, doc, from, first, reported);
+    let again = repair_rounds_once(w, doc, (from, first, reported), reads);
     if w.kind_failed || w.sp.losses.len() != reported || again != end {
         w.kind_failed = false;
         w.group_certificate = certificate;
@@ -2456,9 +2473,11 @@ fn repair_rounds<'t>(
 fn repair_rounds_once<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
-    from: usize,
-    first: bool,
-    reported: usize,
+    (from, first, reported): (usize, bool, usize),
+    GroupReads {
+        kept,
+        reads: kept_reads,
+    }: GroupReads<'_>,
 ) -> usize {
     w.link_bracket_fallback = false;
     w.saw_link = false;
@@ -2471,10 +2490,6 @@ fn repair_rounds_once<'t>(
     };
     let mut first_round = None;
     w.capped_runs.clear();
-    // The rounds of a group mostly read again what a round before them tried; their parses are kept across
-    // rounds up to a bound, and a round past it keeps its own.
-    let kept = typed_arena::Arena::new();
-    let kept_reads = Reads::default();
     loop {
         let done = if kept_reads.chars.get() <= MAX_KEPT_READ_CHARS {
             repair_round(
@@ -2482,8 +2497,8 @@ fn repair_rounds_once<'t>(
                 doc,
                 (from, first, reported),
                 (&mut history, &mut first_round),
-                &kept,
-                &kept_reads,
+                kept,
+                kept_reads,
             )
         } else {
             let chunks = typed_arena::Arena::new();
@@ -2828,6 +2843,14 @@ fn repeated_repair_in<'g>(
     refuse
 }
 
+/// The rounds of a group mostly read again what a round before them tried, in this pass or an earlier one;
+/// their parses are kept across rounds and passes up to a bound, and a round past it keeps its own.
+#[derive(Clone, Copy)]
+struct GroupReads<'s> {
+    kept: &'s typed_arena::Arena<Chunk>,
+    reads: &'s Reads<'s>,
+}
+
 /// The parses of the rounds of one group by their text: a write the rounds try again reads as before.
 #[derive(Default)]
 struct Reads<'k> {
@@ -2836,6 +2859,9 @@ struct Reads<'k> {
     parsed: std::cell::RefCell<std::collections::HashMap<&'k str, V<'k>>>,
     /// The characters of the chunks held by the arena these parses live in.
     chars: std::cell::Cell<usize>,
+    /// Whether a parse reads back as the group, by the parse's source, the group's first node and length, and
+    /// whether span marks are compared.
+    equal: std::cell::RefCell<std::collections::HashMap<(usize, usize, usize, bool), bool>>,
 }
 
 const LISTED_READS: usize = 8;
@@ -2951,14 +2977,25 @@ fn compare_group<'t>(
         ..Check::default()
     };
     let actual = children(parsed);
-    round.equal = group.len() == actual.len()
-        && group.iter().zip(actual).all(|(expected, read_back)| {
-            if w.unmarked {
-                node::unmarked_trees_equal(expected, read_back)
-            } else {
-                node::trees_equal(expected, read_back)
-            }
-        });
+    let asked = (
+        source.as_ptr() as usize,
+        group.first().map_or(0, id),
+        group.len(),
+        w.unmarked,
+    );
+    let known = round.reads.equal.borrow().get(&asked).copied();
+    round.equal = known.unwrap_or_else(|| {
+        let equal = group.len() == actual.len()
+            && group.iter().zip(actual).all(|(expected, read_back)| {
+                if w.unmarked {
+                    node::unmarked_trees_equal(expected, read_back)
+                } else {
+                    node::trees_equal(expected, read_back)
+                }
+            });
+        round.reads.equal.borrow_mut().insert(asked, equal);
+        equal
+    });
     if !round.equal {
         check::count_open_above(w, group);
         compare_blocks(w, &mut c, group, actual, doc);

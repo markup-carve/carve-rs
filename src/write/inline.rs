@@ -5,7 +5,6 @@
 use super::attrs::{BlockParts, brace_block, plain_block, quoted};
 use super::node::{N, attrs, children, has, id, s, text, ty};
 use super::state::{Writer, lose, trim_end};
-use crate::chars::fold_label;
 use crate::hash::AddrSet;
 use crate::view::{Arr, V};
 
@@ -758,10 +757,7 @@ fn collapsed_content(w: &mut Writer<'_>, node: V<'_>, content: String, flags: u3
     let Some(key) = s(node, "key") else {
         return content;
     };
-    if s(node, "refForm") != Some("collapsed")
-        || flags & IN_CELL != 0
-        || fold_label(&content) == key
-    {
+    if s(node, "refForm") != Some("collapsed") || flags & IN_CELL != 0 || folds_to(&content, key) {
         return content;
     }
     for candidate in [escaped_like(&content, key), Some(key.to_string())]
@@ -798,6 +794,36 @@ fn reads_as_collapsed(w: &mut Writer<'_>, node: V<'_>, candidate: &str, key: &st
     reads
 }
 
+/// `crate::chars::fold_label(text) == key`, stopping at the first character that differs: the content of a link
+/// can run to the whole paragraph.
+fn folds_to(text: &str, key: &str) -> bool {
+    let k = key.as_bytes();
+    let mut at = 0;
+    let mut space = false;
+    let mut started = false;
+    let mut buf = [0u8; 4];
+    for c in text.chars() {
+        if matches!(c, ' ' | '\t' | '\n') {
+            space = true;
+            continue;
+        }
+        if space && started {
+            if k.get(at) != Some(&b' ') {
+                return false;
+            }
+            at += 1;
+        }
+        space = false;
+        started = true;
+        let bytes = c.encode_utf8(&mut buf).as_bytes();
+        if k.get(at..at + bytes.len()) != Some(bytes) {
+            return false;
+        }
+        at += bytes.len();
+    }
+    at == k.len()
+}
+
 fn is_label_space(c: u8) -> bool {
     matches!(c, b' ' | b'\t' | b'\n')
 }
@@ -816,7 +842,7 @@ fn escaped_like(content: &str, key: &str) -> Option<String> {
         };
     }
     let out = String::from_utf8(out).ok()?;
-    (ki == k.len() && fold_label(&out) == key).then_some(out)
+    (ki == k.len() && folds_to(&out, key)).then_some(out)
 }
 
 fn label_space_run(
@@ -887,7 +913,7 @@ fn collapsed_alt(w: &mut Writer<'_>, node: V<'_>, alt: String) -> String {
     let Some(key) = s(node, "key") else {
         return alt;
     };
-    if s(node, "refForm") != Some("collapsed") || fold_label(&alt) == key {
+    if s(node, "refForm") != Some("collapsed") || folds_to(&alt, key) {
         return alt;
     }
     let keys = std::iter::once(key.to_string()).collect();
@@ -1884,5 +1910,39 @@ pub fn write_content<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
         format!("{trimmed}\\")
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod fold_tests {
+    use super::folds_to;
+    use crate::chars::fold_label;
+
+    #[test]
+    fn folds_to_agrees_with_fold_label() {
+        let texts = [
+            "",
+            " ",
+            "a",
+            " a",
+            "a ",
+            "a  b",
+            "a\tb",
+            "a\n b",
+            "  a \n\t b  ",
+            "ä b",
+            "a\u{a0}b",
+            "ab",
+            "a b c",
+        ];
+        for text in texts {
+            for key in texts {
+                assert_eq!(
+                    folds_to(text, key),
+                    fold_label(text) == key,
+                    "{text:?} {key:?}"
+                );
+            }
+        }
     }
 }
