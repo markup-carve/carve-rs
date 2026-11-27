@@ -1,6 +1,6 @@
 //! Lint of accepted include sources (C2-N-085 to C2-N-088).
 
-use super::{LintOptions, declares_below_0_2, lint_core};
+use super::{LintOptions, copied_note_uses, declares_below_0_2, lint_core, retain_used_notes};
 use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::include::Resolver;
 use crate::view::V;
@@ -57,6 +57,7 @@ pub(super) struct Scanned {
     findings: Vec<Diagnostic>,
     snippets: Option<SnippetUse>,
     references: Option<References>,
+    copied_notes: HashSet<(Option<String>, u32)>,
 }
 
 /// What [`reconcile_snippets`] reads of the tree.
@@ -84,11 +85,12 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
         includes: Some(config),
         ..crate::Options::default()
     };
-    let Some(tree) = crate::tree_json_value(source, &render) else {
-        return;
-    };
-    let scanned = collect(V::Json(&tree), options, &stored, output);
-    finish(scanned, options, output);
+    let (scanned, _) = crate::with_expanded_tree(source, &render, |tree| {
+        tree.map(|tree| collect(tree, options, &stored, output))
+    });
+    if let Some(scanned) = scanned {
+        finish(scanned, options, output);
+    }
 }
 
 /// Lints the accepted includes of the expanded `tree`; `entry` holds the entry file's own findings.
@@ -104,6 +106,7 @@ pub(super) fn collect(
             findings,
             snippets: None,
             references: None,
+            copied_notes: HashSet::new(),
         };
     };
     let unused = entry.iter().any(|d| d.code == "unused-snippet");
@@ -162,10 +165,23 @@ pub(super) fn collect(
         .chain(&findings)
         .any(|d| REFERENCE_CODES.contains(&d.code))
         .then(|| References::of(tree));
+    let copied_notes = if entry
+        .iter()
+        .chain(&findings)
+        .any(|d| d.code == "unused-footnote-definition")
+    {
+        match tree {
+            V::Doc(doc) => copied_note_uses(doc),
+            _ => HashSet::new(),
+        }
+    } else {
+        HashSet::new()
+    };
     Scanned {
         findings,
         snippets,
         references,
+        copied_notes,
     }
 }
 
@@ -199,6 +215,7 @@ pub(super) fn finish(scanned: Scanned, options: &LintOptions, output: &mut Vec<D
     if let Some(references) = scanned.references {
         references.reconcile(output);
     }
+    retain_used_notes(output, &scanned.copied_notes);
 }
 
 const REFERENCE_CODES: [&str; 4] = [
@@ -237,7 +254,7 @@ struct Walk {
 
 impl Walk {
     /// Records a definition or a reference of `scope`.
-    fn record(&mut self, node: V<'_>, ty: &str, scope: usize) {
+    fn record(&mut self, node: V<'_>, ty: &str, scope: usize, in_snippet: bool) {
         let (Some(key), Some((start, end))) = (node.at("key").as_str(), node.offsets()) else {
             return;
         };
@@ -269,8 +286,12 @@ impl Walk {
         } else {
             self.found.unresolved.insert(place);
         }
-        self.uses
-            .push((scope, ty == "footnote_ref", key.to_string()));
+        // The authored reference in a snippet definition is not a rendered use.
+        // Copies are counted from the resolved expansion in the outer lint pass.
+        if !(in_snippet && ty == "footnote_ref") {
+            self.uses
+                .push((scope, ty == "footnote_ref", key.to_string()));
+        }
     }
 
     /// The scope of the children of `node`: a new one under an expanded include.
@@ -301,20 +322,26 @@ impl References {
             uses: Vec::new(),
             found: Self::default(),
         };
-        let mut pending = vec![(tree, 0)];
-        while let Some((node, scope)) = pending.pop() {
+        let mut pending = vec![(tree, 0, false)];
+        while let Some((node, scope, in_snippet)) = pending.pop() {
             let ty = node.ty();
             let ty = ty.as_str().unwrap_or_default();
-            walk.record(node, ty, scope);
+            walk.record(node, ty, scope, in_snippet);
             let inner = walk.enter(node, ty, scope);
+            let below_snippet = in_snippet || ty == "snippet_definition";
             node.each(&mut |slot, value| {
                 if slot == "pos" || slot == "attrs" {
                     return;
                 }
                 if let Some(items) = value.as_array() {
-                    pending.extend(items.into_iter().rev().map(|item| (item, inner)));
+                    pending.extend(
+                        items
+                            .into_iter()
+                            .rev()
+                            .map(|item| (item, inner, below_snippet)),
+                    );
                 } else if value.is_container() {
-                    pending.push((value, inner));
+                    pending.push((value, inner, below_snippet));
                 }
             });
         }

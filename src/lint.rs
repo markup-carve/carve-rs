@@ -169,7 +169,15 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             } else {
                 opts
             };
-            lint_core(source, opts, tree, arena)
+            let mut found = lint_core(source, opts, tree, arena);
+            if !includes
+                && found.iter().any(|d| d.code == "unused-footnote-definition")
+                && let Some(V::Doc(doc)) = tree
+            {
+                let used = copied_note_uses(doc);
+                retain_used_notes(&mut found, &used);
+            }
+            found
         },
     );
     let mut scanned = None;
@@ -212,6 +220,65 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         }
     }
     out
+}
+
+/// A copy has no position, so the source-based lint model cannot see its use of a note.
+/// Read the resolved copy graph of the tree lint already parsed, without calling a resolver again.
+fn copied_note_uses<'a>(doc: &'a crate::ast::Document<'a>) -> HashSet<(Option<String>, u32)> {
+    let mut pending = vec![V::Doc(doc)];
+    let mut has_use = false;
+    while let Some(node) = pending.pop() {
+        if node.ty().as_str() == Some("snippet_use") {
+            has_use = true;
+            break;
+        }
+        node.each(&mut |_, child| {
+            if let Some(items) = child.as_array() {
+                pending.extend(items.into_iter());
+            } else if child.is_container() {
+                pending.push(child);
+            }
+        });
+    }
+    if !has_use {
+        return HashSet::new();
+    }
+    let arena = crate::Arena::new();
+    let owned = doc.owned();
+    let mut copy = owned.in_arena(&arena);
+    let mut diagnostics = Vec::new();
+    let _guard = crate::expand_tree(
+        &mut copy,
+        &crate::Options::default(),
+        &arena,
+        &mut diagnostics,
+    );
+    let files = crate::resolve_tree_unflattened(&mut copy, &crate::Options::default(), &arena);
+    let order = crate::resolve::order::Order::build_with(&copy, files.as_ref());
+    order
+        .notes
+        .iter()
+        .filter(|note| !note.refs.is_empty())
+        .filter_map(|note| {
+            let pos = note.node.pos()?;
+            Some((
+                files
+                    .as_ref()
+                    .and_then(|files| files.file_of_pos(pos))
+                    .map(str::to_string),
+                pos.start_offset,
+            ))
+        })
+        .collect()
+}
+
+fn retain_used_notes(out: &mut Vec<Diagnostic>, used: &HashSet<(Option<String>, u32)>) {
+    out.retain(|d| {
+        d.code != "unused-footnote-definition"
+            || !d
+                .pos
+                .is_some_and(|pos| used.contains(&(d.file.clone(), pos.start_offset)))
+    });
 }
 
 fn lint_core<'a>(
