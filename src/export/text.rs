@@ -1259,9 +1259,10 @@ pub fn export_text(x: &mut Exporter<'_>, ansi: bool) -> R {
     }
     let entries = x.loss_count();
     let budget = x.derived_left;
+    let reported = x.derived_reported;
     let (_, expanded) = run(x, ansi, &keys, &HashSet::new())?;
     x.truncate_losses(entries);
     x.derived_left = budget;
-    x.derived_reported = false;
+    x.derived_reported = reported;
     Ok(run(x, ansi, &keys, &expanded)?.0)
 }

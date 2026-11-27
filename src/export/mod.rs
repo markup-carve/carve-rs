@@ -166,18 +166,29 @@ pub fn export_to(target: Target, tree: &Tree, options: &ExportOptions) -> Result
     let shift = options.heading_shift.unwrap_or(0);
     crate::heading_shift::apply(doc.children, shift);
     let resolve_opts = crate::options::Options::default();
+    let mut expansion_diagnostics = Vec::new();
+    let _snippets = crate::expand_tree(&mut doc, &resolve_opts, &arena, &mut expansion_diagnostics);
     let _ = crate::resolve_tree_unflattened(&mut doc, &resolve_opts, &arena);
     let xref_text = crate::html::xref_targets(&doc, &resolve_opts)
         .into_iter()
         .collect();
     let value = crate::api::writer::tree_value(&crate::to_json(&doc))?;
     let mut x = common::Exporter::new(target, &value, xref_text, options);
+    if let Some(budget) = crate::snippet::expand::with_side(|side| side.and_then(|s| s.budget)) {
+        x.derived_left = budget.left;
+        x.derived_reported = budget.reported;
+        x.derived_limit = budget.bytes;
+    }
     let output = match target {
         Target::Markdown => markdown::export_markdown(&mut x)?,
         Target::Plain => text::export_text(&mut x, false)?,
         Target::Ansi => text::export_text(&mut x, true)?,
     };
-    let diagnostics = x.diagnostics();
+    let mut diagnostics: Vec<_> = expansion_diagnostics
+        .iter()
+        .map(crate::api::Entry::from)
+        .collect();
+    diagnostics.extend(x.diagnostics());
     if options.strict_losses && !diagnostics.is_empty() {
         return Err(Error::Export { diagnostics });
     }
@@ -200,5 +211,69 @@ impl Writer for ExportWriter {
 
     fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<Written, Error> {
         export_to(self.0, tree, &ExportOptions::from_render(&opts.render))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snippet::expand::{Limits, with_limits};
+
+    fn tree(source: &str) -> Result<Tree, Error> {
+        crate::api::parse(source, &crate::api::Options::default())
+    }
+
+    #[test]
+    fn snippet_copies_and_later_export_text_share_one_derived_budget() -> Result<(), Error> {
+        let tree = tree("{$v}: X\n\n{{ $v }} [a]{abbr=Long}\n")?;
+        let result = with_limits(
+            Limits {
+                derived: Some(40),
+                ..Default::default()
+            },
+            || to_markdown(&tree, &ExportOptions::default()),
+        )?;
+        assert_eq!(result.output, "X a\n");
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics.first().map(|d| d.code.as_str()),
+            Some("derived-text-budget")
+        );
+
+        let refused = with_limits(
+            Limits {
+                derived: Some(36),
+                ..Default::default()
+            },
+            || to_markdown(&tree, &ExportOptions::default()),
+        )?;
+        assert_eq!(refused.output, "{{ $v }} <abbr title=\"Long\">a</abbr>\n");
+        assert_eq!(refused.diagnostics.len(), 1);
+        assert_eq!(
+            refused.diagnostics.first().map(|d| d.code.as_str()),
+            Some("derived-text-budget")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn plain_and_ansi_keep_an_expansion_budget_finding_through_their_second_pass()
+    -> Result<(), Error> {
+        let tree = tree("{$v}: X\n\n{{ $v }} HTML\n\n*[HTML]: Hyper\n")?;
+        for target in [Target::Plain, Target::Ansi] {
+            let result = with_limits(
+                Limits {
+                    derived: Some(36),
+                    ..Default::default()
+                },
+                || export_to(target, &tree, &ExportOptions::default()),
+            )?;
+            assert_eq!(result.diagnostics.len(), 1, "{target:?}");
+            assert_eq!(
+                result.diagnostics.first().map(|d| d.code.as_str()),
+                Some("derived-text-budget")
+            );
+        }
+        Ok(())
     }
 }

@@ -65,6 +65,7 @@ pub struct Exporter<'v> {
     losses: Vec<Loss>,
     /// Bytes of derived text still allowed in this run.
     pub derived_left: usize,
+    pub derived_limit: usize,
     pub derived_reported: bool,
     pub depth: usize,
     pub link_depth: usize,
@@ -98,6 +99,7 @@ impl<'v> Exporter<'v> {
             shift_reported: false,
             losses: Vec::new(),
             derived_left: crate::tables::DERIVED_TEXT_BYTES,
+            derived_limit: crate::tables::DERIVED_TEXT_BYTES,
             derived_reported: false,
             depth: 0,
             link_depth: 0,
@@ -164,7 +166,7 @@ impl<'v> Exporter<'v> {
                 "derived-text-budget",
                 format!(
                     "Wrote an abbreviation or a cross-reference in its plain form: the derived text of this render reached its budget of {} bytes",
-                    crate::tables::DERIVED_TEXT_BYTES
+                    self.derived_limit
                 ),
             );
         }
