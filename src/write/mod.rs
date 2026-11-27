@@ -2281,6 +2281,24 @@ fn json_node_ids(value: &Value, out: &mut Vec<usize>) {
     }
 }
 
+/// The [`node_ids`] of `group`, kept for the last group: the tree does not change while a group is written.
+fn group_node_ids(w: &Writer<'_>, group: Arr<'_>) -> std::rc::Rc<Vec<usize>> {
+    let key = (
+        group.first().map_or(0, id),
+        group.last().map_or(0, id),
+        group.len(),
+    );
+    let mut kept = w.group_ids.borrow_mut();
+    if kept.0 != key {
+        let mut ids = Vec::new();
+        for node in group {
+            node_ids(node, &mut ids);
+        }
+        *kept = (key, std::rc::Rc::new(ids));
+    }
+    std::rc::Rc::clone(&kept.1)
+}
+
 impl<'t> SavedGroup<'t> {
     fn new(w: &Writer<'t>, group: Arr<'_>) -> Self {
         let nothing_saved = w.stand_ins.is_empty()
@@ -2291,12 +2309,11 @@ impl<'t> SavedGroup<'t> {
             && w.forms.is_empty()
             && w.round_forms.is_empty()
             && w.glued.is_empty();
-        let mut ids = Vec::new();
-        if !nothing_saved {
-            for node in group {
-                node_ids(node, &mut ids);
-            }
-        }
+        let mut ids = if nothing_saved {
+            Vec::new()
+        } else {
+            group_node_ids(w, group).to_vec()
+        };
         let stand_ins: Vec<usize> = ids
             .iter()
             .filter_map(|n| w.stand_ins.get(n))
@@ -2346,11 +2363,8 @@ impl<'t> SavedGroup<'t> {
 
     fn restore(self, w: &mut Writer<'t>, losses: usize, group: Arr<'_>) {
         // Stand-ins made during the rounds belong to the group too.
-        let mut fresh = Vec::new();
-        for node in group {
-            node_ids(node, &mut fresh);
-        }
-        let mut ids = self.ids.unwrap_or_else(|| fresh.clone());
+        let fresh = group_node_ids(w, group);
+        let mut ids = self.ids.unwrap_or_else(|| fresh.to_vec());
         let stand_ins: Vec<usize> = fresh
             .iter()
             .filter_map(|n| w.stand_ins.get(n))
@@ -2686,8 +2700,12 @@ fn refuse_repair(w: &mut Writer<'_>, node: V<'_>) {
 }
 
 fn local_id(ids: &mut AddrMap<usize, usize>, n: V<'_>) -> usize {
+    local_id_of(ids, id(n))
+}
+
+fn local_id_of(ids: &mut AddrMap<usize, usize>, n: usize) -> usize {
     let next = ids.len();
-    *ids.entry(id(n)).or_insert(next)
+    *ids.entry(n).or_insert(next)
 }
 
 /// C2-W-133: the repair state of a group, compared exactly: the written lines and
@@ -2714,37 +2732,55 @@ fn push_opt(state: &mut Vec<usize>, v: Option<usize>) {
     }
 }
 
-fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -> RepairKey {
-    let mut state = vec![usize::from(w.blank_first), w.sp.losses.len()];
-    let mut pending: Vec<V<'_>> = group.iter().collect();
-    while let Some(n) = pending.pop() {
-        state.push(local_id(ids, n));
-        let escapes = if ty(n) == "text" {
-            w.sp.escapes.get(&id(n))
-        } else {
-            None
-        };
+fn repair_key(w: &mut Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -> RepairKey {
+    let walk = repair_walk(w, group);
+    let mut state = Vec::with_capacity(2 + walk.len() * 8);
+    state.extend([usize::from(w.blank_first), w.sp.losses.len()]);
+    for &(n, text) in &walk {
+        state.push(local_id_of(ids, n));
+        let escapes = if text { w.sp.escapes.get(&n) } else { None };
         push_opt(&mut state, escapes.map(Vec::len));
         state.extend(escapes.into_iter().flatten());
         push_opt(
             &mut state,
             w.forms
-                .get(&id(n))
+                .get(&n)
                 .map(|&f| usize::try_from(f).unwrap_or(usize::MAX)),
         );
-        let attempt = w.sp.attempts.get(&id(n));
+        let attempt = w.sp.attempts.get(&n);
         push_opt(&mut state, attempt.map(|a| a.step));
         push_opt(&mut state, attempt.map(|a| a.escapes.len()));
         for (t, at) in attempt.map_or(&[][..], |a| a.escapes.as_slice()) {
             state.extend([local_id(ids, *t), *at]);
         }
-        state.push(usize::from(w.is_lost(n)));
-        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+        state.push(usize::from(w.sp.lost.contains(&n)));
     }
+    w.repair_walk.1 = walk;
     RepairKey {
         lines: w.lines.clone(),
         state,
     }
+}
+
+/// The nodes of `group` in the order [`repair_key`] reads them, with whether each is text; taken from the walk
+/// of the last group where it is the same group.
+fn repair_walk(w: &mut Writer<'_>, group: Arr<'_>) -> Vec<(usize, bool)> {
+    let key = (
+        group.first().map_or(0, id),
+        group.last().map_or(0, id),
+        group.len(),
+    );
+    if w.repair_walk.0 == key {
+        return std::mem::take(&mut w.repair_walk.1);
+    }
+    let mut walk = Vec::new();
+    let mut pending: Vec<V<'_>> = group.iter().collect();
+    while let Some(n) = pending.pop() {
+        walk.push((id(n), ty(n) == "text"));
+        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+    }
+    w.repair_walk.0 = key;
+    walk
 }
 
 /// The key of a first round that ran before any repair state existed: its state
