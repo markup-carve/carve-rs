@@ -127,6 +127,11 @@ struct Scanner<'r, 'e, 'a> {
 struct Notes {
     /// Starts of notes that closed with a caret pair inside, and their end.
     demote: HashMap<usize, usize>,
+    /// Failed notes being retried, rather than notes that closed in the
+    /// opener-first pass and therefore may need the tie-break.
+    retry: HashSet<usize>,
+    /// A failed retry must not be attempted again on a later pass.
+    settled: HashSet<usize>,
     /// Starts of `^[` that close only when a caret pair inside opens: text,
     /// and caret pairs before the end open nothing.
     tie: HashMap<usize, usize>,
@@ -137,6 +142,9 @@ struct Notes {
 struct PassNotes {
     /// `(start, end)` of notes that closed with a caret pair inside that opened.
     caret_closed: Vec<(usize, usize)>,
+    /// A note left open while a caret pair inside it opened. Retry it with
+    /// those pairs ordinary before deciding it is text.
+    caret_unclosed: Vec<(usize, usize)>,
     /// Starts of demoting notes that did not close.
     failed: Vec<usize>,
 }
@@ -151,9 +159,23 @@ impl Notes {
                 changed = true;
             }
         }
+        for (start, end) in pass.caret_unclosed {
+            if !self.demote.contains_key(&start)
+                && !self.tie.contains_key(&start)
+                && !self.settled.contains(&start)
+            {
+                self.demote.insert(start, end);
+                self.retry.insert(start);
+                changed = true;
+            }
+        }
         for start in pass.failed {
             if let Some(end) = self.demote.remove(&start) {
-                self.tie.insert(start, end);
+                if self.retry.remove(&start) {
+                    self.settled.insert(start);
+                } else {
+                    self.tie.insert(start, end);
+                }
                 changed = true;
             }
         }
@@ -1326,6 +1348,11 @@ impl<'a> Scanner<'_, '_, 'a> {
             self.own.unclosed(&mut self.pass_notes.failed);
         }
         for top in self.brackets.drain(..) {
+            if top.kind == BKind::Footnote && self.carets > top.carets && !top.demotes {
+                self.pass_notes
+                    .caret_unclosed
+                    .push((top.start, self.t.len()));
+            }
             if top.demotes {
                 self.pass_notes.failed.push(top.start);
             }
