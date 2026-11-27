@@ -815,11 +815,14 @@ impl Parser<'_> {
     /// A line that opens with `{{`: a block snippet use, tested first (C2-B-237), or an include.
     fn open_directive(&mut self, r: &str, start: usize) -> bool {
         if let Some(name) = crate::snippet::block_use(r) {
-            let (s, attrs) = self.take_pending(start, None);
+            // C2-B-096: a block snippet use takes no attribute line.
+            if let Some(p) = self.pending.take() {
+                self.pending_to_paragraph(&p);
+            }
             let kind = LeafKind::SnippetUse {
                 name: name.to_string(),
             };
-            self.push_leaf_event(kind, s, start + r.len(), attrs);
+            self.push_leaf_event(kind, start, start + r.len(), None);
             self.closed = None;
             return true;
         }
