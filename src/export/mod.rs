@@ -219,49 +219,61 @@ mod tests {
     use super::*;
     use crate::snippet::expand::{Limits, with_limits};
 
-    fn tree(source: &str) -> Tree {
-        crate::api::parse(source, &crate::api::Options::default()).unwrap()
+    fn tree(source: &str) -> Result<Tree, Error> {
+        crate::api::parse(source, &crate::api::Options::default())
     }
 
     #[test]
-    fn snippet_copies_and_later_export_text_share_one_derived_budget() {
-        let tree = tree("{$v}: X\n\n{{ $v }} [a]{abbr=Long}\n");
+    fn snippet_copies_and_later_export_text_share_one_derived_budget() -> Result<(), Error> {
+        let tree = tree("{$v}: X\n\n{{ $v }} [a]{abbr=Long}\n")?;
         let result = with_limits(
             Limits {
                 derived: Some(40),
                 ..Default::default()
             },
-            || to_markdown(&tree, &ExportOptions::default()).unwrap(),
-        );
+            || to_markdown(&tree, &ExportOptions::default()),
+        )?;
         assert_eq!(result.output, "X a\n");
         assert_eq!(result.diagnostics.len(), 1);
-        assert_eq!(result.diagnostics[0].code, "derived-text-budget");
+        assert_eq!(
+            result.diagnostics.first().map(|d| d.code.as_str()),
+            Some("derived-text-budget")
+        );
 
         let refused = with_limits(
             Limits {
                 derived: Some(36),
                 ..Default::default()
             },
-            || to_markdown(&tree, &ExportOptions::default()).unwrap(),
-        );
+            || to_markdown(&tree, &ExportOptions::default()),
+        )?;
         assert_eq!(refused.output, "{{ $v }} <abbr title=\"Long\">a</abbr>\n");
         assert_eq!(refused.diagnostics.len(), 1);
-        assert_eq!(refused.diagnostics[0].code, "derived-text-budget");
+        assert_eq!(
+            refused.diagnostics.first().map(|d| d.code.as_str()),
+            Some("derived-text-budget")
+        );
+        Ok(())
     }
 
     #[test]
-    fn plain_and_ansi_keep_an_expansion_budget_finding_through_their_second_pass() {
-        let tree = tree("{$v}: X\n\n{{ $v }} HTML\n\n*[HTML]: Hyper\n");
+    fn plain_and_ansi_keep_an_expansion_budget_finding_through_their_second_pass()
+    -> Result<(), Error> {
+        let tree = tree("{$v}: X\n\n{{ $v }} HTML\n\n*[HTML]: Hyper\n")?;
         for target in [Target::Plain, Target::Ansi] {
             let result = with_limits(
                 Limits {
                     derived: Some(36),
                     ..Default::default()
                 },
-                || export_to(target, &tree, &ExportOptions::default()).unwrap(),
-            );
+                || export_to(target, &tree, &ExportOptions::default()),
+            )?;
             assert_eq!(result.diagnostics.len(), 1, "{target:?}");
-            assert_eq!(result.diagnostics[0].code, "derived-text-budget");
+            assert_eq!(
+                result.diagnostics.first().map(|d| d.code.as_str()),
+                Some("derived-text-budget")
+            );
         }
+        Ok(())
     }
 }
