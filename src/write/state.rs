@@ -106,6 +106,9 @@ pub enum Below {
     Unspellable,
 }
 
+/// A group's first and last node and length, and its node ids.
+pub type GroupIds = ((usize, usize, usize), std::rc::Rc<Vec<usize>>);
+
 #[allow(clippy::struct_excessive_bools)] // Independent switches of one write.
 pub struct Writer<'t> {
     pub pool: &'t typed_arena::Arena<Value>,
@@ -219,6 +222,11 @@ pub struct Writer<'t> {
     /// C2-I-118: the escapes the comparison placed at once behind capped openers, in the order the rounds would
     /// place them.
     pub capped_runs: Vec<(N<'t>, usize)>,
+    /// C2-W-133: the walk of the last group keyed for repeats, by its first and last node and length: each node's
+    /// id and whether it is text. The tree does not change while the group is written.
+    pub repair_walk: ((usize, usize, usize), Vec<(usize, bool)>),
+    /// The node ids of the last group saved or restored, keyed as `repair_walk`.
+    pub group_ids: std::cell::RefCell<GroupIds>,
     /// C2-W-088: the source the tree was read from, for the authored-block fallback; `None` without one.
     pub authored: Option<String>,
     /// C2-W-088: the leaf blocks written with their authored content while that fallback tries them.
@@ -314,6 +322,8 @@ impl<'t> Writer<'t> {
             strict_pairs: false,
             kid_lists: Vec::new(),
             capped_runs: Vec::new(),
+            repair_walk: ((0, 0, 0), Vec::new()),
+            group_ids: std::cell::RefCell::default(),
             authored: None,
             authored_leaves: HashMap::new(),
             collapsed_reads: HashMap::new(),
