@@ -71,7 +71,7 @@ fn a_host_claimer_reads_resolved_nodes_in_a_render() {
             node: &serde_json::Value,
             cx: &carve::api::RenderContext<'_>,
         ) -> Result<String, carve::api::Error> {
-            cx.render_inlines(&node["slots"]["summary"])
+            cx.render_inlines(&node["slots"]["title"])
         }
     }
     let mut bundle = extensions::details();
@@ -85,11 +85,11 @@ fn a_host_claimer_reads_resolved_nodes_in_a_render() {
             .and_then(serde_json::Value::as_str)
             .unwrap_or("none")
             .to_owned();
-        let summary = serde_json::json!([{"type": "text", "value": format!("id {id}")}]);
+        let title = serde_json::json!([{"type": "text", "value": format!("id {id}")}]);
         Some(serde_json::json!({
             "type": "block_extension", "name": "test.idProbe", "version": "1",
-            "children": [], "slots": {"summary": summary, "body": []},
-            "fallback": [{"type": "paragraph", "children": summary}],
+            "children": [], "slots": {"title": title, "body": []},
+            "fallback": [{"type": "paragraph", "children": title}],
         }))
     });
     let mut host = Carve::new();
