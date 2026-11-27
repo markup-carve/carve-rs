@@ -2073,6 +2073,8 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         certificate: w.group_certificate,
         end,
         work: (w.work_chars - work.0, w.parses - work.1),
+        links: (w.link_bracket_fallback, w.saw_link),
+        capped_runs: w.capped_runs.clone(),
     });
     // C2-W-125: where every form loses a node, a trial that gives the tree only with a backslash behind it is kept.
     let mut last = unrepaired;
@@ -2108,6 +2110,8 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         r.group.restore(w, reported, group);
         w.sp.losses.extend(r.losses);
         w.group_certificate = r.certificate;
+        (w.link_bracket_fallback, w.saw_link) = r.links;
+        w.capped_runs = r.capped_runs;
         return r.end;
     }
     w.kind_escapes = false;
@@ -2126,6 +2130,9 @@ struct Settled<'t> {
     end: usize,
     /// The characters and parses the rounds spent.
     work: (usize, usize),
+    /// The state the rounds leave beyond the group, which later writes of the group read.
+    links: (bool, bool),
+    capped_runs: Vec<(N<'t>, usize)>,
 }
 
 /// C2-W-133: rounds that repeat earlier ones run again where their work would reach the budget, which they could
