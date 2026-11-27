@@ -1,6 +1,7 @@
 use carve::include::{Cause, Includes, Request};
 use carve::lint::{LintOptions, lint};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn codes(source: &str, child: Option<&str>) -> Vec<(&'static str, Option<String>)> {
     let options = LintOptions {
@@ -129,4 +130,24 @@ fn copied_snippet_references_count_in_note_lint() {
         let got = codes(source, child);
         assert_eq!(got, expected, "{source:?} child={child:?}");
     }
+}
+
+#[test]
+fn lint_reuses_the_include_content_that_produced_its_findings() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&calls);
+    let options = LintOptions {
+        includes: Some(Includes::new(Arc::new(move |_request: &Request<'_>| {
+            let text = if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+                "{$s}: [^n]\n\n{{ $s }}"
+            } else {
+                "Different content."
+            };
+            Ok((text.as_bytes().to_vec(), "child.crv".into()))
+        }))),
+        ..LintOptions::default()
+    };
+    let found = lint("[^n]: Note\n\n{{ child.crv }}", &options);
+    assert!(found.is_empty(), "{found:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

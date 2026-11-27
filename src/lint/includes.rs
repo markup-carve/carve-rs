@@ -1,6 +1,6 @@
 //! Lint of accepted include sources (C2-N-085 to C2-N-088).
 
-use super::{LintOptions, declares_below_0_2, lint_core};
+use super::{LintOptions, copied_note_uses, declares_below_0_2, lint_core, retain_used_notes};
 use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::include::Resolver;
 use crate::view::V;
@@ -57,6 +57,7 @@ pub(super) struct Scanned {
     findings: Vec<Diagnostic>,
     snippets: Option<SnippetUse>,
     references: Option<References>,
+    copied_notes: HashSet<(Option<String>, u32)>,
 }
 
 /// What [`reconcile_snippets`] reads of the tree.
@@ -104,6 +105,7 @@ pub(super) fn collect(
             findings,
             snippets: None,
             references: None,
+            copied_notes: HashSet::new(),
         };
     };
     let unused = entry.iter().any(|d| d.code == "unused-snippet");
@@ -162,10 +164,23 @@ pub(super) fn collect(
         .chain(&findings)
         .any(|d| REFERENCE_CODES.contains(&d.code))
         .then(|| References::of(tree));
+    let copied_notes = if entry
+        .iter()
+        .chain(&findings)
+        .any(|d| d.code == "unused-footnote-definition")
+    {
+        match tree {
+            V::Doc(doc) => copied_note_uses(doc),
+            _ => HashSet::new(),
+        }
+    } else {
+        HashSet::new()
+    };
     Scanned {
         findings,
         snippets,
         references,
+        copied_notes,
     }
 }
 
@@ -199,6 +214,7 @@ pub(super) fn finish(scanned: Scanned, options: &LintOptions, output: &mut Vec<D
     if let Some(references) = scanned.references {
         references.reconcile(output);
     }
+    retain_used_notes(output, &scanned.copied_notes);
 }
 
 const REFERENCE_CODES: [&str; 4] = [
