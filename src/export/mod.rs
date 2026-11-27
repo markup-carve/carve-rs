@@ -166,6 +166,8 @@ pub fn export_to(target: Target, tree: &Tree, options: &ExportOptions) -> Result
     let shift = options.heading_shift.unwrap_or(0);
     crate::heading_shift::apply(doc.children, shift);
     let resolve_opts = crate::options::Options::default();
+    let mut expansion_diagnostics = Vec::new();
+    let _snippets = crate::expand_tree(&mut doc, &resolve_opts, &arena, &mut expansion_diagnostics);
     let _ = crate::resolve_tree_unflattened(&mut doc, &resolve_opts, &arena);
     let xref_text = crate::html::xref_targets(&doc, &resolve_opts)
         .into_iter()
@@ -177,7 +179,11 @@ pub fn export_to(target: Target, tree: &Tree, options: &ExportOptions) -> Result
         Target::Plain => text::export_text(&mut x, false)?,
         Target::Ansi => text::export_text(&mut x, true)?,
     };
-    let diagnostics = x.diagnostics();
+    let mut diagnostics: Vec<_> = expansion_diagnostics
+        .iter()
+        .map(crate::api::Entry::from)
+        .collect();
+    diagnostics.extend(x.diagnostics());
     if options.strict_losses && !diagnostics.is_empty() {
         return Err(Error::Export { diagnostics });
     }
