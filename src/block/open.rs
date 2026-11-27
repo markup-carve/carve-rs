@@ -605,7 +605,11 @@ impl Parser<'_> {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
             if let Some((begin, end)) = info.glued {
-                self.fence_opener_fallback(begin, end);
+                if info.language.is_none() && info.raw.is_none() {
+                    self.further_words(start, begin, end, false, Some(&info));
+                } else {
+                    self.fence_opener_fallback(start, begin, end);
+                }
             }
             if let Some(begin) = info.further {
                 self.further_words(start, begin, e, false, Some(&info));
@@ -659,7 +663,7 @@ impl Parser<'_> {
         };
         let start = k.offset();
         if let Some((begin, end)) = info.glued {
-            self.fence_opener_fallback(begin, end);
+            self.fence_opener_fallback(start, begin, end);
         }
         if let Some(begin) = info.further {
             self.further_words(start, begin, e, info.is_anonymous(), None);
