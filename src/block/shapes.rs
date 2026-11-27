@@ -484,7 +484,7 @@ fn further_start(s: &str, at: usize, base: usize) -> Option<usize> {
         .take_while(|b| matches!(b, b' ' | b'\t'))
         .count();
     if skipped == rest.len() {
-        return (at == 1 && s.starts_with("  ")).then_some(base + 1);
+        return None;
     }
     Some(base + at + skipped)
 }
