@@ -1648,9 +1648,9 @@ fn code_fence_advice(
     let after_word = rest
         .get(usize::from(rest.starts_with(' ')) + word..)
         .unwrap_or("");
-    if code.is_some_and(|info| info.raw.is_some()) {
-        (4, vec![("correctedOpener", corrected())])
-    } else if rest.trim_start().starts_with('{') && rest.starts_with("  ") {
+    if code.is_some_and(|info| info.raw.is_some())
+        || (rest.trim_start().starts_with('{') && rest.starts_with("  "))
+    {
         (4, vec![("correctedOpener", corrected())])
     } else if word == 0
         && (rest.starts_with('\t') || rest.starts_with("  ") || rest.starts_with(" \t"))
