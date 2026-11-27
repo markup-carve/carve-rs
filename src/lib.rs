@@ -827,7 +827,6 @@ fn prepare_expanding_source<'a>(
     #[cfg(test)]
     PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     check_source_length(input_len)?;
-    check_source_length(src.text().len())?;
     let out = block::scan(src);
     diags.extend(
         out.findings
@@ -1760,6 +1759,7 @@ pub(crate) fn tree_parts_with_sources_bytes(
 )> {
     let arena = Arena::new();
     let src = source::Source::from_bytes(input);
+    check_source_length(src.text().len()).ok()?;
     let (doc, _, files) =
         prepare_expanding_source(&src, input.len(), opts, &arena, diags, &mut |_| {}, None).ok()?;
     let sources = files
