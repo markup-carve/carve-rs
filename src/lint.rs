@@ -181,8 +181,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
                 ..parse.clone()
             };
             let (collected, diagnostics) = crate::with_expanded_tree(source, &expand, |tree| {
-                let unused = out.iter().any(|d| d.code == "unused-snippet");
-                tree.map(|tree| includes::collect(tree, opts, &stored, unused))
+                tree.map(|tree| includes::collect(tree, opts, &stored, &out))
             });
             scanned = collected;
             diagnostics
