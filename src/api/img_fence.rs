@@ -130,7 +130,7 @@ fn matcher<'m>(
     }
     let syntax = map.get("syntax").and_then(Value::as_str)?;
     let body = map.get("value").and_then(Value::as_str)?;
-    if !body.trim_start().starts_with("<svg") {
+    if !body.trim_start().starts_with("<") {
         return None;
     }
     enabled.iter().find(|(name, _)| *name == syntax)
@@ -140,7 +140,6 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
     let syntax = code.get("syntax").cloned().unwrap_or(Value::Null);
     let body = code.get("value").cloned().unwrap_or_default();
     let mut fallback = code.clone();
-    fallback.remove("pos");
     fallback.remove("attrs");
     let mut out = Map::new();
     out.insert("type".into(), "block_extension".into());
@@ -148,6 +147,10 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
     out.insert("version".into(), "1".into());
     out.insert("children".into(), json!([]));
     out.insert("props".into(), json!({ "language": syntax }));
+    out.insert(
+        "payload".into(),
+        json!([{"format": "image/svg+xml", "value": body}]),
+    );
     out.insert("fallback".into(), json!([Value::Object(fallback)]));
     out.insert(
         "source".into(),

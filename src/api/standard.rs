@@ -177,13 +177,21 @@ fn inline_node(
     out.insert("name".into(), qualified.into());
     out.insert("version".into(), "1".into());
     out.insert("children".into(), json!([]));
-    let text = plain_text(&children);
+    let full_text = plain_text(&children);
     let text = if source == "wiki" {
-        text.split_once('|')
-            .map_or(text.as_str(), |(_, display)| display)
-            .to_string()
+        let (target, display) = full_text
+            .split_once('|')
+            .unwrap_or((&full_text, &full_text));
+        out.insert("props".into(), json!({"target": target}));
+        display.to_string()
     } else {
-        text
+        let keys: Vec<_> = full_text
+            .split(';')
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .collect();
+        out.insert("props".into(), json!({"keys": keys}));
+        full_text
     };
     let fallback = if text.is_empty() {
         json!([])
