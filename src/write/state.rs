@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// C2-L-020: where one continuation row broke the content of a cell.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Wrap {
     pub line: i64,
     pub path: String,
@@ -29,7 +29,7 @@ pub fn content_order(wraps: &[Wrap]) -> std::borrow::Cow<'_, [Wrap]> {
 }
 
 /// The facts of the sidecar that the writer reads (C2-L-046), by node.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Facts {
     pub bare: Option<bool>,
     pub fenced: Option<bool>,
@@ -234,6 +234,8 @@ pub struct Writer<'t> {
     /// Whether a candidate content of a collapsed reference reads back as that reference, by node and candidate:
     /// every write of a group asks again, and the answer depends on neither.
     pub collapsed_reads: AddrMap<usize, Vec<(String, bool)>>,
+    /// C2-W-091: the results of earlier groups that an equal later group takes.
+    pub group_memo: super::memo::GroupMemo<'t>,
 }
 
 impl<'t> Writer<'t> {
@@ -327,6 +329,7 @@ impl<'t> Writer<'t> {
             authored: None,
             authored_leaves: HashMap::new(),
             collapsed_reads: AddrMap::default(),
+            group_memo: super::memo::GroupMemo::default(),
         }
     }
 
