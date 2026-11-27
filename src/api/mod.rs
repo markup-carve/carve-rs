@@ -323,14 +323,20 @@ impl Tree {
     }
 
     /// Reads JSON text; a bare tree keeps the text as its wire form, an
-    /// envelope keeps its `document`.
+    /// envelope keeps its `document` with the envelope's declarations lifted.
     fn read(json: &str, top: Option<String>) -> Result<Self, Error> {
         let read = crate::reader::read_tree_json(json)?;
         let (bare, canonical) = match crate::api::deep_json(json) {
             Ok(Value::Object(mut envelope)) if envelope.contains_key("document") => (
                 envelope
                     .remove("document")
-                    .map_or_else(String::new, |d| crate::tree_number::to_string(&d)),
+                    .map_or_else(String::new, |mut d| {
+                        crate::reader::lift_envelope_declarations(
+                            &mut d,
+                            envelope.get("extensions"),
+                        );
+                        crate::tree_number::to_string(&d)
+                    }),
                 true,
             ),
             _ => (json.trim().to_string(), false),
@@ -1780,27 +1786,8 @@ pub struct TreeReadOptions<'a> {
 pub fn decode_tree_with(json: &str, options: TreeReadOptions<'_>) -> Result<Tree, Error> {
     let tree = Tree::read(json, None)?;
     if let Some(annotations) = options.annotations {
-        let mut root: Value = deep_json(tree.json())
+        let root: Value = deep_json(tree.json())
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
-        let supplied: Value = deep_json(json)
-            .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
-        // Envelope declarations count with the document's (C2-A-029); the reader
-        // already refused a name the two declare differently.
-        if supplied.get("document").is_some()
-            && let Some(extensions) = supplied.get("extensions").and_then(Value::as_array)
-            && let Some(fields) = root.as_object_mut()
-        {
-            let own = fields
-                .entry("extensions")
-                .or_insert_with(|| Value::Array(Vec::new()));
-            if let Some(own) = own.as_array_mut() {
-                for declaration in extensions {
-                    if !own.iter().any(|item| item["name"] == declaration["name"]) {
-                        own.push(declaration.clone());
-                    }
-                }
-            }
-        }
         crate::reader::check_annotations(&root, annotations)?;
     }
     Ok(tree)

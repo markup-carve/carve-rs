@@ -444,13 +444,7 @@ fn read_tree_value_inner(
             ));
         }
         let mut inside = document.clone();
-        if inside.get("extensions").is_none()
-            && let Some(external) = value.get("extensions")
-        {
-            inside
-                .as_object_mut()
-                .map(|map| map.insert("extensions".into(), external.clone()));
-        }
+        lift_envelope_declarations(&mut inside, value.get("extensions"));
         value = inside;
     }
     check_schema(&value)?;
@@ -482,6 +476,35 @@ fn replace_nul(value: &mut Value) -> bool {
         }
     }
     kept
+}
+
+/// carve#6888: appends to the root `extensions` each envelope declaration
+/// whose name the root lacks, root entries first, then envelope order.
+pub(crate) fn lift_envelope_declarations(document: &mut Value, external: Option<&Value>) {
+    let Some(external) = external.and_then(Value::as_array) else {
+        return;
+    };
+    let Some(fields) = document.as_object_mut() else {
+        return;
+    };
+    let missing: Vec<Value> = {
+        let own = fields.get("extensions").and_then(Value::as_array);
+        external
+            .iter()
+            .filter(|d| !own.is_some_and(|own| own.iter().any(|item| item["name"] == d["name"])))
+            .cloned()
+            .collect()
+    };
+    if missing.is_empty() {
+        return;
+    }
+    if let Some(own) = fields
+        .entry("extensions")
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()
+    {
+        own.extend(missing);
+    }
 }
 
 fn envelope(value: &Value) -> Result<(), TreeError> {
