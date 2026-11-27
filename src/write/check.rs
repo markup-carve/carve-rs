@@ -982,13 +982,84 @@ pub fn seed_lone_brackets<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     if bracketed.is_empty() {
         return;
     }
-    count_open_above(w, group);
+    seed_below_cap(w, group);
+}
+
+/// One inline level of [`seed_below_cap`]: its nodes, the next one, the reader's stack below the level, and the
+/// stack entries its text took so far (`[` a later `]` pops, braced openers that stay).
+struct SeedLevel<'t> {
+    kids: Arr<'t>,
+    next: usize,
+    below: Option<usize>,
+    brackets: usize,
+    braced: usize,
+}
+
+/// C2-I-118: the reader's stack also holds the unclosed `[` and braced openers of the text before a node, so the
+/// content of a bracketed node is past the cap where they fill it, and its lone brackets need no backslash. The
+/// walk follows source order and seeds each node as it reaches it, so its content reads those seeds.
+fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    const CAP: usize = crate::tables::INLINE_DEPTH;
     let c = Check::default();
-    for node in bracketed {
-        if w.open_above.get(&id(node)).copied().unwrap_or(0) < 200 {
-            for (text, at, _) in scan_lone_brackets(w, &c, node) {
+    let mut levels = vec![SeedLevel {
+        kids: group,
+        next: 0,
+        below: None,
+        brackets: 0,
+        braced: 0,
+    }];
+    while let Some(level) = levels.last_mut() {
+        let Some(n) = level.kids.get(level.next) else {
+            levels.pop();
+            continue;
+        };
+        level.next += 1;
+        let open = level.below.map(|b| b + level.brackets + level.braced);
+        if let Some(below) = level.below
+            && ty(n) == "text"
+        {
+            let b = text(n).as_bytes();
+            for (at, &x) in b.iter().enumerate() {
+                if !matches!(x, b'[' | b']' | b'{') || is_escaped(w, &c, n, at) {
+                    continue;
+                }
+                let room = below + level.brackets + level.braced < CAP;
+                match x {
+                    b'[' if room => level.brackets += 1,
+                    b']' => level.brackets = level.brackets.saturating_sub(1),
+                    b'{' if room
+                        && b.get(at + 1).is_some_and(|m| {
+                            crate::tables::BRACED_MARKS.as_bytes().contains(m)
+                        }) =>
+                    {
+                        level.braced += 1;
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        let inner = match open {
+            Some(depth) => Some(depth + 1),
+            None => is_inline_parent(n).then_some(0),
+        };
+        if inner.is_some_and(|d| d > 0 && d < CAP)
+            && matches!(ty(n), "span" | "inline_footnote" | "inline_extension")
+        {
+            for (text, at, _) in scan_lone_brackets(w, &c, n) {
                 w.add_escape(text, at);
             }
+        }
+        let mut slots = Vec::new();
+        super::node::for_each_slot(n, true, &mut |kids, _, _| slots.push(kids));
+        for kids in slots.into_iter().rev() {
+            levels.push(SeedLevel {
+                kids,
+                next: 0,
+                below: inner,
+                brackets: 0,
+                braced: 0,
+            });
         }
     }
 }
