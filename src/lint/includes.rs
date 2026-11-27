@@ -226,65 +226,87 @@ struct References {
     definitions: HashMap<String, Vec<(usize, usize, bool, String)>>,
 }
 
+/// The walk state of [`References::of`].
+struct Walk {
+    scopes: Vec<Scope>,
+    defined: HashSet<(String, bool, String)>,
+    /// Scope, footnote?, key of every reference.
+    uses: Vec<(usize, bool, String)>,
+    found: References,
+}
+
+impl Walk {
+    /// Records a definition or a reference of `scope`.
+    fn record(&mut self, node: V<'_>, ty: &str, scope: usize) {
+        let (Some(key), Some((start, end))) = (node.at("key").as_str(), node.offsets()) else {
+            return;
+        };
+        let file = self
+            .scopes
+            .get(scope)
+            .map(|s| s.file.clone())
+            .unwrap_or_default();
+        let target = match ty {
+            "link_reference_definition" | "footnote" => {
+                let note = ty == "footnote";
+                self.defined.insert((file.clone(), note, key.to_string()));
+                self.found.definitions.entry(file).or_default().push((
+                    start,
+                    end,
+                    note,
+                    key.to_string(),
+                ));
+                return;
+            }
+            "link" => "href",
+            "image" => "src",
+            "footnote_ref" => "number",
+            _ => return,
+        };
+        let place = (file, start);
+        if node.get(target).is_some_and(|v| !matches!(v, V::Null)) {
+            self.found.resolved.insert(place);
+        } else {
+            self.found.unresolved.insert(place);
+        }
+        self.uses
+            .push((scope, ty == "footnote_ref", key.to_string()));
+    }
+
+    /// The scope of the children of `node`: a new one under an expanded include.
+    fn enter(&mut self, node: V<'_>, ty: &str, scope: usize) -> usize {
+        if ty != "include" || node.get("children").is_none() {
+            return scope;
+        }
+        let Some(file) = node.at("file").as_str() else {
+            return scope;
+        };
+        self.scopes.push(Scope {
+            file: file.to_string(),
+            outer: Some(scope),
+        });
+        self.scopes.len() - 1
+    }
+}
+
 impl References {
     /// C2-N-054 and C2-N-055: a reference looks up its own file first, then each including file outward.
     fn of(tree: V<'_>) -> Self {
-        let mut scopes = vec![Scope {
-            file: String::new(),
-            outer: None,
-        }];
-        let mut defined: HashSet<(String, bool, String)> = HashSet::new();
-        let mut uses: Vec<(usize, bool, String)> = Vec::new();
-        let mut this = Self::default();
+        let mut walk = Walk {
+            scopes: vec![Scope {
+                file: String::new(),
+                outer: None,
+            }],
+            defined: HashSet::new(),
+            uses: Vec::new(),
+            found: Self::default(),
+        };
         let mut pending = vec![(tree, 0)];
         while let Some((node, scope)) = pending.pop() {
             let ty = node.ty();
             let ty = ty.as_str().unwrap_or_default();
-            let file = scopes
-                .get(scope)
-                .map(|s| s.file.clone())
-                .unwrap_or_default();
-            let key = node.at("key").as_str().map(str::to_string);
-            match (ty, key, node.offsets()) {
-                ("link_reference_definition" | "footnote", Some(key), Some((start, end))) => {
-                    let note = ty == "footnote";
-                    defined.insert((file.clone(), note, key.clone()));
-                    this.definitions
-                        .entry(file.clone())
-                        .or_default()
-                        .push((start, end, note, key));
-                }
-                ("link" | "image" | "footnote_ref", Some(key), Some((start, _))) => {
-                    let note = ty == "footnote_ref";
-                    let target = match ty {
-                        "link" => "href",
-                        "image" => "src",
-                        _ => "number",
-                    };
-                    let place = (file.clone(), start);
-                    if node.get(target).is_some_and(|v| !matches!(v, V::Null)) {
-                        this.resolved.insert(place);
-                    } else {
-                        this.unresolved.insert(place);
-                    }
-                    uses.push((scope, note, key));
-                }
-                _ => {}
-            }
-            let inner = if ty == "include" && node.get("children").is_some() {
-                match node.at("file").as_str() {
-                    Some(file) => {
-                        scopes.push(Scope {
-                            file: file.to_string(),
-                            outer: Some(scope),
-                        });
-                        scopes.len() - 1
-                    }
-                    None => scope,
-                }
-            } else {
-                scope
-            };
+            walk.record(node, ty, scope);
+            let inner = walk.enter(node, ty, scope);
             node.each(&mut |slot, value| {
                 if slot == "pos" || slot == "attrs" {
                     return;
@@ -296,6 +318,12 @@ impl References {
                 }
             });
         }
+        let Walk {
+            scopes,
+            defined,
+            uses,
+            found: mut this,
+        } = walk;
         for ranges in this.definitions.values_mut() {
             ranges.sort_unstable_by_key(|range| range.0);
         }
