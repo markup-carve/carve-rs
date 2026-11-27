@@ -1496,6 +1496,16 @@ fn parse_collecting(
     // The engine's own tree skips the reader checks, which cost about 70
     // times the parse (carve-rs#4336); a decoded tree still runs them.
     match input {
+        Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() && opts.includes.is_some() => {
+            let (json, document, sources) =
+                crate::tree_parts_with_sources_bytes(bytes, opts, diags).ok_or_else(|| {
+                    Error::Input {
+                        profile: "source".into(),
+                        limit: u32::MAX as usize,
+                    }
+                })?;
+            Ok((Tree::parsed(document, json, top, sources), true))
+        }
         Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() => {
             let arena = Arena::new();
             let doc = crate::try_parse_resolved_bytes_in(bytes, opts, &arena)?;
@@ -1528,7 +1538,11 @@ pub fn parse_with_diagnostics<'a>(
         found = crate::parse_diagnostics(&input.text(), opts);
     }
     let (mut diagnostics, suppressed_diagnostics) = record::cap_includes(&found);
-    input.remap(&mut diagnostics);
+    // The resolver's byte-source path already reports original byte offsets.
+    if !matches!(input, Input::Bytes(bytes) if opts.includes.is_some() && std::str::from_utf8(bytes).is_err())
+    {
+        input.remap(&mut diagnostics);
+    }
     Ok(Parsed {
         tree,
         diagnostics,

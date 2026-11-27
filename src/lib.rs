@@ -803,27 +803,47 @@ pub(crate) fn prepare_expanding<'a>(
     before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
     snippets: Option<SnippetRun<'_>>,
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    let src = source::Source::new(input);
+    prepare_expanding_source(
+        &src,
+        input.len(),
+        opts,
+        arena,
+        diags,
+        before_resolve,
+        snippets,
+    )
+}
+
+fn prepare_expanding_source<'a>(
+    src: &source::Source<'a>,
+    input_len: usize,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+    before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
+    snippets: Option<SnippetRun<'_>>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
     #[cfg(test)]
     PREPARE_COUNT.with(|count| count.set(count.get() + 1));
-    check_source_length(input.len())?;
-    let src = source::Source::new(input);
-    let out = block::scan(&src);
+    check_source_length(input_len)?;
+    let out = block::scan(src);
     diags.extend(
         out.findings
             .iter()
-            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
+            .map(|f| diagnostic::Diagnostic::from_finding(f, src, None)),
     );
-    let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
-    duplicate_definitions(&doc, &src, None, diags);
+    let (mut doc, scope) = tree::build_scoped(src, arena, out.events, None);
+    duplicate_definitions(&doc, src, None, diags);
     diags.extend(
         scope
             .findings
             .iter()
-            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
+            .map(|f| diagnostic::Diagnostic::from_finding(f, src, None)),
     );
     let expanded = opts.includes.is_some();
     // Includes and snippet uses both open with `{{`.
-    let braces = input.contains("{{");
+    let braces = src.text().contains("{{");
     let mut included_sources = std::collections::HashMap::new();
     if let Some(cfg) = &opts.includes {
         if braces {
@@ -833,14 +853,14 @@ pub(crate) fn prepare_expanding<'a>(
         include::no_resolver(doc.children, diags);
     }
     if expanded && braces {
-        cross_file_snippet_duplicates(&doc, &src, &included_sources, diags);
+        cross_file_snippet_duplicates(&doc, src, &included_sources, diags);
     }
     if let Some((found, guard)) = snippets
         && braces
     {
         let settings = snippet::expand::Settings {
             roundtrip: opts.roundtrip,
-            source_len: input.len(),
+            source_len: input_len,
             parsed: true,
         };
         *guard = snippet::expand::expand(&mut doc, arena, settings, found);
@@ -858,7 +878,7 @@ pub(crate) fn prepare_expanding<'a>(
                 .and_then(|(_, text)| key_range(&source::Source::new(text), &id, pos, key))
                 .or(pos)
         } else {
-            key_range(&src, &id, pos, key).or(pos)
+            key_range(src, &id, pos, key).or(pos)
         };
         let mut diagnostic =
             diagnostic::Diagnostic::new("duplicate-id", &[("explicit", &id)], file, pos);
@@ -1722,6 +1742,41 @@ pub(crate) fn tree_parts_with_sources(
     }
     // The JSON keeps file stamps for the claim pass; the owned tree keeps the
     // resolved structure for rendering.
+    let owned = serde_json::from_value(v).ok()?;
+    Some((Some(json), owned, sources))
+}
+
+/// The byte-source counterpart used when a resolver must also run for
+/// malformed UTF-8. Source keeps positions in the original byte stream.
+pub(crate) fn tree_parts_with_sources_bytes(
+    input: &[u8],
+    opts: &Options,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Option<(
+    Option<String>,
+    ast::owned::Document,
+    std::collections::HashMap<String, String>,
+)> {
+    let arena = Arena::new();
+    let src = source::Source::from_bytes(input);
+    check_source_length(src.text().len()).ok()?;
+    let (doc, _, files) =
+        prepare_expanding_source(&src, input.len(), opts, &arena, diags, &mut |_| {}, None).ok()?;
+    let sources = files
+        .as_ref()
+        .map_or_else(std::collections::HashMap::new, |f| {
+            f.sources()
+                .map(|(id, text)| (id.to_string(), text.to_string()))
+                .collect()
+        });
+    if files.is_none() {
+        return Some((None, doc.owned(), sources));
+    }
+    let mut v = stamped_value(&doc);
+    let json = tree_number::to_string(&v);
+    if let Some(m) = v.as_object_mut() {
+        m.remove("type");
+    }
     let owned = serde_json::from_value(v).ok()?;
     Some((Some(json), owned, sources))
 }

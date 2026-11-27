@@ -479,6 +479,9 @@ fn set_structure_options(args: &Args, options: &mut Options) -> Result<(), i32> 
     Ok(())
 }
 fn url_policy(value: &Value) -> Result<api::UrlPolicy, i32> {
+    if value.as_object().is_some_and(serde_json::Map::is_empty) {
+        return Ok(api::UrlPolicy::default());
+    }
     if let Some(allowed) = value.get("allow").and_then(Value::as_array) {
         return Ok(api::UrlPolicy::Allow(
             allowed
@@ -1289,7 +1292,13 @@ fn lint_file(
             opts.includes.as_ref(),
         ));
     } else {
-        lines(path, &source, &entries, fixed, opts.includes.as_ref())?;
+        lines(
+            path,
+            &source,
+            &entries,
+            fixed && !bool_value(args, "write", false),
+            opts.includes.as_ref(),
+        )?;
     }
     Ok(i32::from(entries.iter().any(|e| {
         bool_value(args, "strict", false) || e.severity == "warning" || e.severity == "error"
@@ -1369,10 +1378,10 @@ fn import_file(
     opts: &Options,
     loss_reports: &mut Vec<Value>,
 ) -> Result<i32, i32> {
-    let input = strict_text(path, bytes)?;
     let format = str_value(args, "from")
         .and_then(api::ImportFormat::from_name)
         .ok_or_else(|| usage("bad import format"))?;
+    let input = String::from_utf8_lossy(bytes);
     let strict = bool_value(args, "strict-losses", false);
     let settings = ImportOptions {
         raw_html: bool_value(args, "raw-html", false),
@@ -1387,7 +1396,7 @@ fn import_file(
         max_losses: usize::MAX,
     };
     let imported = host
-        .import_from(input, format, &settings, &every)
+        .import_from(input.as_ref(), format, &settings, &every)
         .map_err(api_fail)?;
     let (mut shown, losses): (Vec<Entry>, Vec<Entry>) = imported
         .diagnostics
