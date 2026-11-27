@@ -336,7 +336,7 @@ echo '{"call":"render","source":"Hi"}' | wasmtime target/wasm32-wasip1/release/c
 
 ## Migrating from 0.1
 
-The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1 one. The table maps the 0.1 calls that the bindings (carve-py, carve-rb, carve-wasm) use today. `pending` means the 0.2 call exists and returns `Error::Unsupported` until the engine implements it. `gone` means 0.2 has no counterpart.
+The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1 one. The table maps only the 0.1 calls that the bindings (carve-py, carve-rb, carve-wasm) use today, not the whole 0.1 crate root. [docs/migrating-from-0.1.md](docs/migrating-from-0.1.md) maps the remaining 0.1.14 root items, among them the 18 that kept their names under `carve::api`, and the 0.1 command-line flags that [`spec/0.2/UPGRADING.md`](https://github.com/markup-carve/carve/blob/main/spec/0.2/UPGRADING.md) does not name. `carve::profile` names a different module in 0.2: the 0.1 profile filter is now `Options::profile`, and `carve::profile` holds the stage-timing hooks behind the `profile` Cargo feature, off by default. `pending` means the 0.2 call exists and returns `Error::Unsupported` until the engine implements it. `gone` means 0.2 has no counterpart.
 
 | 0.1 call | 0.2 call |
 |---|---|
