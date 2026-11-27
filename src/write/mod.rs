@@ -2042,16 +2042,10 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         count_work(w, kind_work);
         Some(kind_work)
     } else {
-        w.closer_kinds = true;
-        w.group_certificate = GroupCertificate::None;
-        w.take_asked();
-        let work = (w.work_chars, w.parses);
-        let end = repair_rounds(w, doc, from, first, reported);
-        w.closer_kinds = false;
-        if w.sp.losses.len() == reported && !w.kind_failed {
-            return end;
+        match closer_rounds(w, doc, (from, first, reported)) {
+            Ok(end) => return end,
+            Err(work) => work,
         }
-        (w.take_asked() == (false, false)).then(|| (w.work_chars - work.0, w.parses - work.1))
     };
     w.kind_failed = false;
     // C2-W-088: a group whose kind rounds leave a node unread is written by
@@ -2067,16 +2061,47 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     if w.sp.losses.len() == reported {
         return end;
     }
-    let reported_only = (!w.take_asked().1).then(|| Settled {
-        group: SavedGroup::new(w, group),
-        losses: w.sp.losses.get(reported..).unwrap_or_default().to_vec(),
-        certificate: w.group_certificate,
-        end,
-        work: (w.work_chars - work.0, w.parses - work.1),
-        links: (w.link_bracket_fallback, w.saw_link),
-        capped_runs: w.capped_runs.clone(),
-    });
-    // C2-W-125: where every form loses a node, a trial that gives the tree only with a backslash behind it is kept.
+    let settled = Settled::new(w, group, reported, end, work);
+    trial_rounds(
+        w,
+        doc,
+        (from, first, reported),
+        group,
+        unrepaired,
+        closer_work,
+        settled,
+    )
+}
+
+/// C2-W-005: the closer rounds, `Ok` with the end of the group where they keep every node, or else `Err` with
+/// their work where they read neither switch the trial rounds turn on.
+fn closer_rounds<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    (from, first, reported): (usize, bool, usize),
+) -> Result<usize, Option<(usize, usize)>> {
+    w.closer_kinds = true;
+    w.group_certificate = GroupCertificate::None;
+    w.take_asked();
+    let work = (w.work_chars, w.parses);
+    let end = repair_rounds(w, doc, from, first, reported);
+    w.closer_kinds = false;
+    if w.sp.losses.len() == reported && !w.kind_failed {
+        return Ok(end);
+    }
+    Err((w.take_asked() == (false, false)).then(|| (w.work_chars - work.0, w.parses - work.1)))
+}
+
+/// C2-W-125: where every form loses a node, a trial that gives the tree only with a backslash behind it is kept.
+fn trial_rounds<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    (from, first, reported): (usize, bool, usize),
+    group: Arr<'t>,
+    unrepaired: SavedGroup<'t>,
+    closer_work: Option<(usize, usize)>,
+    reported_only: Option<Settled<'t>>,
+) -> usize {
     let mut last = unrepaired;
     for kinds in [true, false] {
         last.restore(w, reported, group);
@@ -2133,6 +2158,27 @@ struct Settled<'t> {
     /// The state the rounds leave beyond the group, which later writes of the group read.
     links: (bool, bool),
     capped_runs: Vec<(N<'t>, usize)>,
+}
+
+impl<'t> Settled<'t> {
+    /// The end state of the reported rounds that started at `work`, where none of their decisions read a trial.
+    fn new(
+        w: &mut Writer<'t>,
+        group: Arr<'t>,
+        reported: usize,
+        end: usize,
+        work: (usize, usize),
+    ) -> Option<Self> {
+        (!w.take_asked().1).then(|| Settled {
+            group: SavedGroup::new(w, group),
+            losses: w.sp.losses.get(reported..).unwrap_or_default().to_vec(),
+            certificate: w.group_certificate,
+            end,
+            work: (w.work_chars - work.0, w.parses - work.1),
+            links: (w.link_bracket_fallback, w.saw_link),
+            capped_runs: w.capped_runs.clone(),
+        })
+    }
 }
 
 /// C2-W-133: rounds that repeat earlier ones run again where their work would reach the budget, which they could
