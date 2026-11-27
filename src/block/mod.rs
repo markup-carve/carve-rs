@@ -1656,7 +1656,7 @@ fn code_fence_advice(
         && (rest.starts_with('\t') || rest.starts_with("  ") || rest.starts_with(" \t"))
     {
         (5, vec![("respaced", respaced())])
-    } else if code.is_some_and(|info| info.title.is_some()) {
+    } else if code.is_some_and(|info| info.title.is_some_and(|(title, _)| title < start)) {
         (1, Vec::new())
     } else if word > 0 && after_word.starts_with('\t') {
         (6, vec![("respaced", respaced())])
