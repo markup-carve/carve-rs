@@ -1802,12 +1802,20 @@ impl<'a> Records<'a> {
                     .collect();
             }
             LookupOver::Id => {
-                return self
+                let mut found: Vec<_> = self
                     .id_records()
                     .iter()
                     .enumerate()
                     .map(|(at, record)| (at as u32, record.start))
                     .collect();
+                found.sort_by(|a, b| {
+                    a.1.cmp(&b.1).then_with(|| {
+                        self.id_records()[a.0 as usize]
+                            .id
+                            .cmp(&self.id_records()[b.0 as usize].id)
+                    })
+                });
+                return found;
             }
             LookupOver::Block | LookupOver::Inline => {}
         }
