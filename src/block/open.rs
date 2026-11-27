@@ -604,10 +604,15 @@ impl Parser<'_> {
     fn open_fence(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
+            let bare_glued = info.glued.is_some() && info.language.is_none() && info.raw.is_none();
             if let Some((begin, end)) = info.glued {
-                self.fence_opener_fallback(begin, end);
+                if bare_glued {
+                    self.further_words(start, begin, e, false, Some(&info));
+                } else {
+                    self.fence_opener_fallback(start, begin, end);
+                }
             }
-            if let Some(begin) = info.further {
+            if let Some(begin) = info.further.filter(|_| !bare_glued) {
                 self.further_words(start, begin, e, false, Some(&info));
             }
             self.set_leaf(
@@ -659,7 +664,7 @@ impl Parser<'_> {
         };
         let start = k.offset();
         if let Some((begin, end)) = info.glued {
-            self.fence_opener_fallback(begin, end);
+            self.fence_opener_fallback(start, begin, end);
         }
         if let Some(begin) = info.further {
             self.further_words(start, begin, e, info.is_anonymous(), None);

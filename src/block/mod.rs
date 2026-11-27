@@ -1213,13 +1213,19 @@ impl<'a> Parser<'a> {
         });
     }
 
-    pub(super) fn fence_opener_fallback(&mut self, start: usize, end: usize) {
+    pub(super) fn fence_opener_fallback(&mut self, fence: usize, start: usize, end: usize) {
+        let text = self.src.text();
+        let opener = text.get(fence..start).unwrap_or("");
+        let attributes = text.get(start..end).unwrap_or("").to_string();
         self.findings.push(Finding {
             code: "fence-opener-fallback",
-            message: 0,
+            message: usize::from(opener.starts_with(':')),
             start,
             end,
-            values: Vec::new(),
+            values: vec![
+                ("attributes", attributes),
+                ("opener", opener.trim().to_string()),
+            ],
         });
     }
 
@@ -1642,13 +1648,15 @@ fn code_fence_advice(
     let after_word = rest
         .get(usize::from(rest.starts_with(' ')) + word..)
         .unwrap_or("");
-    if rest.trim_start().starts_with('{') && rest.starts_with("  ") {
+    if code.is_some_and(|info| info.raw.is_some())
+        || (rest.trim_start().starts_with('{') && rest.starts_with("  "))
+    {
         (4, vec![("correctedOpener", corrected())])
     } else if word == 0
         && (rest.starts_with('\t') || rest.starts_with("  ") || rest.starts_with(" \t"))
     {
         (5, vec![("respaced", respaced())])
-    } else if code.is_some_and(|info| info.title.is_some()) {
+    } else if code.is_some_and(|info| info.title.is_some_and(|(title, _)| title < start)) {
         (1, Vec::new())
     } else if word > 0 && after_word.starts_with('\t') {
         (6, vec![("respaced", respaced())])
