@@ -16,6 +16,7 @@ mod facts;
 pub(crate) use facts::locate_wraps;
 mod inline;
 mod kinds;
+mod memo;
 mod node;
 mod pairs;
 mod spans;
@@ -1904,7 +1905,52 @@ fn write_group<'t>(
     let nodes = children(doc);
     reads.reads.base.set(reads.reads.chars.get());
     let reported = w.sp.losses.len();
-    let mut at = repair_group(w, doc, from, out.is_empty(), reads);
+    let pending = (group_end(w, nodes, from) == from + 1)
+        .then(|| memo::pending(w, nodes, from, out.is_empty()))
+        .flatten();
+    let memo = std::mem::take(&mut w.group_memo);
+    let taken = pending.as_ref().is_some_and(|p| memo.take(w, p));
+    w.group_memo = memo;
+    let at = if taken {
+        from + 1
+    } else {
+        let at = write_group_rounds(w, doc, from, out.is_empty(), reported, reads);
+        if let Some(p) = pending {
+            let mut memo = std::mem::take(&mut w.group_memo);
+            memo.keep(w, p, at, from);
+            w.group_memo = memo;
+        }
+        at
+    };
+    if w.lines.is_empty() {
+        return at;
+    }
+    if out.is_empty() && w.blank_first {
+        out.push(String::new());
+    }
+    let blanks = match (*before, nodes.get(from)) {
+        (Some(b), Some(n)) => blocks::blank_lines_between(w, b, *list, n, false),
+        _ => 0,
+    };
+    out.extend(std::iter::repeat_n(String::new(), blanks));
+    w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
+    out.append(&mut w.lines);
+    *before = at.checked_sub(1).and_then(|i| nodes.get(i));
+    *list = last_block(nodes, from, at, *list);
+    at
+}
+
+/// The rounds of the group at `from`, the C2-W-146 pair rounds, the verbatim references and the authored blocks.
+fn write_group_rounds<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    from: usize,
+    first: bool,
+    reported: usize,
+    reads: GroupReads<'_>,
+) -> usize {
+    let nodes = children(doc);
+    let mut at = repair_group(w, doc, from, first, reads);
     // C2-W-146: test the written text with the five pair rules and `unattached-caption`, and reparse each escape round.
     for _ in 0..16 {
         if w.group_certificate == GroupCertificate::PlainRows {
@@ -1921,7 +1967,7 @@ fn write_group<'t>(
         let saved_escapes = group_escapes(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
         let saved_losses = w.sp.losses.len();
         pairs::apply(w, &asked);
-        let next = repair_group(w, doc, from, out.is_empty(), reads);
+        let next = repair_group(w, doc, from, first, reads);
         if w.sp.losses.len() > saved_losses {
             let group = nodes.slice(from, at.max(next)).unwrap_or_else(Arr::empty);
             for n in &group_ids(w, group) {
@@ -1935,23 +1981,8 @@ fn write_group<'t>(
         at = next;
     }
     let group = nodes.slice(from, at).unwrap_or_else(Arr::empty);
-    take_verbatim_references(w, group, (out.is_empty(), reported), reads);
-    take_authored_blocks(w, group, (out.is_empty(), reported), reads);
-    if w.lines.is_empty() {
-        return at;
-    }
-    if out.is_empty() && w.blank_first {
-        out.push(String::new());
-    }
-    let blanks = match (*before, nodes.get(from)) {
-        (Some(b), Some(n)) => blocks::blank_lines_between(w, b, *list, n, false),
-        _ => 0,
-    };
-    out.extend(std::iter::repeat_n(String::new(), blanks));
-    w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
-    out.append(&mut w.lines);
-    *before = at.checked_sub(1).and_then(|i| nodes.get(i));
-    *list = last_block(nodes, from, at, *list);
+    take_verbatim_references(w, group, (first, reported), reads);
+    take_authored_blocks(w, group, (first, reported), reads);
     at
 }
 
