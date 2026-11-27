@@ -37,7 +37,7 @@ static EMPTY: NodeData = NodeData {
     span: None,
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Dom {
     pub nodes: Vec<NodeData>,
     pub root: Id,

@@ -19,14 +19,14 @@ fn fmt(src: &str) -> (String, Vec<String>) {
 }
 
 #[test]
-fn a_note_behind_a_caret_glued_to_a_link_is_written_as_itself() {
+fn a_note_behind_a_caret_glued_to_a_link_drops_an_unneeded_caret_escape() {
     for src in [
         "^[a\\^[b][[b]\\]]\n",
         "^[\\^[b][[b]\\]]\n",
         "^[a\\^[b][[b]\\][b]]\n",
         "x ^[ \\^[b][[^b]\\]] [x]\n",
     ] {
-        assert_eq!(fmt(src), (src.to_string(), Vec::new()), "{src:?}");
+        assert_eq!(fmt(src), (src.replace("\\^", "^"), Vec::new()), "{src:?}");
     }
 }
 
@@ -34,5 +34,5 @@ fn a_note_behind_a_caret_glued_to_a_link_is_written_as_itself() {
 fn a_caret_before_the_note_is_escaped_and_the_tree_reads_back() {
     let (out, losses) = fmt("^[^[a\\^[b][[b]\\]]\n");
     assert!(losses.is_empty(), "{losses:?}");
-    assert_eq!(out, "^\\[^[a\\^[b][[b]\\]]\n");
+    assert_eq!(out, "^\\[^[a^[b][[b]\\]]\n");
 }

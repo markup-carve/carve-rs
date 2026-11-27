@@ -36,6 +36,7 @@ pub(crate) struct Imported {
     pub facts: Option<crate::write::JsonFacts>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Cx {
     dom: Dom,
     raw_html: bool,
@@ -52,6 +53,10 @@ pub(crate) struct Cx {
     templates: HashMap<Id, Vec<Value>>,
     /// C2-H-217: the ordinals of the accepted snippet carriers.
     snippet_ordinals: HashSet<String>,
+    /// Carrier elements accepted by a reader-order pass over this document.
+    accepted_snippet_ids: Option<HashSet<Id>>,
+    /// During a ranged-comment walk, the reader-order carrier decision.
+    probe_accepted: Option<HashSet<Id>>,
     /// C2-M-113: the spans of the ranged comments.
     ranged: HashMap<Id, inline::Ranged>,
     /// C2-M-113: while ranges are measured, the nodes known to give nothing.
@@ -106,6 +111,8 @@ impl Cx {
             anchor_keys: HashSet::new(),
             templates: HashMap::new(),
             snippet_ordinals: HashSet::new(),
+            accepted_snippet_ids: None,
+            probe_accepted: None,
             ranged: HashMap::new(),
             probe_skip: None,
             probe_reads: None,

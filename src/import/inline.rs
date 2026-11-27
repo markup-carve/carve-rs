@@ -1100,6 +1100,29 @@ pub(crate) fn ranged_comments(cx: &mut Cx) -> std::collections::HashMap<Id, Rang
     if !starts {
         return std::collections::HashMap::new();
     }
+    // The range is measured in DOM order, but carriers take their ordinals in
+    // reader order. First find the point-comment boundaries, so the reader
+    // prepass discards their end spans and contents just as the real read does.
+    // Then run the block reader on a copy: it visits a details summary before
+    // its body and skips unread footnote items.
+    let boundaries = walk_ranged(cx);
+    let mut reader = cx.clone();
+    reader.ranged = boundaries;
+    reader.accepted_snippet_ids = Some(std::collections::HashSet::new());
+    let top = reader.dom.children(reader.dom.root).to_vec();
+    if let Some(&first) = top.first() {
+        super::blocks::flow(
+            &mut reader,
+            &top,
+            first,
+            super::blocks::Reader::DocumentChild,
+        );
+    }
+    cx.probe_accepted = reader.accepted_snippet_ids;
+    walk_ranged(cx)
+}
+
+fn walk_ranged(cx: &mut Cx) -> std::collections::HashMap<Id, Ranged> {
     let mut walk = Walk::new(cx);
     let mut stack: Vec<Step> = cx
         .dom
@@ -1336,6 +1359,7 @@ impl Probe {
 
     fn restore(self, cx: &mut Cx) {
         cx.probe_skip = None;
+        cx.probe_accepted = None;
         cx.diagnostics.truncate(self.diagnostics);
         cx.definitions.truncate(self.definitions);
         cx.footnotes.truncate(self.footnotes);

@@ -60,7 +60,12 @@ impl Cx {
                 if c.block { "block" } else { "inline" },
                 if block { "blocks" } else { "inline content" }
             )),
-            Some(c) if self.snippet_ordinals.contains(&c.n) => {
+            Some(c)
+                if self.probe_accepted.as_ref().map_or_else(
+                    || self.snippet_ordinals.contains(&c.n),
+                    |accepted| !accepted.contains(&id),
+                ) =>
+            {
                 Some("another carrier holds the same ordinal".to_string())
             }
             Some(_) => None,
@@ -78,6 +83,9 @@ impl Cx {
         }
         let carrier = carrier?;
         self.snippet_ordinals.insert(carrier.n.clone());
+        if let Some(accepted) = self.accepted_snippet_ids.as_mut() {
+            accepted.insert(id);
+        }
         self.snippet_scope(id);
         Some(carrier)
     }
