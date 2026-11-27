@@ -1538,7 +1538,11 @@ pub fn parse_with_diagnostics<'a>(
         found = crate::parse_diagnostics(&input.text(), opts);
     }
     let (mut diagnostics, suppressed_diagnostics) = record::cap_includes(&found);
-    input.remap(&mut diagnostics);
+    // The resolver's byte-source path already reports original byte offsets.
+    if !matches!(input, Input::Bytes(bytes) if opts.includes.is_some() && std::str::from_utf8(bytes).is_err())
+    {
+        input.remap(&mut diagnostics);
+    }
     Ok(Parsed {
         tree,
         diagnostics,

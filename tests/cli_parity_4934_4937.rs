@@ -69,6 +69,15 @@ fn ast_expands_includes_after_lossy_byte_decoding() {
     assert_eq!(tree["stages"][0], "includeExpansion");
     assert!(stdout.contains("inside"), "{stdout}");
     assert!(!stdout.contains("include-unresolved"), "{stdout}");
+
+    // The same byte-source path reports positions in the original bytes.
+    std::fs::write(&source, b"a\xffb\n\n{{ missing.crv }}\n").unwrap();
+    let (status, stdout, stderr) = run(&["diagnostics", "--json", source.to_str().unwrap()], b"");
+    assert_eq!(status, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let finding = &report["files"][0]["diagnostics"][0];
+    assert_eq!(finding["code"], "include-not-found");
+    assert_eq!(finding["range"]["startOffset"], 5);
 }
 
 #[test]
