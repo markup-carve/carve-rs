@@ -745,11 +745,15 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
         escape_lone_link_brackets(w, node);
     }
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
-    let content = collapsed_content(w, node, content, flags);
-    format!(
-        "[{content}]{}",
-        target(node, s(node, "href").unwrap_or(""), flags & IN_CELL != 0)
-    )
+    let mut out = collapsed_content(w, node, content, flags);
+    out.insert(0, '[');
+    out.push(']');
+    out.push_str(&target(
+        node,
+        s(node, "href").unwrap_or(""),
+        flags & IN_CELL != 0,
+    ));
+    out
 }
 
 /// C2-W-075: the content of a collapsed reference folds to its key (C2-I-079).
@@ -773,13 +777,18 @@ fn collapsed_content(w: &mut Writer<'_>, node: V<'_>, content: String, flags: u3
 
 /// Taken again from the answer to the same question, the read is counted as the parse was.
 fn reads_as_collapsed(w: &mut Writer<'_>, node: V<'_>, candidate: &str, key: &str) -> bool {
-    let text = format!("[{candidate}][]\n");
-    let asked = (id(node), candidate.to_string());
-    if let Some(&reads) = w.collapsed_reads.get(&asked) {
+    let known = w
+        .collapsed_reads
+        .get(&id(node))
+        .and_then(|asked| asked.iter().find(|(c, _)| c == candidate));
+    if let Some(&(_, reads)) = known {
         w.parses += 1;
-        w.work_chars = w.work_chars.saturating_add(text.len());
+        w.work_chars = w
+            .work_chars
+            .saturating_add(candidate.len() + "[][]\n".len());
         return reads;
     }
+    let text = format!("[{candidate}][]\n");
     let keys = std::iter::once(key.to_string()).collect();
     let chunk = super::check::Chunk::new(text);
     let reads = children(chunk.parse_keys(w, Some(&keys)))
@@ -790,7 +799,10 @@ fn reads_as_collapsed(w: &mut Writer<'_>, node: V<'_>, candidate: &str, key: &st
                 && s(link, "key") == Some(key)
                 && super::node::lists_equal(children(link), children(node))
         });
-    w.collapsed_reads.insert(asked, reads);
+    w.collapsed_reads
+        .entry(id(node))
+        .or_default()
+        .push((candidate.to_string(), reads));
     reads
 }
 

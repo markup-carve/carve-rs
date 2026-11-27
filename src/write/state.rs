@@ -233,7 +233,7 @@ pub struct Writer<'t> {
     pub authored_leaves: HashMap<usize, String>,
     /// Whether a candidate content of a collapsed reference reads back as that reference, by node and candidate:
     /// every write of a group asks again, and the answer depends on neither.
-    pub collapsed_reads: HashMap<(usize, String), bool>,
+    pub collapsed_reads: AddrMap<usize, Vec<(String, bool)>>,
 }
 
 impl<'t> Writer<'t> {
@@ -326,7 +326,7 @@ impl<'t> Writer<'t> {
             group_ids: std::cell::RefCell::default(),
             authored: None,
             authored_leaves: HashMap::new(),
-            collapsed_reads: HashMap::new(),
+            collapsed_reads: AddrMap::default(),
         }
     }
 
