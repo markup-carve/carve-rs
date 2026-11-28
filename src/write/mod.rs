@@ -2761,7 +2761,78 @@ fn repair_round<'t, 's>(
         report_unread(w, group, round.last);
     }
     prune_group_escapes(w, group, first && !w.blank_first, &round);
+    propagate_bracket_kinds(w, group, first && !w.blank_first, &mut round);
     Some(end)
+}
+
+/// When both bracket kinds were repaired in one leaf, use their block-wide spelling.
+/// A readback check keeps this preference from changing the tree in a different context.
+fn propagate_bracket_kinds<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'_>,
+) {
+    if !round.equal || w.sp.escapes.is_empty() {
+        return;
+    }
+    let mut pending = Vec::new();
+    for block in group {
+        if !node::is_inline_parent(block) {
+            continue;
+        }
+        let mut texts = Vec::new();
+        let mut span_kinds = 0;
+        let mut has_link = false;
+        pending.extend(children(block));
+        while let Some(n) = pending.pop() {
+            if ty(n) == "text" {
+                texts.push(n);
+            } else {
+                has_link |= ty(n) == "link";
+                if ty(n) == "span" {
+                    for child in children(n) {
+                        if ty(child) == "text" {
+                            for &at in w.escapes_of(child) {
+                                match text(child).as_bytes().get(at) {
+                                    Some(b'[') => span_kinds |= 1,
+                                    Some(b']') => span_kinds |= 2,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                pending.extend(children(n));
+            }
+        }
+        if span_kinds != 3 || !has_link {
+            continue;
+        }
+        let saved = w.sp.escapes.clone();
+        let mut added = false;
+        for n in texts {
+            for (at, b) in text(n).bytes().enumerate() {
+                if matches!(b, b'[' | b']') && !w.escapes_of(n).contains(&at) {
+                    w.add_escape(n, at);
+                    added = true;
+                }
+            }
+        }
+        if !added {
+            continue;
+        }
+        let chunk = written_chunk(w, group, first);
+        let (source, parsed) = round.parse(w, chunk.into_text());
+        if reads_as(group, parsed) {
+            round.last = Some(parsed);
+            round.source = Some(source);
+        } else {
+            w.sp.escapes = saved;
+            reset_lines(w);
+            blocks::write_blocks(w, group, "", 0, false);
+        }
+    }
 }
 
 /// On the first round of a pass, the backslashes of C2-W-125 that the rounds would reach in a group of one
@@ -3338,16 +3409,22 @@ fn settle<'t>(
 /// C2-W-088, C2-W-125 (carve-js#5464): in the rounds of the reported openers only, a round whose parse holds a
 /// construct the tree does not hold escapes that construct's opener; a closer repair waits for the parse after it.
 fn defer_closer_repairs(w: &Writer<'_>, c: &mut Check<'_>) {
-    if w.kind_escapes || c.constructs.is_empty() {
+    if c.constructs.is_empty() {
         return;
     }
     let constructs: HashSet<(usize, usize)> =
         c.constructs.iter().map(|&(n, at)| (id(n), at)).collect();
+    let brace_opener = c
+        .constructs
+        .iter()
+        .any(|(n, at)| matches!(text(*n).as_bytes().get(*at..*at + 2), Some(b"{-" | b"{+")));
     let deferred: Vec<(usize, usize)> = c
         .escapes
         .iter()
         .map(|&(n, at)| (id(n), at))
-        .filter(|key| c.closers.contains(key) && !constructs.contains(key))
+        .filter(|key| {
+            !constructs.contains(key) && (c.closers.contains(key) || brace_opener && w.kind_escapes)
+        })
         .collect();
     for (n, at) in deferred {
         c.drop_escapes(n, at);
