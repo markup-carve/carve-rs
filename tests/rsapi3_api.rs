@@ -65,7 +65,7 @@ fn c2_t_041_position_clause_cases() {
         });
     }
     gate.finish();
-    assert_eq!(seen, 15);
+    assert_eq!(seen, 18);
 }
 
 #[test]

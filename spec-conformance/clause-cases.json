@@ -98303,6 +98303,459 @@
    ]
   },
   "from": []
+ },
+ {
+  "id": "CC-2491",
+  "clauses": [
+   "C2-B-012",
+   "C2-B-092",
+   "C2-B-102"
+  ],
+  "why": "C2-B-012: An open paragraph takes every line that is not blank, whatever its indent or prefix, and such a line is a *lazy line*. C2-B-102: Consecutive attribute lines merge into one.",
+  "summary": "an attribute line after a text line that starts with a brace is reported",
+  "kind": "lint",
+  "input": "{.a}\n{hello world\n{.b}\nmore\n",
+  "options": {},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "block-marker-as-text",
+     "line": 2,
+     "column": 1,
+     "endLine": 2,
+     "endColumn": 13
+    },
+    {
+     "code": "block-opener-without-blank-line",
+     "line": 3,
+     "column": 1,
+     "endLine": 3,
+     "endColumn": 5
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2492",
+  "clauses": [
+   "C2-B-012",
+   "C2-B-092",
+   "C2-B-102"
+  ],
+  "why": "C2-B-012: An open paragraph takes every line that is not blank, whatever its indent or prefix, and such a line is a *lazy line*. C2-B-102: Consecutive attribute lines merge into one.",
+  "summary": "an attribute line after a brace-led text line in a quote is reported",
+  "kind": "lint",
+  "input": "> {.a}\n> {hello world\n> {.b}\n> more\n",
+  "options": {},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "block-marker-as-text",
+     "line": 2,
+     "column": 3,
+     "endLine": 2,
+     "endColumn": 15
+    },
+    {
+     "code": "block-opener-without-blank-line",
+     "line": 3,
+     "column": 3,
+     "endLine": 3,
+     "endColumn": 7
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2493",
+  "clauses": [
+   "C2-B-012",
+   "C2-B-092",
+   "C2-B-102"
+  ],
+  "why": "C2-B-012: An open paragraph takes every line that is not blank, whatever its indent or prefix, and such a line is a *lazy line*. C2-B-102: Consecutive attribute lines merge into one.",
+  "summary": "an attribute line after a brace-led text line in a list item is reported",
+  "kind": "lint",
+  "input": "- {.a}\n  {hello world\n  {.b}\n  more\n",
+  "options": {},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "block-marker-as-text",
+     "line": 2,
+     "column": 3,
+     "endLine": 2,
+     "endColumn": 15
+    },
+    {
+     "code": "block-opener-without-blank-line",
+     "line": 3,
+     "column": 3,
+     "endLine": 3,
+     "endColumn": 7
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2494",
+  "clauses": [
+   "C2-M-112",
+   "C2-B-062"
+  ],
+  "why": "C2-M-112: each item holds a bullet list with one item per cell, loose when it has two or more items and one of them holds more than one block. C2-B-062: A list is loose only when a blank line stands between two of its items, so a list with one item is tight.",
+  "summary": "a row of one cell of two paragraphs gives a tight cell list",
+  "kind": "import",
+  "html": "<table><tr><td><p>x</p><p>y</p></td></tr></table>",
+  "options": {
+   "listTable": true
+  },
+  "expected": {
+   "children": [
+    {
+     "type": "div",
+     "children": [
+      {
+       "type": "list",
+       "marker": {
+        "kind": "bullet",
+        "char": "-"
+       },
+       "spacing": "tight",
+       "children": [
+        {
+         "type": "list_item",
+         "children": [
+          {
+           "type": "list",
+           "marker": {
+            "kind": "bullet",
+            "char": "-"
+           },
+           "spacing": "tight",
+           "children": [
+            {
+             "type": "list_item",
+             "children": [
+              {
+               "type": "paragraph",
+               "children": [
+                {
+                 "type": "text",
+                 "value": "x"
+                }
+               ]
+              },
+              {
+               "type": "paragraph",
+               "children": [
+                {
+                 "type": "text",
+                 "value": "y"
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "attrs": {
+      "classes": [
+       "list-table"
+      ]
+     }
+    }
+   ],
+   "carve": "::: list-table\n- - x\n\n    y\n:::\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2495",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty cell after alignment run |?v | (carve#6911)",
+  "kind": "lint",
+  "input": "|?v |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 2,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2496",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty cell after alignment run |> | (carve#6911)",
+  "kind": "lint",
+  "input": "|> |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 2,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2497",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty cell after alignment run |~ | (carve#6911)",
+  "kind": "lint",
+  "input": "|~ |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 2,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2498",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty cell after alignment run with brace block |>{.c} | (carve#6911)",
+  "kind": "lint",
+  "input": "|>{.c} |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 2,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2499",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty header cell after alignment run |=?v | (carve#6911)",
+  "kind": "lint",
+  "input": "|=?v |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 3,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2500",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: a cell that holds only `<` or `^` and a cell that starts with a brace block are not reported",
+  "summary": "near miss: deprecated-cell-alignment does not fire for lone < cell |< | (carve#6911)",
+  "kind": "lint",
+  "input": "|< |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "notReported": [
+    "deprecated-cell-alignment"
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2501",
+  "clauses": [
+   "C2-W-106",
+   "C2-B-171",
+   "C2-B-182"
+  ],
+  "why": "Catalog deprecated-cell-alignment: optionally a glued brace block, then a space",
+  "summary": "deprecated-cell-alignment: empty first cell in a multi-cell row |?v | x | (carve#6911)",
+  "kind": "lint",
+  "input": "|?v | x |\n",
+  "options": {"upgrade": true},
+  "expected": {
+   "diagnostics": [
+    {
+     "code": "deprecated-cell-alignment",
+     "line": 1,
+     "column": 2,
+     "channel": "lint",
+     "severity": "warning"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2502",
+  "clauses": ["C2-B-122", "C2-I-002"],
+  "why": "C2-B-122: A second space behind the backtick run leaves the opener with no language (the empty option of `code_fence_opener` in `data/line-shapes.json`), so what follows is further words: ```` ```  b ```` opens a code block with no language and `b` is reported. C2-I-002: Spaces and tabs at the end of a line of the content are not part of it, on the last line as on the others; a space that a backslash escapes is not such a space (C2-I-011).",
+  "summary": "two spaces after a bare code fence run are no further words (carve#6915)",
+  "kind": "parse",
+  "input": "```  \nx\n```\n",
+  "options": {},
+  "expected": {"diagnostics": [], "diagnosticsComplete": true},
+  "from": []
+ },
+ {
+  "id": "CC-2503",
+  "clauses": ["C2-B-122", "C2-I-002"],
+  "why": "C2-B-122: A second space behind the backtick run leaves the opener with no language (the empty option of `code_fence_opener` in `data/line-shapes.json`), so what follows is further words: ```` ```  b ```` opens a code block with no language and `b` is reported. C2-I-002: Spaces and tabs at the end of a line of the content are not part of it, on the last line as on the others; a space that a backslash escapes is not such a space (C2-I-011).",
+  "summary": "three spaces after a bare code fence run are no further words (carve#6915)",
+  "kind": "parse",
+  "input": "```   \nx\n```\n",
+  "options": {},
+  "expected": {"diagnostics": [], "diagnosticsComplete": true},
+  "from": []
+ },
+ {
+  "id": "CC-2504",
+  "clauses": ["C2-B-122", "C2-I-002"],
+  "why": "C2-B-122: A second space behind the backtick run leaves the opener with no language (the empty option of `code_fence_opener` in `data/line-shapes.json`), so what follows is further words: ```` ```  b ```` opens a code block with no language and `b` is reported. C2-I-002: Spaces and tabs at the end of a line of the content are not part of it, on the last line as on the others; a space that a backslash escapes is not such a space (C2-I-011).",
+  "summary": "space then tab after a bare code fence run are no further words (carve#6915)",
+  "kind": "parse",
+  "input": "``` \t\nx\n```\n",
+  "options": {},
+  "expected": {"diagnostics": [], "diagnosticsComplete": true},
+  "from": []
+ },
+ {
+  "id": "CC-2505",
+  "clauses": ["C2-B-165", "C2-A-141"],
+  "why": "C2-B-165: It is no code point of line 1, so the first character behind it has the column it would have without the mark.",
+  "summary": "a leading BOM keeps byte offsets but takes no AST column",
+  "kind": "parse",
+  "input": "\ufeff# é",
+  "options": {},
+  "expected": {
+   "children": [
+    {
+     "type": "heading",
+     "level": 1,
+     "children": [
+      {
+       "type": "text",
+       "value": "é",
+       "pos": {"startLine":1,"endLine":1,"startColumn":3,"endColumn":4,"startOffset":5,"endOffset":7}
+      }
+     ],
+     "pos": {"startLine":1,"endLine":1,"startColumn":1,"endColumn":4,"startOffset":3,"endOffset":7},
+     "generatedId": "é"
+    }
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2506",
+  "clauses": ["C2-T-041", "C2-B-165"],
+  "why": "C2-T-041: On line 1, counting starts after a leading byte-order mark (C2-B-165), and offset zero still gives column 1.",
+  "summary": "positionOf at offset zero before a leading BOM gives line 1 column 1",
+  "kind": "position",
+  "input": "\ufeff# é",
+  "offset": 0,
+  "options": {},
+  "expected": {"line":1,"column":1},
+  "from": []
+ },
+ {
+  "id": "CC-2507",
+  "clauses": ["C2-T-041", "C2-B-165"],
+  "why": "C2-T-041: On line 1, counting starts after a leading byte-order mark (C2-B-165), and offset zero still gives column 1.",
+  "summary": "positionOf after a leading BOM gives line 1 column 1",
+  "kind": "position",
+  "input": "\ufeff# é",
+  "offset": 3,
+  "options": {},
+  "expected": {"line":1,"column":1},
+  "from": []
+ },
+ {
+  "id": "CC-2508",
+  "clauses": ["C2-T-041", "C2-B-165"],
+  "why": "C2-T-041: On line 1, counting starts after a leading byte-order mark (C2-B-165), and offset zero still gives column 1.",
+  "summary": "positionOf at the text after a leading BOM gives line 1 column 3",
+  "kind": "position",
+  "input": "\ufeff# é",
+  "offset": 5,
+  "options": {},
+  "expected": {"line":1,"column":3},
+  "from": []
+ },
+ {
+  "id": "CC-2509",
+  "clauses": ["C2-T-019", "C2-B-165"],
+  "why": "C2-T-019: On line 1, a leading byte-order mark is no code point of that line (C2-B-165), so it adds no column.",
+  "summary": "a line-1 lint diagnostic after a leading BOM skips it in the column",
+  "kind": "cli",
+  "files": {"a.crv":{"text":"\ufeffa **b**\n"}},
+  "args": ["lint", "a.crv"],
+  "options": {},
+  "expected": {"status":1,"stdoutDiagnostics":[{"code":"markdown-strong-double-star","file":"a.crv","line":1,"column":3,"severity":"warning"}],"stderrCategory":null},
+  "from": []
  }
  ]
 }
