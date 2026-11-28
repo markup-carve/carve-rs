@@ -2116,7 +2116,7 @@ impl<'a> Records<'a> {
             if self.inline_held(range) {
                 continue;
             }
-            if range.has_attrs {
+            if range.has_attrs || range.lifted_attrs {
                 if let Some(slot) = attached.get_mut(range.start_line.saturating_sub(1)) {
                     *slot = true;
                 }

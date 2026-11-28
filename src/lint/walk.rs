@@ -265,6 +265,7 @@ impl<'a> Visit<'a, '_> {
                 start_line: number("startLine"),
                 end_line: number("endLine"),
                 has_attrs: value.get("attrs").is_some(),
+                lifted_attrs: value.get("lang").is_some() || value.get("dir").is_some(),
                 footnote_key: (kind == "footnote_ref")
                     .then(|| value.at("key").as_str())
                     .flatten(),
