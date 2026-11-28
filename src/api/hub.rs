@@ -547,10 +547,14 @@ fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
         return None;
     }
     let mut value = String::new();
+    let mut mapping = None;
     while !rest.is_empty() {
         let (l, after) = line(rest);
         if is_fence(l, delimiter) {
-            return mapping_shape(&value, format).then_some((format, value, after));
+            return mapping.unwrap_or(false).then_some((format, value, after));
+        }
+        if mapping.is_none() {
+            mapping = mapping_shape_line(l, format);
         }
         value.push_str(l);
         value.push('\n');
@@ -562,21 +566,20 @@ fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
 /// The shape test of carve#2799: ignore leading blank and comment lines, then
 /// inspect the first content line at column zero. This is deliberately not a
 /// full YAML or TOML parse; malformed values still count as metadata.
-fn mapping_shape(body: &str, format: &str) -> bool {
-    let Some(first) = body.lines().find(|line| {
-        let trimmed = line.trim_start_matches([' ', '\t']);
-        !trimmed.is_empty() && !trimmed.starts_with('#')
-    }) else {
-        return false;
-    };
-    if first.starts_with([' ', '\t']) {
-        return false;
+fn mapping_shape_line(line: &str, format: &str) -> Option<bool> {
+    match line.as_bytes().first().copied() {
+        None | Some(b'#') => return None,
+        Some(b' ' | b'\t') => {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            return (!trimmed.is_empty() && !trimmed.starts_with('#')).then_some(false);
+        }
+        _ => {}
     }
-    match format {
-        "yaml" => yaml_mapping_shape(first),
-        "toml" => toml_mapping_shape(first),
+    Some(match format {
+        "yaml" => yaml_mapping_shape(line),
+        "toml" => toml_mapping_shape(line),
         _ => false,
-    }
+    })
 }
 
 fn yaml_mapping_shape(first: &str) -> bool {
