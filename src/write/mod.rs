@@ -2788,17 +2788,7 @@ fn seed_shared_bracket_kinds<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
             } else {
                 has_link |= ty(n) == "link";
                 if ty(n) == "span" {
-                    for child in children(n) {
-                        if ty(child) == "text" {
-                            for &at in w.escapes_of(child) {
-                                match text(child).as_bytes().get(at) {
-                                    Some(b'[') => span_kinds |= 1,
-                                    Some(b']') => span_kinds |= 2,
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
+                    span_kinds |= escaped_span_bracket_kinds(w, n);
                 }
                 pending.extend(children(n));
             }
@@ -2814,6 +2804,23 @@ fn seed_shared_bracket_kinds<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
             }
         }
     }
+}
+
+fn escaped_span_bracket_kinds<'t>(w: &Writer<'t>, node: V<'t>) -> u8 {
+    let mut kinds = 0;
+    for child in children(node) {
+        if ty(child) != "text" {
+            continue;
+        }
+        for &at in w.escapes_of(child) {
+            kinds |= match text(child).as_bytes().get(at) {
+                Some(b'[') => 1,
+                Some(b']') => 2,
+                _ => 0,
+            };
+        }
+    }
+    kinds
 }
 
 /// On the first round of a pass, the backslashes of C2-W-125 that the rounds would reach in a group of one

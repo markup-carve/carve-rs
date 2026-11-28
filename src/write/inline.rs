@@ -231,13 +231,17 @@ fn nested_combined_run(node: V<'_>, mark: char) -> bool {
 /// A single inner mark joins the combined token around it unless the outer pair is braced.
 fn lone_nested_mark(node: V<'_>, mark: char) -> bool {
     let outer = children(node);
-    if outer.len() != 1 || !matches!(ty(outer.get(0).unwrap()), "emphasis" | "strong") {
+    let Some(child) = outer.first().filter(|_| outer.len() == 1) else {
+        return false;
+    };
+    if !matches!(ty(child), "emphasis" | "strong") {
         return false;
     }
-    let inner = children(outer.get(0).unwrap());
+    let inner = children(child);
     inner.len() == 1
-        && ty(inner.get(0).unwrap()) == "text"
-        && text(inner.get(0).unwrap()).as_bytes() == [mark as u8]
+        && inner
+            .first()
+            .is_some_and(|n| ty(n) == "text" && text(n).as_bytes() == [mark as u8])
 }
 
 /// C2-W-069: the node's own mark needs a braced form only where a text child can pair with it.
