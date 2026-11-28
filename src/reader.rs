@@ -304,17 +304,17 @@ fn schema_paragraph(node: &Value, path: &str) -> Result<(), TreeError> {
         let children = node["children"].as_array();
         let kind = if role == "image" { "image" } else { "math" };
         let valid = children.is_some_and(|c| {
-            c.split_first().is_some_and(|(first, rest)| {
-                first["type"] == kind
-                    && rest
-                        .iter()
-                        .all(|child| child["type"] == "soft_break" || child["type"] == "comment")
-            })
+            c.iter().filter(|child| child["type"] == kind).count() == 1
+                && c.iter().all(|child| {
+                    child["type"] == kind
+                        || child["type"] == "soft_break"
+                        || child["type"] == "comment"
+                })
         });
         if !valid
             || role == "math"
                 && children
-                    .and_then(|c| c.first())
+                    .and_then(|c| c.iter().find(|child| child["type"] == "math"))
                     .is_some_and(|child| child["display"] != true)
         {
             return Err(schema(
