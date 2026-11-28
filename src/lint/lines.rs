@@ -193,8 +193,10 @@ fn is_opaque_leaf(kind: &str) -> bool {
 }
 
 /// C2-B-090: one or more glued valid attribute blocks alone on the line, spaced or with an id or a key (carve#6197).
+/// An empty block is text there (C2-I-040), as `block::shapes::attribute_line` reads it.
 pub(super) fn valid_attribute_line(text: &str) -> bool {
     let text = text.trim_end_matches([' ', '\t']);
     text.starts_with('{')
-        && crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len())
+        && crate::attr::parse_glued(text, 0)
+            .is_some_and(|(block, end)| !block.empty && end == text.len())
 }
