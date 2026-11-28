@@ -99,7 +99,9 @@ Includes use the resolver of `includes.md`:
 use carve::api::{self, Includes, Options};
 use carve::include::fs::resolver;
 
-let root = std::fs::canonicalize("docs").expect("readable root");
+let root = std::env::temp_dir().join(format!("carve-include-example-{}", std::process::id()));
+std::fs::create_dir_all(&root).expect("create include root");
+std::fs::write(root.join("intro.crv"), "Welcome to Carve.\n").expect("write include");
 let opts = Options {
     includes: Some(Includes::new(resolver(&root).expect("readable root"))),
     ..Options::default()
@@ -107,7 +109,9 @@ let opts = Options {
 let tree = api::parse("{{ intro.crv }}", &opts)?;
 for dependency in api::include_dependencies(&tree) {
     println!("{} read={}", dependency.path, dependency.file.is_some());
+    assert!(dependency.file.is_some());
 }
+assert_eq!(api::render_tree(&tree, &opts)?, "<p>Welcome to Carve.</p>\n");
 # Ok::<(), carve::api::Error>(())
 ```
 
