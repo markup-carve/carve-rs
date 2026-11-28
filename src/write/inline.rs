@@ -247,6 +247,9 @@ fn lone_nested_mark(node: V<'_>, mark: char) -> bool {
 /// C2-W-069: the node's own mark needs a braced form only where a text child can pair with it.
 pub fn braced_by_content(node: V<'_>, mark: char) -> bool {
     edge_space(node)
+        || children(node)
+            .first()
+            .is_some_and(|n| ty(n) == "text" && text(n).as_bytes().starts_with(&[b'{', mark as u8]))
         || holds_pairing_mark(children(node), mark)
         || children(node).iter().any(|n| {
             matches!(ty(n), "emphasis" | "strong") && nested_closing_mark(children(n), mark)
