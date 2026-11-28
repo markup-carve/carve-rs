@@ -573,45 +573,50 @@ fn mapping_shape(body: &str, format: &str) -> bool {
         return false;
     }
     match format {
-        "yaml" => {
-            let key_end = match first.as_bytes().first().copied() {
-                Some(quote @ (b'\'' | b'"')) => {
-                    let bytes = first.as_bytes();
-                    let mut at = 1;
-                    while let Some(&current) = bytes.get(at) {
-                        let next = bytes.get(at + 1);
-                        let escaped = (quote == b'"' && current == b'\\' && next.is_some())
-                            || (quote == b'\'' && current == b'\'' && next == Some(&quote));
-                        if escaped {
-                            at += 2;
-                        } else if current == quote {
-                            break;
-                        } else {
-                            at += 1;
-                        }
-                    }
-                    if bytes.get(at) != Some(&quote) {
-                        return false;
-                    }
-                    at + 1
-                }
-                Some(b'-' | b'[' | b'{' | b'#') | None => return false,
-                _ => first.find(':').unwrap_or(first.len()),
-            };
-            first.as_bytes().get(key_end) == Some(&b':')
-                && matches!(first.as_bytes().get(key_end + 1), None | Some(b' ' | b'\t'))
-        }
-        "toml" => {
-            if first.starts_with('[') {
-                return true;
-            }
-            first.find('=').is_some_and(|at| {
-                let key = first[..at].trim_end_matches([' ', '\t']);
-                !key.is_empty() && !key.starts_with([' ', '\t'])
-            })
-        }
+        "yaml" => yaml_mapping_shape(first),
+        "toml" => toml_mapping_shape(first),
         _ => false,
     }
+}
+
+fn yaml_mapping_shape(first: &str) -> bool {
+    let key_end = match first.as_bytes().first().copied() {
+        Some(quote @ (b'\'' | b'"')) => match quoted_key_end(first.as_bytes(), quote) {
+            Some(end) => end,
+            None => return false,
+        },
+        Some(b'-' | b'[' | b'{' | b'#') | None => return false,
+        _ => first.find(':').unwrap_or(first.len()),
+    };
+    first.as_bytes().get(key_end) == Some(&b':')
+        && matches!(first.as_bytes().get(key_end + 1), None | Some(b' ' | b'\t'))
+}
+
+fn quoted_key_end(bytes: &[u8], quote: u8) -> Option<usize> {
+    let mut at = 1;
+    while let Some(&current) = bytes.get(at) {
+        let next = bytes.get(at + 1);
+        let escaped = (quote == b'"' && current == b'\\' && next.is_some())
+            || (quote == b'\'' && current == b'\'' && next == Some(&quote));
+        if escaped {
+            at += 2;
+        } else if current == quote {
+            break;
+        } else {
+            at += 1;
+        }
+    }
+    (bytes.get(at) == Some(&quote)).then_some(at + 1)
+}
+
+fn toml_mapping_shape(first: &str) -> bool {
+    if first.starts_with('[') {
+        return true;
+    }
+    first.find('=').is_some_and(|at| {
+        let key = first[..at].trim_end_matches([' ', '\t']);
+        !key.is_empty() && !key.starts_with([' ', '\t'])
+    })
 }
 
 /// Every list opening tag of the library HTML is a list of the tree in
