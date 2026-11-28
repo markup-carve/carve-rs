@@ -2773,34 +2773,39 @@ fn seed_shared_bracket_kinds<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
     if w.sp.escapes.is_empty() {
         return;
     }
-    let mut pending = Vec::new();
-    for block in group {
-        if !node::is_inline_parent(block) {
-            continue;
+    let mut blocks: Vec<N<'t>> = group.iter().collect();
+    while let Some(block) = blocks.pop() {
+        if node::is_inline_parent(block) {
+            seed_inline_parent_brackets(w, block);
+        } else {
+            node::for_each_slot(block, false, &mut |kids, _, _| blocks.extend(kids.iter()));
         }
-        let mut texts = Vec::new();
-        let mut span_kinds = 0;
-        let mut has_link = false;
-        pending.extend(children(block));
-        while let Some(n) = pending.pop() {
-            if ty(n) == "text" {
-                texts.push(n);
-            } else {
-                has_link |= ty(n) == "link";
-                if ty(n) == "span" {
-                    span_kinds |= escaped_span_bracket_kinds(w, n);
-                }
-                pending.extend(children(n));
+    }
+}
+
+fn seed_inline_parent_brackets<'t>(w: &mut Writer<'t>, block: V<'t>) {
+    let mut pending: Vec<N<'t>> = children(block).iter().collect();
+    let mut texts = Vec::new();
+    let mut span_kinds = 0;
+    let mut has_link = false;
+    while let Some(n) = pending.pop() {
+        if ty(n) == "text" {
+            texts.push(n);
+        } else {
+            has_link |= ty(n) == "link";
+            if ty(n) == "span" {
+                span_kinds |= escaped_span_bracket_kinds(w, n);
             }
+            pending.extend(children(n));
         }
-        if span_kinds != 3 || !has_link {
-            continue;
-        }
-        for n in texts {
-            for (at, b) in text(n).bytes().enumerate() {
-                if matches!(b, b'[' | b']') && !w.escapes_of(n).contains(&at) {
-                    w.add_escape(n, at);
-                }
+    }
+    if span_kinds != 3 || !has_link {
+        return;
+    }
+    for n in texts {
+        for (at, b) in text(n).bytes().enumerate() {
+            if matches!(b, b'[' | b']') && !w.escapes_of(n).contains(&at) {
+                w.add_escape(n, at);
             }
         }
     }
