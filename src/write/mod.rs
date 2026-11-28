@@ -2726,6 +2726,9 @@ fn repair_round<'t, 's>(
         }
     }
     check::seed_lone_brackets(w, group);
+    if history.rounds == 0 {
+        seed_shared_bracket_kinds(w, group);
+    }
     reset_lines(w);
     blocks::write_blocks(w, group, "", 0, false);
     if w.lines.is_empty() {
@@ -2761,19 +2764,13 @@ fn repair_round<'t, 's>(
         report_unread(w, group, round.last);
     }
     prune_group_escapes(w, group, first && !w.blank_first, &round);
-    propagate_bracket_kinds(w, group, first && !w.blank_first, &mut round);
     Some(end)
 }
 
-/// When both bracket kinds were repaired in one leaf, use their block-wide spelling.
-/// A readback check keeps this preference from changing the tree in a different context.
-fn propagate_bracket_kinds<'t>(
-    w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
-    round: &mut Round<'_>,
-) {
-    if !round.equal || w.sp.escapes.is_empty() {
+/// When spans on both bracket kinds coexist with a link, seed the shared
+/// paragraph spelling before the ordinary readback round.
+fn seed_shared_bracket_kinds<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    if w.sp.escapes.is_empty() {
         return;
     }
     let mut pending = Vec::new();
@@ -2809,28 +2806,12 @@ fn propagate_bracket_kinds<'t>(
         if span_kinds != 3 || !has_link {
             continue;
         }
-        let saved = w.sp.escapes.clone();
-        let mut added = false;
         for n in texts {
             for (at, b) in text(n).bytes().enumerate() {
                 if matches!(b, b'[' | b']') && !w.escapes_of(n).contains(&at) {
                     w.add_escape(n, at);
-                    added = true;
                 }
             }
-        }
-        if !added {
-            continue;
-        }
-        let chunk = written_chunk(w, group, first);
-        let (source, parsed) = round.parse(w, chunk.into_text());
-        if reads_as(group, parsed) {
-            round.last = Some(parsed);
-            round.source = Some(source);
-        } else {
-            w.sp.escapes = saved;
-            reset_lines(w);
-            blocks::write_blocks(w, group, "", 0, false);
         }
     }
 }
