@@ -353,7 +353,7 @@ fn strict_text<'a>(path: &str, bytes: &'a [u8]) -> Result<&'a str, i32> {
     std::str::from_utf8(bytes).map_err(|_| {
         fail(
             "input-unreadable",
-            format!("{path}: a tree in JSON is not UTF-8"),
+            format!("{}: a tree in JSON is not UTF-8", display(path)),
         )
     })
 }
@@ -461,7 +461,7 @@ fn set_simple_options(args: &Args, options: &mut Options) -> Result<(), i32> {
 }
 fn set_structure_options(args: &Args, options: &mut Options) -> Result<(), i32> {
     if let Some(value) = value(args, "labels") {
-        options.labels = string_map(value)?;
+        options.labels.extend(string_map(value)?);
     }
     if let Some(value) = value(args, "symbols") {
         options.symbols = string_map(value)?;
