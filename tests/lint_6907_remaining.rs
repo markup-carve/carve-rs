@@ -22,7 +22,7 @@ fn alignment_findings(source: &str, upgrade: bool) -> Vec<(u32, u32, String)> {
 fn empty_old_alignment_cells_report_under_upgrade() {
     for (source, column, prefix, braced) in [
         ("|?v |\n", 2, "?v", "{?v}"),
-        ("|< |\n", 2, "<", "{<}"),
+        ("|> |\n", 2, ">", "{>}"),
         ("|=~^ |\n", 3, "~^", "{~^}"),
         ("|?v{.c} |\n", 2, "?v{.c}", "{?v .c}"),
         ("| a | ?~ |\n", 7, "?~", "{?~}"),
@@ -39,6 +39,8 @@ fn empty_old_alignment_cells_report_under_upgrade() {
 #[test]
 fn other_cells_keep_their_existing_boundary() {
     for source in [
+        "|< |\n",
+        "|<|\n",
         "|? |\n",
         "|^ |\n",
         "|{?v} |\n",

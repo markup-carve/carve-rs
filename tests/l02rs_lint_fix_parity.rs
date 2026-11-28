@@ -64,7 +64,7 @@ fn blocked_span_continuation_family() {
 #[test]
 fn spaced_lone_less_than_cell_is_not_old_alignment() {
     assert!(finding("| a | < |", "deprecated-cell-alignment", true).is_empty());
-    assert_eq!(finding("|< |", "deprecated-cell-alignment", true).len(), 1);
+    assert!(finding("|< |", "deprecated-cell-alignment", true).is_empty());
 }
 
 #[test]

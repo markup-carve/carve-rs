@@ -11,7 +11,6 @@ use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use crate::view::V;
-use regex::Regex;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -938,69 +937,6 @@ fn node_candidate(kind: &str, has_attrs: bool, raw: &str, text_needs_bracket: bo
             .any(|byte| matches!(byte, b'<' | b'>' | b'~' | b'?' | b'^' | b'{'))
 }
 
-/// The model's nonempty-cell pattern ends in `\S`. A valid old prefix can also
-/// consume the whole cell, provided its required separating space is present.
-fn empty_old_cell_alignment(
-    records: &Records<'_>,
-    record: &super::data_model::BlockRec<'_>,
-    out: &mut Vec<Diagnostic>,
-) {
-    static PREFIX: OnceLock<Option<Regex>> = OnceLock::new();
-    let Some(re) = PREFIX.get_or_init(|| {
-        Regex::new(r"^=?[ \t]*(?<prefix>(?<mark>[<>~][\^v~]?|\?[\^v~])(?:\{[ \t]*(?<block>[^{}]*?)[ \t]*\})?)[ \t]+$")
-            .ok()
-    }) else {
-        return;
-    };
-    let subject = Subject::Block(record);
-    if !matches!(records.subject_field(&subject, F::SourceFormat), Val::Str(format) if format == "pipe")
-    {
-        return;
-    }
-    let Val::Str(text) = records.subject_field(&subject, F::Text) else {
-        return;
-    };
-    let Some(captures) = re.captures(&text) else {
-        return;
-    };
-    let Some(prefix) = captures.name("prefix") else {
-        return;
-    };
-    // A lone alignment symbol separated from its pipe is cell text. Keep
-    // composite old prefixes, whose vertical mark identifies the old form.
-    if prefix.start() > usize::from(text.starts_with('='))
-        && captures
-            .name("mark")
-            .is_some_and(|mark| mark.as_str().len() == 1)
-    {
-        return;
-    }
-    if text.starts_with('=')
-        && !matches!(
-            records.node_key(&records.subject_field(&subject, F::Node), "header"),
-            Val::Bool(true)
-        )
-    {
-        return;
-    }
-    let mark = captures.name("mark").map_or("", |value| value.as_str());
-    let braced = captures.name("block").map_or_else(
-        || format!("{{{mark}}}"),
-        |block| format!("{{{mark} {}}}", block.as_str()),
-    );
-    let range = &records.ranges[record.range as usize];
-    let start = range.start + prefix.start();
-    let end = range.start + prefix.end();
-    let mut diagnostic = Diagnostic::new(
-        "deprecated-cell-alignment",
-        &[("prefix", prefix.as_str()), ("braced", &braced)],
-        None,
-        Some(records.positions().pos(start, end)),
-    );
-    diagnostic.path = Some(records.path_of(record.range));
-    out.push(diagnostic);
-}
-
 fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
     let text_needs_bracket = compiled().text_needs_bracket;
     let mut block_alias: Small<BlockAlias, usize> = HashMap::default();
@@ -1051,9 +987,6 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
             Node::Block(record) => {
                 let path = || records.path_of(record.range);
                 for rule in buckets.borrow()[found_block].iter() {
-                    if rule.0.id == "deprecated-cell-alignment" {
-                        empty_old_cell_alignment(records, &record, out);
-                    }
                     run_rule(
                         *rule,
                         records,
