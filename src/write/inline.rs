@@ -207,51 +207,56 @@ pub fn braced_pair(w: &mut Writer<'_>, node: V<'_>, flags: u32, bit: u8, inside:
         || w.form(node) > 0
         || edge_comment(node)
         || edge_mark(node, if bit == 2 { '*' } else { '/' })
+        || lone_nested_mark(node, if bit == 2 { '*' } else { '/' })
+        || nested_combined_run(node, if bit == 2 { '*' } else { '/' })
         || braced_by_content(node, if bit == 2 { '*' } else { '/' })
 }
 
-/// C2-W-069 decided from the content alone, before any repair round (carve#6482).
-pub fn braced_by_content(node: V<'_>, mark: char) -> bool {
-    edge_space(node) || holds_pairing_mark(children(node), mark, true)
+/// A text mark beside a nested pair can join that pair's own delimiter run.
+fn nested_combined_run(node: V<'_>, mark: char) -> bool {
+    let items = children(node);
+    items.iter().enumerate().any(|(at, item)| {
+        ty(item) == "text"
+            && text(item).ends_with(mark)
+            && items.get(at + 1).is_some_and(|next| {
+                matches!(ty(next), "emphasis" | "strong")
+                    && children(next).iter().any(|child| {
+                        ty(child) == "text"
+                            && text(child).contains(if mark == '*' { '/' } else { '*' })
+                    })
+            })
+    })
 }
 
-/// C2-W-069, C2-I-053: the content holds the node's own mark where it could open or close, or between two word
-/// characters outside a braced span. A bracket bounds the delimiter stack, and a run of two (C2-I-049) is text
-/// unless a brace beside it takes one mark.
-fn text_holds_mark(t: &str, mark: char, words: bool) -> bool {
-    use crate::chars::{is_flank_space, is_word};
-    if !t.contains(mark) {
+/// A single inner mark joins the combined token around it unless the outer pair is braced.
+fn lone_nested_mark(node: V<'_>, mark: char) -> bool {
+    let outer = children(node);
+    let Some(child) = outer.first().filter(|_| outer.len() == 1) else {
+        return false;
+    };
+    if !matches!(ty(child), "emphasis" | "strong") {
         return false;
     }
-    let chars: Vec<char> = t.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars.get(i) != Some(&mark) {
-            i += 1;
-            continue;
-        }
-        let before = i.checked_sub(1).and_then(|j| chars.get(j)).copied();
-        let run = chars.iter().skip(i).take_while(|&&c| c == mark).count();
-        if run > 1 && before != Some('{') {
-            i += run;
-            continue;
-        }
-        let after = chars.get(i + 1).copied();
-        let counts = if before.is_some_and(is_word) && after.is_some_and(is_word) {
-            words
-        } else {
-            !(before.is_some_and(is_flank_space) && after.is_some_and(is_flank_space))
-        };
-        if counts {
-            return true;
-        }
-        i += 1;
-    }
-    false
+    let inner = children(child);
+    inner.len() == 1
+        && inner
+            .first()
+            .is_some_and(|n| ty(n) == "text" && text(n).as_bytes() == [mark as u8])
 }
 
-// A mark inside a nested pair can meet the enclosing opener only when it can close.
-// An opening mark there belongs to the inner pair's delimiter scope.
+/// C2-W-069: the node's own mark needs a braced form only where a text child can pair with it.
+pub fn braced_by_content(node: V<'_>, mark: char) -> bool {
+    edge_space(node)
+        || children(node)
+            .first()
+            .is_some_and(|n| ty(n) == "text" && text(n).as_bytes().starts_with(&[b'{', mark as u8]))
+        || holds_pairing_mark(children(node), mark)
+        || children(node).iter().any(|n| {
+            matches!(ty(n), "emphasis" | "strong") && nested_closing_mark(children(n), mark)
+        })
+}
+
+/// A closing mark inside a nested pair can still meet the enclosing pair's opener.
 fn nested_closing_mark(nodes: Arr<'_>, mark: char) -> bool {
     nodes.iter().any(|n| match ty(n) {
         "text" => {
@@ -277,31 +282,40 @@ fn nested_closing_mark(nodes: Arr<'_>, mark: char) -> bool {
     })
 }
 
-fn holds_pairing_mark(nodes: Arr<'_>, mark: char, words: bool) -> bool {
-    nodes.iter().any(|n| match ty(n) {
-        "text" => text_holds_mark(text(n), mark, words),
-        "emphasis" | "strong" => nested_closing_mark(children(n), mark),
-        "link" | "image" | "span" | "inline_footnote" | "inline_extension" | "citation_group" => {
-            false
+fn holds_pairing_mark(nodes: Arr<'_>, mark: char) -> bool {
+    nodes.iter().enumerate().any(|(index, node)| {
+        if ty(node) != "text" {
+            return false;
         }
-        t => {
-            has(n, "children")
-                && holds_pairing_mark(
-                    children(n),
-                    mark,
-                    words
-                        && !matches!(
-                            t,
-                            "underline"
-                                | "strike"
-                                | "highlight"
-                                | "superscript"
-                                | "subscript"
-                                | "insert"
-                                | "delete"
-                        ),
-                )
+        let mut chars = text(node).chars().peekable();
+        let mut previous = None;
+        let next = nodes.get(index + 1).filter(|n| ty(*n) == "text");
+        while let Some(ch) = chars.next() {
+            let following = chars.peek().copied();
+            if ch == mark
+                && let Some(before) = previous
+                && before != mark
+                && before != '{'
+            {
+                if let Some(after) = following {
+                    if !crate::chars::is_word(before)
+                        && !crate::chars::is_flank_space(after)
+                        && after != mark
+                    {
+                        return true;
+                    }
+                    if after == '}' && !crate::chars::is_flank_space(before) {
+                        return true;
+                    }
+                } else if !crate::chars::is_flank_space(before)
+                    && next.is_some_and(|n| text(n).starts_with('}'))
+                {
+                    return true;
+                }
+            }
+            previous = Some(ch);
         }
+        false
     })
 }
 
@@ -334,8 +348,11 @@ fn edge_mark(node: V<'_>, mark: char) -> bool {
     let c = children(node);
     c.first()
         .is_some_and(|n| ty(n) == "text" && text(n).starts_with(mark))
-        || c.last()
-            .is_some_and(|n| ty(n) == "text" && text(n).ends_with(mark))
+        || c.last().is_some_and(|n| {
+            ty(n) == "text"
+                && text(n).ends_with(mark)
+                && !text(n).trim_end_matches(mark).ends_with('{')
+        })
 }
 
 fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {

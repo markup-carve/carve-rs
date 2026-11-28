@@ -1,0 +1,560 @@
+[
+  {
+    "id": "carve@0.1.7:tests/corpus/473-a-run-of-asterisks-inside-a-combined-token-is-content.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "emphasis",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "*",
+                      "pos": {
+                        "startLine": 1,
+                        "endLine": 1,
+                        "startColumn": 3,
+                        "endColumn": 4,
+                        "startOffset": 2,
+                        "endOffset": 3
+                      }
+                    }
+                  ],
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 3,
+                    "endColumn": 4,
+                    "startOffset": 2,
+                    "endOffset": 3
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 6,
+                "startOffset": 0,
+                "endOffset": 5
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 6,
+            "startOffset": 0,
+            "endOffset": 5
+          }
+        }
+      ],
+      "srcByteLength": 6,
+      "astVersion": "2.0"
+    },
+    "source": "{*/*/*}\n",
+    "before": "*/\\*/*\n"
+  },
+  {
+    "id": "carve@0.1.7:tests/html-import/lone-bracket-in-bracketed-content/expected.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "span",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "[",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 2,
+                    "endColumn": 4,
+                    "startOffset": 1,
+                    "endOffset": 3
+                  }
+                }
+              ],
+              "attrs": {
+                "classes": [
+                  "b"
+                ]
+              },
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 9,
+                "startOffset": 0,
+                "endOffset": 8
+              }
+            },
+            {
+              "type": "link",
+              "href": "/x",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "edit",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 10,
+                    "endColumn": 14,
+                    "startOffset": 9,
+                    "endOffset": 13
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 9,
+                "endColumn": 19,
+                "startOffset": 8,
+                "endOffset": 18
+              }
+            },
+            {
+              "type": "span",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "]",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 20,
+                    "endColumn": 22,
+                    "startOffset": 19,
+                    "endOffset": 21
+                  }
+                }
+              ],
+              "attrs": {
+                "classes": [
+                  "b"
+                ]
+              },
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 19,
+                "endColumn": 27,
+                "startOffset": 18,
+                "endOffset": 26
+              }
+            },
+            {
+              "type": "text",
+              "value": " and ",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 27,
+                "endColumn": 32,
+                "startOffset": 26,
+                "endOffset": 31
+              }
+            },
+            {
+              "type": "span",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "[x]",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 33,
+                    "endColumn": 36,
+                    "startOffset": 32,
+                    "endOffset": 35
+                  }
+                }
+              ],
+              "attrs": {
+                "classes": [
+                  "c"
+                ]
+              },
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 32,
+                "endColumn": 41,
+                "startOffset": 31,
+                "endOffset": 40
+              }
+            },
+            {
+              "type": "text",
+              "value": " and ",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 41,
+                "endColumn": 46,
+                "startOffset": 40,
+                "endOffset": 45
+              }
+            },
+            {
+              "type": "link",
+              "href": "/y",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "a ] b [ c",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 47,
+                    "endColumn": 58,
+                    "startOffset": 46,
+                    "endOffset": 57
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 46,
+                "endColumn": 63,
+                "startOffset": 45,
+                "endOffset": 62
+              }
+            },
+            {
+              "type": "text",
+              "value": " and a [ b",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 63,
+                "endColumn": 73,
+                "startOffset": 62,
+                "endOffset": 72
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 73,
+            "startOffset": 0,
+            "endOffset": 72
+          }
+        }
+      ],
+      "srcByteLength": 73,
+      "astVersion": "2.0"
+    },
+    "source": "[\\[]{.b}[edit](/x)[\\]]{.b} and [\\[x\\]]{.c} and [a \\] b \\[ c](/y) and a \\[ b\n",
+    "before": "[\\[]{.b}[edit](/x)[\\]]{.b} and [[x]]{.c} and [a \\] b \\[ c](/y) and a [ b\n"
+  },
+  {
+    "id": "carve@0.1.9:tests/corpus/471-braced-emphasis-can-nest-its-own-kind-10.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "a {*",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 3,
+                    "endColumn": 7,
+                    "startOffset": 2,
+                    "endOffset": 6
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 9,
+                "startOffset": 0,
+                "endOffset": 8
+              }
+            },
+            {
+              "type": "text",
+              "value": " b*}",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 9,
+                "endColumn": 13,
+                "startOffset": 8,
+                "endOffset": 12
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 13,
+            "startOffset": 0,
+            "endOffset": 12
+          }
+        }
+      ],
+      "srcByteLength": 13,
+      "astVersion": "2.0"
+    },
+    "source": "*a {** b*}\n",
+    "before": "{*a \\{**} b*}\n"
+  },
+  {
+    "id": "carve@0.1.10:tests/corpus/600-a-delimiter-that-is-part-of-a-larger-character-is-text-3.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "a*́ b"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 9,
+      "astVersion": "2.0"
+    },
+    "source": "*a*́ b*\n",
+    "before": "{*a*́ b*}\n"
+  },
+  {
+    "id": "carve@0.1.10:tests/corpus/603-the-combined-bold-italic-token-does-not-open-inside-an-open-bare-italic-or-bold.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "a /",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 2,
+                    "endColumn": 5,
+                    "startOffset": 1,
+                    "endOffset": 4
+                  }
+                },
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "x",
+                      "pos": {
+                        "startLine": 1,
+                        "endLine": 1,
+                        "startColumn": 6,
+                        "endColumn": 7,
+                        "startOffset": 5,
+                        "endOffset": 6
+                      }
+                    }
+                  ],
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 5,
+                    "endColumn": 8,
+                    "startOffset": 4,
+                    "endOffset": 7
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 9,
+                "startOffset": 0,
+                "endOffset": 8
+              }
+            },
+            {
+              "type": "text",
+              "value": " b/",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 9,
+                "endColumn": 12,
+                "startOffset": 8,
+                "endOffset": 11
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 12,
+            "startOffset": 0,
+            "endOffset": 11
+          }
+        }
+      ],
+      "srcByteLength": 12,
+      "astVersion": "2.0"
+    },
+    "source": "/a \\/*x*/ b/\n",
+    "before": "{/a /*x*/} b/\n"
+  },
+  {
+    "id": "carve@0.1.14:tests/corpus/769-a-nested-braced-span-hides-an-editorial-closer-4.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "delete",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "{-a",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 3,
+                    "endColumn": 6,
+                    "startOffset": 2,
+                    "endOffset": 5
+                  }
+                }
+              ],
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 8,
+                "startOffset": 0,
+                "endOffset": 7
+              }
+            },
+            {
+              "type": "text",
+              "value": "-} b-}",
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 8,
+                "endColumn": 14,
+                "startOffset": 7,
+                "endOffset": 13
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 14,
+            "startOffset": 0,
+            "endOffset": 13
+          }
+        }
+      ],
+      "srcByteLength": 14,
+      "astVersion": "2.0"
+    },
+    "source": "{-\\{-a-}-} b-}\n",
+    "before": "{-\\{\\-a-}\\-} b\\-}\n"
+  },
+  {
+    "id": "carve@0.1.14:tests/corpus/867-brackets-nested-past-the-cap-stay-literal-2.crv",
+    "tree": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "span",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+                  "pos": {
+                    "startLine": 1,
+                    "endLine": 1,
+                    "startColumn": 2,
+                    "endColumn": 403,
+                    "startOffset": 1,
+                    "endOffset": 402
+                  }
+                }
+              ],
+              "attrs": {
+                "classes": [
+                  "a"
+                ]
+              },
+              "pos": {
+                "startLine": 1,
+                "endLine": 1,
+                "startColumn": 1,
+                "endColumn": 408,
+                "startOffset": 0,
+                "endOffset": 407
+              }
+            }
+          ],
+          "pos": {
+            "startLine": 1,
+            "endLine": 1,
+            "startColumn": 1,
+            "endColumn": 408,
+            "startOffset": 0,
+            "endOffset": 407
+          }
+        }
+      ],
+      "srcByteLength": 408,
+      "astVersion": "2.0"
+    },
+    "source": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[x\\]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]{.a}\n",
+    "before": "[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[\\[x\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]\\]]{.a}\n"
+  }
+]

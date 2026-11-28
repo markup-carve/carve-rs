@@ -2726,6 +2726,9 @@ fn repair_round<'t, 's>(
         }
     }
     check::seed_lone_brackets(w, group);
+    if history.rounds == 0 {
+        seed_shared_bracket_kinds(w, group);
+    }
     reset_lines(w);
     blocks::write_blocks(w, group, "", 0, false);
     if w.lines.is_empty() {
@@ -2762,6 +2765,67 @@ fn repair_round<'t, 's>(
     }
     prune_group_escapes(w, group, first && !w.blank_first, &round);
     Some(end)
+}
+
+/// When spans on both bracket kinds coexist with a link, seed the shared
+/// paragraph spelling before the ordinary readback round.
+fn seed_shared_bracket_kinds<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
+    if w.sp.escapes.is_empty() {
+        return;
+    }
+    let mut blocks: Vec<N<'t>> = group.iter().collect();
+    while let Some(block) = blocks.pop() {
+        if node::is_inline_parent(block) {
+            seed_inline_parent_brackets(w, block);
+        } else {
+            node::for_each_slot(block, false, &mut |kids, _, _| blocks.extend(kids.iter()));
+        }
+    }
+}
+
+fn seed_inline_parent_brackets<'t>(w: &mut Writer<'t>, block: V<'t>) {
+    let mut pending: Vec<N<'t>> = children(block).iter().collect();
+    let mut texts = Vec::new();
+    let mut span_kinds = 0;
+    let mut has_link = false;
+    while let Some(n) = pending.pop() {
+        if ty(n) == "text" {
+            texts.push(n);
+        } else {
+            has_link |= ty(n) == "link";
+            if ty(n) == "span" {
+                span_kinds |= escaped_span_bracket_kinds(w, n);
+            }
+            pending.extend(children(n));
+        }
+    }
+    if span_kinds != 3 || !has_link {
+        return;
+    }
+    for n in texts {
+        for (at, b) in text(n).bytes().enumerate() {
+            if matches!(b, b'[' | b']') && !w.escapes_of(n).contains(&at) {
+                w.add_escape(n, at);
+            }
+        }
+    }
+}
+
+fn escaped_span_bracket_kinds<'t>(w: &Writer<'t>, node: V<'t>) -> u8 {
+    let mut kinds = 0;
+    for child in children(node) {
+        if ty(child) != "text" {
+            continue;
+        }
+        for &at in w.escapes_of(child) {
+            kinds |= match text(child).as_bytes().get(at) {
+                Some(b'[') => 1,
+                Some(b']') => 2,
+                _ => 0,
+            };
+        }
+    }
+    kinds
 }
 
 /// On the first round of a pass, the backslashes of C2-W-125 that the rounds would reach in a group of one
@@ -3338,16 +3402,22 @@ fn settle<'t>(
 /// C2-W-088, C2-W-125 (carve-js#5464): in the rounds of the reported openers only, a round whose parse holds a
 /// construct the tree does not hold escapes that construct's opener; a closer repair waits for the parse after it.
 fn defer_closer_repairs(w: &Writer<'_>, c: &mut Check<'_>) {
-    if w.kind_escapes || c.constructs.is_empty() {
+    if c.constructs.is_empty() {
         return;
     }
     let constructs: HashSet<(usize, usize)> =
         c.constructs.iter().map(|&(n, at)| (id(n), at)).collect();
+    let brace_opener = c
+        .constructs
+        .iter()
+        .any(|(n, at)| matches!(text(*n).as_bytes().get(*at..*at + 2), Some(b"{-" | b"{+")));
     let deferred: Vec<(usize, usize)> = c
         .escapes
         .iter()
         .map(|&(n, at)| (id(n), at))
-        .filter(|key| c.closers.contains(key) && !constructs.contains(key))
+        .filter(|key| {
+            !constructs.contains(key) && (c.closers.contains(key) || brace_opener && w.kind_escapes)
+        })
         .collect();
     for (n, at) in deferred {
         c.drop_escapes(n, at);

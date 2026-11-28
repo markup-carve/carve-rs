@@ -1063,6 +1063,7 @@ fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
         };
         if inner.is_some_and(|d| d > 0 && d < SEED_CAP)
             && matches!(ty(n), "span" | "inline_footnote" | "inline_extension")
+            && !text_brackets_reach_cap(n)
         {
             for (text, at, _) in scan_lone_brackets(w, &c, n) {
                 w.add_escape(text, at);
@@ -1077,6 +1078,20 @@ fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
                 .map(|kids| SeedLevel::new(kids, inner)),
         );
     }
+}
+
+/// C2-I-118: a text run at the bracket depth cap is settled by readback rounds.
+fn text_brackets_reach_cap(node: V<'_>) -> bool {
+    let mut count = 0;
+    for n in children(node) {
+        if ty(n) == "text" {
+            count += text(n).bytes().filter(|&b| b == b'[').count();
+            if count >= SEED_CAP {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// C2-W-125 case eight: a text `^[` stays bare before a later link whose text starts with a caret, so the `]`
