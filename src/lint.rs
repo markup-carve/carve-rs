@@ -413,6 +413,8 @@ struct Range<'a> {
     start_line: usize,
     end_line: usize,
     has_attrs: bool,
+    /// C2-A-027: `{:fr}` is lifted into `lang` or `dir` and leaves `attrs` unset.
+    lifted_attrs: bool,
     footnote_key: Option<&'a str>,
     /// A comment written as a block.
     form_block: bool,
@@ -605,6 +607,7 @@ fn joined_rows<'t>(
             start_line: line_of(start),
             end_line: line_of(end.saturating_sub(1).max(start)),
             has_attrs: false,
+            lifted_attrs: false,
             footnote_key: None,
             form_block: false,
             image_line: false,
