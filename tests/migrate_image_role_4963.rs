@@ -11,10 +11,13 @@ fn old_image_promotion_with_a_leading_comment_migrates() {
     let migrated = api::migrate_tree_with(&old, &MigrateOptions::default()).unwrap();
     let got: Value = serde_json::from_str(&api::encode_tree(&migrated.tree)).unwrap();
     assert_eq!(got["children"][0]["role"], "image");
-    assert_eq!(got["children"][0]["children"], json!([
-        {"type":"comment","form":"braced","value":""},
-        {"type":"image","src":"x.png","alt":"alt"}
-    ]));
+    assert_eq!(
+        got["children"][0]["children"],
+        json!([
+            {"type":"comment","form":"braced","value":""},
+            {"type":"image","src":"x.png","alt":"alt"}
+        ])
+    );
     assert!(migrated.diagnostics.is_empty());
 }
 
