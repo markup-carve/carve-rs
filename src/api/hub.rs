@@ -178,6 +178,19 @@ fn markdown_body_options(input: &str, gfm: bool) -> comrak::Options<'static> {
     options
 }
 
+/// The directory link audit must parse the same body the hub imports. It uses
+/// Comrak's frontmatter option for accepted mappings and reads rejected fence
+/// candidates as Markdown, preserving their authored link destinations.
+pub(super) fn directory_markdown_options(input: &str) -> comrak::Options<'static> {
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    if (start.starts_with("---") || start.starts_with("+++")) && split_frontmatter(input).is_none()
+    {
+        markdown_body_options(input, true)
+    } else {
+        markdown_options(input, true)
+    }
+}
+
 /// Whether nonblank input follows each 1-based source line.
 fn content_after_lines(input: &str) -> Vec<bool> {
     let mut later: Vec<bool> = input.lines().map(|line| !line.trim().is_empty()).collect();

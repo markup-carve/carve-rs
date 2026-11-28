@@ -126,10 +126,24 @@ fn toml_mapping_shape_still_keeps_tables_and_keys() {
 }
 
 #[test]
-fn a_plain_yaml_key_with_a_colon_is_not_mapping_shape() {
-    // The refined #2799 shape test excludes a plain key that holds any ':'.
+fn excluded_plain_yaml_keys_are_not_mapping_shape() {
+    // The refined #2799 shape test excludes a plain key that holds any ':'
+    // or starts with '-'. These YAML parser opinions do not replace the rule.
     for from in ["markdown", "gfm"] {
-        let result = import(from, "---\nfoo:bar: baz\n---\n");
-        assert_eq!(result["tree"]["children"][0]["type"], "thematic_break");
+        for body in ["foo:bar: baz", "-foo: bar"] {
+            let result = import(from, &format!("---\n{body}\n---\n"));
+            assert_eq!(result["tree"]["children"][0]["type"], "thematic_break");
+        }
     }
+}
+
+#[test]
+fn directory_import_keeps_links_in_a_rejected_frontmatter_candidate() {
+    let source = "---\n[x](a\\(b\\).md)\n---\n";
+    let (_, destinations) =
+        carve::try_migrate_markdown_for_directory_with_destinations(source).unwrap();
+    assert_eq!(
+        destinations.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
 }

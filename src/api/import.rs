@@ -201,7 +201,7 @@ pub fn try_migrate_markdown_for_directory_with_destinations(
 fn markdown_destinations(source: &str) -> Vec<(String, String)> {
     use comrak::nodes::NodeValue;
     let arena = comrak::Arena::new();
-    let options = super::hub::markdown_options(source, true);
+    let options = super::hub::directory_markdown_options(source);
     let document = comrak::parse_document(&arena, source, &options);
     let lines: Vec<&str> = source.split('\n').collect();
     let mut starts = vec![0];
