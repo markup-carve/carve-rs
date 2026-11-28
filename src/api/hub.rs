@@ -85,12 +85,13 @@ pub(crate) fn to_html(input: &str, format: ImportFormat, sink: &mut Sink) -> Res
     }
 }
 
-pub(super) fn markdown_options(_input: &str, gfm: bool) -> comrak::Options<'static> {
+pub(super) fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'static> {
     let mut o = comrak::Options::default();
     o.extension.math_dollars = true;
-    // split_frontmatter applies the mapping-shape gate before Comrak reads the
-    // document. A second frontmatter scan here would consume rejected rules.
-    o.extension.front_matter_delimiter = None;
+    // comrak skips a leading U+FEFF before its frontmatter scan (carve#6447).
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let toml = start.starts_with("+++\n") || start.starts_with("+++\r\n");
+    o.extension.front_matter_delimiter = Some(if toml { "+++" } else { "---" }.into());
     o.render.r#unsafe = true;
     if gfm {
         o.extension.table = true;
@@ -112,7 +113,7 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
             options.extension.front_matter_delimiter = None;
             (rest, options)
         }
-        None => (input, markdown_options(input, gfm)),
+        None => (input, markdown_body_options(input, gfm)),
     };
     let input = lf_endings(input);
     let flow = math_flow(&input, &options);
@@ -164,6 +165,17 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
         .map(|(list, tight)| tight && !loose.contains(&list))
         .collect();
     Ok(mark_tight(&out, &tight))
+}
+
+fn markdown_body_options(input: &str, gfm: bool) -> comrak::Options<'static> {
+    let mut options = markdown_options(input, gfm);
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    // A rejected leading fence remains Markdown, including its first
+    // thematic break. Comrak must not claim it as frontmatter.
+    if start.starts_with("---") || start.starts_with("+++") {
+        options.extension.front_matter_delimiter = None;
+    }
+    options
 }
 
 /// Whether nonblank input follows each 1-based source line.
