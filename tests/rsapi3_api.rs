@@ -79,6 +79,30 @@ fn position_of_in_rust() {
 }
 
 #[test]
+fn leading_bom_takes_no_first_line_column() {
+    let source = "\u{feff}# é";
+    for (offset, expected) in [(0, (1, 1)), (3, (1, 1)), (5, (1, 3)), (7, (1, 4))] {
+        let pos = api::position_of(source, offset).unwrap();
+        assert_eq!((pos.line, pos.column), expected, "offset {offset}");
+    }
+    let pos = api::position_of("a\n\u{feff}b", 5).unwrap();
+    assert_eq!((pos.line, pos.column), (2, 2));
+}
+
+#[test]
+fn leading_bom_position_variants() {
+    for i in 0..1_000 {
+        let source = format!("\u{feff}{}é\n字", "x".repeat(i % 31));
+        let at = source.find('é').unwrap();
+        let pos = api::position_of(source.as_str(), at).unwrap();
+        assert_eq!((pos.line, pos.column), (1, i % 31 + 1), "variant {i}");
+        let at = source.find('字').unwrap();
+        let pos = api::position_of(source.as_str(), at).unwrap();
+        assert_eq!((pos.line, pos.column), (2, 1), "variant {i}");
+    }
+}
+
+#[test]
 fn fingerprints() {
     assert_eq!(
         api::source_fingerprint(b"abc"),

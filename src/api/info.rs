@@ -69,7 +69,9 @@ pub fn position_of<'a>(input: impl Into<Input<'a>>, offset: usize) -> Result<Pos
             format!("{offset} is no offset into {} bytes", bytes.len()),
         ));
     }
-    let (mut line, mut column, mut at) = (1, 1, 0);
+    // C2-B-165: byte offsets include the BOM, but line 1 has no BOM column.
+    let start = usize::from(bytes.starts_with(&[0xef, 0xbb, 0xbf]) && offset >= 3) * 3;
+    let (mut line, mut column, mut at) = (1, 1, start);
     while at < offset {
         if bytes.get(at) == Some(&b'\n') {
             line += 1;

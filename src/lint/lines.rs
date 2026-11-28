@@ -18,7 +18,10 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     let mut start = 0;
     for piece in source.split_inclusive('\n') {
         starts.push(start);
-        raws.push(piece.trim_end_matches(['\n', '\r']));
+        let raw = piece
+            .strip_suffix('\n')
+            .map_or(piece, |line| line.strip_suffix('\r').unwrap_or(line));
+        raws.push(raw);
         start += piece.len();
     }
     let count = raws.len();
