@@ -85,13 +85,12 @@ pub(crate) fn to_html(input: &str, format: ImportFormat, sink: &mut Sink) -> Res
     }
 }
 
-pub(super) fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'static> {
+pub(super) fn markdown_options(_input: &str, gfm: bool) -> comrak::Options<'static> {
     let mut o = comrak::Options::default();
     o.extension.math_dollars = true;
-    // comrak skips a leading U+FEFF before its frontmatter scan (carve#6447).
-    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
-    let toml = start.starts_with("+++\n") || start.starts_with("+++\r\n");
-    o.extension.front_matter_delimiter = Some(if toml { "+++" } else { "---" }.into());
+    // split_frontmatter applies the mapping-shape gate before Comrak reads the
+    // document. A second frontmatter scan here would consume rejected rules.
+    o.extension.front_matter_delimiter = None;
     o.render.r#unsafe = true;
     if gfm {
         o.extension.table = true;
@@ -523,8 +522,8 @@ fn content_start(line: &str) -> usize {
 /// A closed frontmatter at the start, after at most one U+FEFF: the format,
 /// the text between the fences and the input after the closer. The hub reads
 /// it instead of comrak, which misses a closer on the opener's next line,
-/// blanks after the opener and CR line endings (carve-rs#4633); the rule is
-/// micromark-extension-frontmatter's, as carve-js reads it.
+/// blanks after the opener and CR line endings (carve-rs#4633). A bare fence
+/// claims the block only when its body has a mapping shape (carve#2799).
 fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
     fn line(text: &str) -> (&str, &str) {
         let end = text.find(['\r', '\n']).unwrap_or(text.len());
@@ -551,13 +550,71 @@ fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
     while !rest.is_empty() {
         let (l, after) = line(rest);
         if is_fence(l, delimiter) {
-            return Some((format, value, after));
+            return mapping_shape(&value, format).then_some((format, value, after));
         }
         value.push_str(l);
         value.push('\n');
         rest = after;
     }
     None
+}
+
+/// The shape test of carve#2799: ignore leading blank and comment lines, then
+/// inspect the first content line at column zero. This is deliberately not a
+/// full YAML or TOML parse; malformed values still count as metadata.
+fn mapping_shape(body: &str, format: &str) -> bool {
+    let Some(first) = body.lines().find(|line| {
+        let trimmed = line.trim_start_matches([' ', '\t']);
+        !trimmed.is_empty() && !trimmed.starts_with('#')
+    }) else {
+        return false;
+    };
+    if first.starts_with([' ', '\t']) {
+        return false;
+    }
+    match format {
+        "yaml" => {
+            let key_end = match first.as_bytes().first() {
+                Some(b'\'' | b'"') => {
+                    let quote = first.as_bytes()[0];
+                    let bytes = first.as_bytes();
+                    let mut at = 1;
+                    while at < bytes.len() {
+                        if quote == b'"' && bytes[at] == b'\\' && at + 1 < bytes.len() {
+                            at += 2;
+                        } else if quote == b'\''
+                            && bytes[at] == b'\''
+                            && bytes.get(at + 1) == Some(&b'\'')
+                        {
+                            at += 2;
+                        } else if bytes[at] == quote {
+                            break;
+                        } else {
+                            at += 1;
+                        }
+                    }
+                    if bytes.get(at) != Some(&quote) {
+                        return false;
+                    }
+                    at + 1
+                }
+                Some(b'-' | b'[' | b'{' | b'#') | None => return false,
+                _ => first.find(':').unwrap_or(first.len()),
+            };
+            first.as_bytes().get(key_end) == Some(&b':')
+                && matches!(first.as_bytes().get(key_end + 1), None | Some(b' ' | b'\t'))
+        }
+        "toml" => {
+            if first.starts_with('[') {
+                return true;
+            }
+            first.find('=').is_some_and(|at| {
+                let key = first[..at].trim_end_matches([' ', '\t']);
+                !key.is_empty() && !key.starts_with([' ', '\t'])
+            })
+        }
+        _ => false,
+    }
 }
 
 /// Every list opening tag of the library HTML is a list of the tree in
