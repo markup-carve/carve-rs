@@ -1,5 +1,4 @@
-//! `render --to carve` refuses a writer loss as `fmt --from-ast` does
-//! (C2-W-134, C2-T-028).
+//! Source writing belongs to `fmt`; the removed render target is a usage error.
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -29,136 +28,27 @@ fn run(args: &[&str], input: &str) -> (i32, String, String) {
     )
 }
 
-fn report_path(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("carve-rs-{}-{name}.json", std::process::id()))
-}
-
-fn report(path: &std::path::Path) -> serde_json::Value {
-    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
-}
-
 #[test]
-fn a_writer_loss_refuses_the_source_like_fmt_from_ast() {
+fn fmt_from_ast_refuses_a_writer_loss() {
     let (status, stdout, stderr) = run(&["fmt", "--from-ast", "-"], EMPTY_HEAD);
     assert_eq!((status, stdout.as_str(), stderr.as_str()), (1, "", REFUSAL));
-
-    let (status, stdout, stderr) = run(&["render", "--from-ast", "--to", "carve", "-"], EMPTY_HEAD);
-    assert_eq!((status, stdout.as_str()), (1, ""));
-    assert!(stderr.starts_with(REFUSAL), "{stderr}");
-    assert!(stderr.contains("structure-unspellable"), "{stderr}");
 }
 
 #[test]
-fn report_losses_lists_the_writer_losses() {
-    let path = report_path("losses");
-    let (status, stdout, _) = run(
-        &[
-            "render",
-            "--from-ast",
-            "--to",
-            "carve",
-            "--report-losses",
-            path.to_str().unwrap(),
-            "-",
-        ],
-        EMPTY_HEAD,
-    );
-    assert_eq!((status, stdout.as_str()), (1, ""));
-    let file = &report(&path)["files"][0];
-    assert_eq!(file["diagnostics"][0]["code"], "structure-unspellable");
-    assert_eq!(file["diagnostics"][0]["path"], "/children/0/children/0");
-    assert_eq!(file["suppressed"], 0);
-}
-
-#[test]
-fn strict_losses_fails_a_writer_loss_as_a_render_loss() {
-    let (status, stdout, stderr) = run(
-        &[
-            "render",
-            "--from-ast",
-            "--to",
-            "carve",
-            "--strict-losses",
-            "-",
-        ],
-        EMPTY_HEAD,
-    );
-    assert_eq!((status, stdout.as_str()), (1, ""));
-    assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
-    assert!(stderr.contains(" error structure-unspellable "), "{stderr}");
-
-    let (status, stdout, stderr) = run(
-        &[
-            "render",
-            "--from-ast",
-            "--to",
-            "carve",
-            "--strict-losses",
-            "--max-render-losses",
-            "0",
-            "-",
-        ],
-        EMPTY_HEAD,
-    );
-    assert_eq!((status, stdout.as_str()), (1, ""));
-    assert!(stderr.starts_with("carve[render-loss]: "), "{stderr}");
-}
-
-#[test]
-fn an_allowed_writer_loss_still_refuses_the_source() {
-    let path = report_path("allowed");
-    let (status, stdout, stderr) = run(
-        &[
-            "render",
-            "--from-ast",
-            "--to",
-            "carve",
-            "--allow-loss",
-            "structure-unspellable",
-            "--report-losses",
-            path.to_str().unwrap(),
-            "-",
-        ],
-        EMPTY_HEAD,
-    );
-    assert_eq!((status, stdout.as_str()), (1, ""));
-    assert!(stderr.starts_with(REFUSAL), "{stderr}");
-    assert_eq!(
-        report(&path)["files"][0]["diagnostics"],
-        serde_json::json!([])
-    );
-}
-
-#[test]
-fn a_tree_without_a_loss_is_written_as_before() {
+fn fmt_from_ast_writes_a_clean_tree() {
     let (status, tree, stderr) = run(&["ast", "--no-positions", "-"], "| a |\n");
     assert_eq!((status, stderr.as_str()), (0, ""));
-    let path = report_path("clean");
-    let (status, stdout, stderr) = run(
-        &[
-            "render",
-            "--from-ast",
-            "--to",
-            "carve",
-            "--strict-losses",
-            "--report-losses",
-            path.to_str().unwrap(),
-            "-",
-        ],
-        &tree,
-    );
+    let (status, stdout, stderr) = run(&["fmt", "--from-ast", "-"], &tree);
     assert_eq!(
         (status, stdout.as_str(), stderr.as_str()),
         (0, "| a |\n", "")
     );
-    assert_eq!(
-        report(&path)["files"][0]["diagnostics"],
-        serde_json::json!([])
-    );
+}
 
+#[test]
+fn render_to_carve_is_a_usage_error() {
     let (status, stdout, stderr) = run(&["render", "--to", "carve", "-"], "| a |\n");
-    assert_eq!(
-        (status, stdout.as_str(), stderr.as_str()),
-        (0, "| a |\n", "")
-    );
+    assert_eq!((status, stdout.as_str()), (2, ""));
+    assert!(stderr.starts_with("carve[usage]:"), "{stderr}");
+    assert!(stderr.contains("carve flatten"), "{stderr}");
 }

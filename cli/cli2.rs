@@ -214,6 +214,9 @@ fn read_flag_value(kind: &str, name: &str, input: &str, row: &Value) -> Result<V
         "json" => serde_json::from_str(input).map_err(|_| format!("bad JSON for --{name}")),
         "enum" => {
             if !enum_flag_value(name, input, row) {
+                if name == "to" && input == "carve" {
+                    return Err("bad value for --to: carve; use carve fmt (source) or carve flatten (includes expanded)".into());
+                }
                 return Err(format!("bad value for --{name}: {input}"));
             }
             Ok(json!(input))
@@ -223,7 +226,7 @@ fn read_flag_value(kind: &str, name: &str, input: &str, row: &Value) -> Result<V
 }
 fn enum_flag_value(name: &str, input: &str, row: &Value) -> bool {
     if name == "to" {
-        ["html", "carve", "markdown", "plain", "ansi"].contains(&input)
+        ["html", "markdown", "plain", "ansi"].contains(&input)
     } else if name == "from" {
         IMPORT_FROM_VALUES.contains(&input)
     } else {
@@ -1520,7 +1523,7 @@ fn render_file(
     let parsed_tree = tree_if_needed(args, bytes, host, opts, tree.as_ref())?;
     let resolved_tree = tree.as_ref().or(parsed_tree.as_ref());
     let strict_entry = bool_value(args, "strict", false) && !rendered.diagnostics.is_empty();
-    let mut retained: Vec<Entry> = rendered
+    let retained: Vec<Entry> = rendered
         .diagnostics
         .into_iter()
         .filter(|e| e.channel == "render-loss")
@@ -1537,83 +1540,33 @@ fn render_file(
         )
         .map_err(api_fail)
     };
-    // C2-W-134, C2-T-028: Carve source goes out only with its writer losses,
-    // so it is written before the report.
-    let carve_written = match target {
-        Some("carve") => Some(write("carve")?),
-        _ => None,
-    };
-    let writer_losses: Vec<Entry> = match &carve_written {
-        Some(out) => out
-            .diagnostics
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e.code.as_str(),
-                    "writer-refused" | "structure-unspellable" | "field-unspellable"
-                )
-            })
-            .cloned()
-            .collect(),
-        None => Vec::new(),
-    };
-    // C2-T-027, C2-T-029: an allowed code is no loss and the cap holds; the
-    // writer loss still refuses the source (C2-T-034).
-    let room = opts.max_losses.saturating_sub(retained.len());
-    let counted: Vec<&Entry> = writer_losses
-        .iter()
-        .filter(|e| !opts.allow_losses.contains(&e.code))
-        .collect();
     let strict_losses = bool_value(args, "strict-losses", false);
-    let writer_lost = !counted.is_empty();
-    let writer_suppressed = counted.len().saturating_sub(room);
-    let suppressed = rendered.suppressed_diagnostics + writer_suppressed;
-    retained.extend(counted.into_iter().take(room).cloned().map(|mut e| {
-        if strict_losses {
-            e.severity = "error".into();
-        }
-        e
-    }));
     if str_value(args, "report-losses").is_some() {
         loss_reports.push(loss_report(
             path,
             &retained,
             bytes,
-            suppressed,
+            rendered.suppressed_diagnostics,
             opts.includes.as_ref(),
         ));
     }
     if str_value(args, "report-includes").is_some() {
         include_reports.push(include_report(path, resolved_tree.unwrap()));
     }
-    let strict = strict_losses && (writer_lost || !retained.is_empty());
+    let strict = strict_losses && !retained.is_empty();
     if strict {
         eprintln!(
             "carve[render-loss]: {}: {} render losses under --strict-losses",
             display(path),
-            retained.len() + writer_suppressed
-        );
-    }
-    let refused = !strict && !writer_losses.is_empty();
-    if refused {
-        let found: Vec<String> = writer_losses
-            .iter()
-            .map(|e| format!("{} at {}", e.code, e.path.as_deref().unwrap_or("")))
-            .collect();
-        eprintln!(
-            "carve[writer-refused]: writer carve: the source cannot be returned without its loss report: {}",
-            found.join(", ")
+            retained.len()
         );
     }
     lines(path, bytes, &retained, true, opts.includes.as_ref())?;
-    if strict || refused {
+    if strict {
         return Ok(1);
     }
     if let Some(target) = target {
-        let out = match carve_written {
-            Some(out) => out,
-            None => write(target)?,
-        };
+        let out = write(target)?;
         product(args, &out.output)?;
     } else {
         product(args, &format!("{}\n", rendered.html))?;
@@ -1695,7 +1648,7 @@ fn help(command: &str) -> String {
         let _ = writeln!(out, "  --{name} {kind}");
     }
     if command == "render" {
-        out.push_str("  --to html|carve|markdown|plain|ansi\n  --quote-locale LOCALE\n");
+        out.push_str("  --to html|markdown|plain|ansi\n  --quote-locale LOCALE\n");
     }
     out
 }

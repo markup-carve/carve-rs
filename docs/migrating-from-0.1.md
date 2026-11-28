@@ -77,7 +77,8 @@ The flags below were in the 0.1 `carve` command and have no row in [`spec/0.2/UP
 
 | 0.1 flag | 0.2 |
 |---|---|
-| `--html`, `--markdown`, `--md`, `--plain`, `--plain-text`, `--ansi` | `render --to html\|carve\|markdown\|plain\|ansi` |
+| `--html`, `--markdown`, `--md`, `--plain`, `--plain-text`, `--ansi` | `render --to html\|markdown\|plain\|ansi` |
+| `--carve`, `--to carve` | `carve fmt` writes Carve source; `carve flatten` writes it with includes expanded |
 | `--interactive` | `render --mode interactive` (the default); `--mode static` replaces `--static` |
 | `--max-depth`, `--max-bytes` (render, fmt, flatten, lint) | gone: the command uses the include limits of `data/limits.json`, 16 levels and 8 MiB. A library host lowers them with `Includes::depth` and `Includes::bytes` |
 | `--max-resolver-calls`, `--max-warnings` (render, fmt, flatten, lint) | gone: no resolver-call or warning budget in 0.2 |
