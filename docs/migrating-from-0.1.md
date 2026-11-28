@@ -55,6 +55,7 @@ In 0.1, `carve::profile` was the profile filter: the `Profile` type and the link
 | `DEFAULT_MAX_DEPTH`, `DEFAULT_MAX_FILE_BYTES` | `Includes::depth` and `Includes::bytes`: a host may lower them below the limits of `data/limits.json`, never raise them |
 | `DEFAULT_MAX_RESOLVER_CALLS`, `DEFAULT_MAX_WARNINGS` | gone: 0.2 has no resolver-call or warning budget |
 | `LintWarning`, `accessibility`, `AccessibilityDiagnostic`, `AccessibilitySeverity` | `api::lint` returns `api::Entry` rows; the accessibility checks are catalog rules |
+| `Options::lint_caption_looking_paragraph` | the catalog rule `caption-looking-paragraph`. It is on by default, where the 0.1 option was off; turn it off with `LintOptions::rules` (`"caption-looking-paragraph"` to `"off"`) |
 | `html_import`, `html_to_carve`, `HtmlImportOptions`, `HtmlImportMode`, `HtmlImportResult`, `HtmlImportReport`, `HtmlImportError`, `HtmlImportDiagnostic`, `HtmlImportDiagnosticCode`, `HtmlImportSeverity`, `MAX_HTML_IMPORT_DEPTH` | `api::import_document` with `ImportFormat::Html` and `ImportOptions` (`raw_html`, `strict_losses`, `adapter`, `list_table`). It returns `Imported { tree, source, diagnostics, suppressed_diagnostics }` |
 | `HtmlImportAdapter` | `api::ImportAdapter` |
 | `markdown_import`, `markdown_to_ast`, `markdown_to_carve`, `try_markdown_to_carve`, `migrate_markdown`, `djot_migrate`, `SourceFormat` | `api::import_document` or `Carve::import_from` with `ImportFormat::Markdown`, `Gfm` or `Djot` |
