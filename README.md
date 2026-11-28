@@ -162,7 +162,7 @@ assert!(ansi.output.contains("\x1b[1mthis\x1b[0m"));
 # Ok::<(), carve::api::Error>(())
 ```
 
-`ExportOptions` holds `smart_typography` (default true), `strict_losses` (refuses with `Error::Export`, which carries the losses) and `url_policy` (a denied destination is written empty and reported). The losses are entries of the `render-loss` channel with the pointer of their node. `export::export_to(Target, ...)` writes by target, and the writers of the registry (`markdown`, `plain`, `ansi`) read the same three options from `WriteOptions::render`. On the command line, `carve render --to markdown|plain|ansi|carve FILE` writes the other formats.
+`ExportOptions` holds `smart_typography` (default true), `strict_losses` (refuses with `Error::Export`, which carries the losses) and `url_policy` (a denied destination is written empty and reported). The losses are entries of the `render-loss` channel with the pointer of their node. `export::export_to(Target, ...)` writes by target, and the writers of the registry (`markdown`, `plain`, `ansi`) read the same three options from `WriteOptions::render`. On the command line, `carve render --to markdown|plain|ansi FILE` writes the other formats.
 
 The `codeBlockRenderer` render option is `Options::code_block_renderer`: a `CodeBlockRenderer` wrapping a host function from a code block node (its JSON value) and the block's default HTML to the HTML written in its place, or `None` for the default (C2-H-206, C2-H-207). It runs for every ordinary code block, in containers and expanded includes too, but not for a raw block, a code span or a block outside the profile.
 

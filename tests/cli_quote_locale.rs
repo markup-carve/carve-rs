@@ -74,6 +74,7 @@ fn a_missing_locale_and_an_export_target_are_usage_errors() {
     );
     assert_eq!(status, 2);
     assert!(stderr.starts_with("carve[usage]:"), "{stderr}");
+    // The removed Carve target is an unknown --to value.
     let (status, _, _) = run(
         &["render", "--quote-locale", "de", "--to", "carve", "-"],
         "\"a\"\n",
