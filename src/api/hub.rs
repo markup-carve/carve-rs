@@ -113,7 +113,7 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
             options.extension.front_matter_delimiter = None;
             (rest, options)
         }
-        None => (input, markdown_options(input, gfm)),
+        None => (input, markdown_body_options(input, gfm)),
     };
     let input = lf_endings(input);
     let flow = math_flow(&input, &options);
@@ -165,6 +165,30 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
         .map(|(list, tight)| tight && !loose.contains(&list))
         .collect();
     Ok(mark_tight(&out, &tight))
+}
+
+fn markdown_body_options(input: &str, gfm: bool) -> comrak::Options<'static> {
+    let mut options = markdown_options(input, gfm);
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    // A rejected leading fence remains Markdown, including its first
+    // thematic break. Comrak must not claim it as frontmatter.
+    if start.starts_with("---") || start.starts_with("+++") {
+        options.extension.front_matter_delimiter = None;
+    }
+    options
+}
+
+/// The directory link audit must parse the same body the hub imports. It uses
+/// Comrak's frontmatter option for accepted mappings and reads rejected fence
+/// candidates as Markdown, preserving their authored link destinations.
+pub(super) fn directory_markdown_options(input: &str) -> comrak::Options<'static> {
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    if (start.starts_with("---") || start.starts_with("+++")) && split_frontmatter(input).is_none()
+    {
+        markdown_body_options(input, true)
+    } else {
+        markdown_options(input, true)
+    }
 }
 
 /// Whether nonblank input follows each 1-based source line.
@@ -523,8 +547,8 @@ fn content_start(line: &str) -> usize {
 /// A closed frontmatter at the start, after at most one U+FEFF: the format,
 /// the text between the fences and the input after the closer. The hub reads
 /// it instead of comrak, which misses a closer on the opener's next line,
-/// blanks after the opener and CR line endings (carve-rs#4633); the rule is
-/// micromark-extension-frontmatter's, as carve-js reads it.
+/// blanks after the opener and CR line endings (carve-rs#4633). A bare fence
+/// claims the block only when its body has a mapping shape (carve#2799).
 fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
     fn line(text: &str) -> (&str, &str) {
         let end = text.find(['\r', '\n']).unwrap_or(text.len());
@@ -548,16 +572,79 @@ fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
         return None;
     }
     let mut value = String::new();
+    let mut mapping = None;
     while !rest.is_empty() {
         let (l, after) = line(rest);
         if is_fence(l, delimiter) {
-            return Some((format, value, after));
+            return mapping.unwrap_or(false).then_some((format, value, after));
+        }
+        if mapping.is_none() {
+            mapping = mapping_shape_line(l, format);
         }
         value.push_str(l);
         value.push('\n');
         rest = after;
     }
     None
+}
+
+/// The shape test of carve#2799: ignore leading blank and comment lines, then
+/// inspect the first content line at column zero. This is deliberately not a
+/// full YAML or TOML parse; malformed values still count as metadata.
+fn mapping_shape_line(line: &str, format: &str) -> Option<bool> {
+    match line.as_bytes().first().copied() {
+        None | Some(b'#') => return None,
+        Some(b' ' | b'\t') => {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            return (!trimmed.is_empty() && !trimmed.starts_with('#')).then_some(false);
+        }
+        _ => {}
+    }
+    Some(match format {
+        "yaml" => yaml_mapping_shape(line),
+        "toml" => toml_mapping_shape(line),
+        _ => false,
+    })
+}
+
+fn yaml_mapping_shape(first: &str) -> bool {
+    let key_end = match first.as_bytes().first().copied() {
+        Some(quote @ (b'\'' | b'"')) => match quoted_key_end(first.as_bytes(), quote) {
+            Some(end) => end,
+            None => return false,
+        },
+        Some(b'-' | b'[' | b'{' | b'#') | None => return false,
+        _ => first.find(':').unwrap_or(first.len()),
+    };
+    first.as_bytes().get(key_end) == Some(&b':')
+        && matches!(first.as_bytes().get(key_end + 1), None | Some(b' ' | b'\t'))
+}
+
+fn quoted_key_end(bytes: &[u8], quote: u8) -> Option<usize> {
+    let mut at = 1;
+    while let Some(&current) = bytes.get(at) {
+        let next = bytes.get(at + 1);
+        let escaped = (quote == b'"' && current == b'\\' && next.is_some())
+            || (quote == b'\'' && current == b'\'' && next == Some(&quote));
+        if escaped {
+            at += 2;
+        } else if current == quote {
+            break;
+        } else {
+            at += 1;
+        }
+    }
+    (bytes.get(at) == Some(&quote)).then_some(at + 1)
+}
+
+fn toml_mapping_shape(first: &str) -> bool {
+    if first.starts_with('[') {
+        return true;
+    }
+    first.find('=').is_some_and(|at| {
+        let key = first[..at].trim_end_matches([' ', '\t']);
+        !key.is_empty() && !key.starts_with([' ', '\t'])
+    })
 }
 
 /// Every list opening tag of the library HTML is a list of the tree in

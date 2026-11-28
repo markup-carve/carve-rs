@@ -245,14 +245,15 @@ fn frontmatter_shapes_comrak_misses() {
     for from in ["markdown", "gfm"] {
         for bom in ["", "\u{feff}"] {
             for nl in ["\n", "\r\n", "\r"] {
-                for (open, fence, value) in [("---", "---", ""), ("+++", "---toml", "")] {
-                    for (body, carved) in [("", ""), ("body", "\nbody\n")] {
+                // carve#2799: neither empty nor scalar content has mapping
+                // shape, so both fences remain Markdown input.
+                for (open, empty, with_body) in [
+                    ("---", "***\n\n***\n", "***\n\n***\n\nbody\n"),
+                    ("+++", "+++\n+++\n", "+++\n+++\nbody\n"),
+                ] {
+                    for (body, want) in [("", empty), ("body", with_body)] {
                         let source = format!("{bom}{open}{nl}{open}{nl}{body}");
-                        assert_eq!(
-                            carve(from, &source),
-                            format!("{fence}\n{value}---\n{carved}"),
-                            "{from} {source:?}"
-                        );
+                        assert_eq!(carve(from, &source), want, "{from} {source:?}");
                     }
                 }
                 let source = format!("{bom}--- {nl}a: 1{nl}---\t{nl}{nl}z{nl}");
