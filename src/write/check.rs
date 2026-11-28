@@ -1082,16 +1082,13 @@ fn seed_below_cap<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 
 /// C2-I-118: a text run at the bracket depth cap is settled by readback rounds.
 fn text_brackets_reach_cap(node: V<'_>) -> bool {
-    let mut pending: Vec<_> = children(node).iter().collect();
     let mut count = 0;
-    while let Some(n) = pending.pop() {
+    for n in children(node) {
         if ty(n) == "text" {
             count += text(n).bytes().filter(|&b| b == b'[').count();
             if count >= SEED_CAP {
                 return true;
             }
-        } else {
-            pending.extend(children(n));
         }
     }
     false
