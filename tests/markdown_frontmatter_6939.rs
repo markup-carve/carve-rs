@@ -124,3 +124,12 @@ fn toml_mapping_shape_still_keeps_tables_and_keys() {
         }
     }
 }
+
+#[test]
+fn a_plain_yaml_key_with_a_colon_is_not_mapping_shape() {
+    // The refined #2799 shape test excludes a plain key that holds any ':'.
+    for from in ["markdown", "gfm"] {
+        let result = import(from, "---\nfoo:bar: baz\n---\n");
+        assert_eq!(result["tree"]["children"][0]["type"], "thematic_break");
+    }
+}

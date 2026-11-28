@@ -574,20 +574,17 @@ fn mapping_shape(body: &str, format: &str) -> bool {
     }
     match format {
         "yaml" => {
-            let key_end = match first.as_bytes().first() {
-                Some(b'\'' | b'"') => {
-                    let quote = first.as_bytes()[0];
+            let key_end = match first.as_bytes().first().copied() {
+                Some(quote @ (b'\'' | b'"')) => {
                     let bytes = first.as_bytes();
                     let mut at = 1;
-                    while at < bytes.len() {
-                        if quote == b'"' && bytes[at] == b'\\' && at + 1 < bytes.len() {
+                    while let Some(&current) = bytes.get(at) {
+                        let next = bytes.get(at + 1);
+                        let escaped = (quote == b'"' && current == b'\\' && next.is_some())
+                            || (quote == b'\'' && current == b'\'' && next == Some(&quote));
+                        if escaped {
                             at += 2;
-                        } else if quote == b'\''
-                            && bytes[at] == b'\''
-                            && bytes.get(at + 1) == Some(&b'\'')
-                        {
-                            at += 2;
-                        } else if bytes[at] == quote {
+                        } else if current == quote {
                             break;
                         } else {
                             at += 1;
